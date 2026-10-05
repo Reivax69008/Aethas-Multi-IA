@@ -48,10 +48,10 @@ theme_hdrs = [
         function updateFileCount(input) {
             let label = document.getElementById('file-label-text');
             if(input && input.files && input.files.length > 0) { 
-                label.innerText = `ð ${input.files.length} fichier(s)`; 
+                label.innerText = `📎 ${input.files.length} fichier(s)`; 
                 label.style.color = '#00e5ff'; 
             } else { 
-                label.innerText = 'ð Fichiers'; 
+                label.innerText = '📎 Fichiers'; 
                 label.style.color = '#94a3b8'; 
             }
         }
@@ -59,7 +59,7 @@ theme_hdrs = [
             let tracker = document.getElementById('loading-tracker');
             let oldText = tracker.innerText;
             tracker.style.display = 'block';
-            tracker.innerText = 'âï¸ Extraction et traduction du catalogue (Patientez ~1 min)...';
+            tracker.innerText = '⚙️ Extraction et traduction du catalogue (Patientez ~1 min)...';
             try {
                 let res = await fetch('/export_models');
                 let text = await res.text();
@@ -89,15 +89,13 @@ theme_hdrs = [
     """)
 ]
 
-# Activation des sessions chiffrÃ©es avec la clÃ© dÃ©finie dans le .env
 app, rt = fast_app(secret_key=os.getenv("SESSION_SECRET", "super-secret-key-fallback"), hdrs=theme_hdrs)
 
-# --- ROUTES D'AUTHENTIFICATION ---
 @rt('/login')
 def get():
     return Title("Connexion - AETHAS38"), Body(
         Div(
-            H2("AETHAS 38 - AccÃ¨s SÃ©curisÃ©", style="color:#00e5ff; margin-bottom:20px; text-align:center;"),
+            H2("AETHAS 38 - Accès Sécurisé", style="color:#00e5ff; margin-bottom:20px; text-align:center;"),
             Form(
                 Input(type="email", name="email", placeholder="E-mail", cls="input-box mb-3 w-full", required=True),
                 Input(type="password", name="password", placeholder="Mot de passe", cls="input-box mb-3 w-full", required=True),
@@ -112,13 +110,12 @@ def get():
 
 @rt('/auth/login')
 def post(email: str, password: str, totp_code: str, session):
-    # On utilise VOS noms de variables exacts
     admin_email = os.getenv("ADMIN_EMAIL")
     admin_hash = os.getenv("ADMIN_PASSWORD_HASH")
     totp_secret = os.getenv("ADMIN_2FA_SECRET")
 
     if not admin_email or not admin_hash or not totp_secret:
-        return Div("Configuration systÃ¨me incomplÃ¨te (.env).", style="color:red; font-weight:bold;")
+        return Div("Configuration système incomplète (.env).", style="color:red; font-weight:bold;")
 
     if email == admin_email and verify_password(admin_hash, password) and verify_totp(totp_secret, totp_code):
         session["authenticated"] = True
@@ -143,15 +140,14 @@ def get():
                 local_commit = f.read().strip()
         
         if local_commit and remote_commit and remote_commit != local_commit:
-            return Span("ð MAJ disponible (GitHub)", style="color:#fbbf24;")
+            return Span("🚀 MAJ disponible (GitHub)", style="color:#fbbf24;")
         elif local_commit == remote_commit:
-            return Span("ð¢ SystÃ¨me Ã  jour", style="color:#10b981;")
+            return Span("🟢 Système à jour", style="color:#10b981;")
         else:
-            return Span(f"ð¢ ConnectÃ© (Git: {remote_commit[:7]})", style="color:#38bdf8;")
+            return Span(f"🟢 Connecté (Git: {remote_commit[:7]})", style="color:#38bdf8;")
     except:
-        return Span("âª Statut rÃ©seau inconnu", style="color:#94a3b8;")
+        return Span("⚪ Statut réseau inconnu", style="color:#94a3b8;")
 
-# --- DOSSIERS & LOGS ---
 os.makedirs("sessions", exist_ok=True)
 os.makedirs("logs", exist_ok=True)
 APP_LAUNCH_TIME = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -163,7 +159,6 @@ def log_event(session_id, category, action):
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"[{timestamp}] [Session:{sid_short}] [{category}] {action}\n")
 
-# --- HISTORIQUE ---
 HISTORY_FILE = "history.json"
 def load_index():
     if not os.path.exists(HISTORY_FILE): return {}
@@ -194,20 +189,20 @@ def create_new_session():
     idx[session_id] = {"title": f"Discussion du {datetime.now().strftime('%d/%m %H:%M')}", "pinned": False}
     save_index(idx)
     save_session_data(session_id, [])
-    log_event(session_id, "USER_ACTION", "Nouvelle session initialisÃ©e.")
+    log_event(session_id, "USER_ACTION", "Nouvelle session initialisée.")
     return session_id
 def render_history_list():
     idx = load_index()
     sorted_sessions = sorted(idx.items(), key=lambda x: (not x[1].get('pinned', False), x[1]['title']), reverse=False)
-    items = [Button("â Nouvelle Discussion", cls="history-btn w-full mb-3 text-center", style="background:#00e5ff; color:#0f172a; font-weight:bold;", hx_get="/session/new", hx_target="#chat-history")]
+    items = [Button("➕ Nouvelle Discussion", cls="history-btn w-full mb-3 text-center", style="background:#00e5ff; color:#0f172a; font-weight:bold;", hx_get="/session/new", hx_target="#chat-history")]
     for sid, data in sorted_sessions:
-        pin_icon, pin_color = ("ð", "#10b981") if data.get('pinned') else ("ð", "#94a3b8")
+        pin_icon, pin_color = ("📍", "#10b981") if data.get('pinned') else ("📌", "#94a3b8")
         item = Div(
             Div(data['title'], cls="truncate flex-grow cursor-pointer hover:text-cyan-400", hx_get=f"/session/load/{sid}", hx_target="#chat-history"),
             Div(
-                Button("âï¸", cls="text-xs mx-1 hover:text-white", onclick=f"let name = prompt('Nouveau nom:'); if(name) {{ htmx.ajax('POST', '/history/rename/{sid}', {{values: {{title: name}}, target: '#history-list-container'}}); }}"),
+                Button("✏️️", cls="text-xs mx-1 hover:text-white", onclick=f"let name = prompt('Nouveau nom:'); if(name) {{ htmx.ajax('POST', '/history/rename/{sid}', {{values: {{title: name}}, target: '#history-list-container'}}); }}"),
                 Button(pin_icon, style=f"color:{pin_color};", cls="text-xs mx-1 hover:text-white", hx_post=f"/history/pin/{sid}", hx_target="#history-list-container"),
-                Button("ðï¸", cls="text-xs hover:text-red-500", onclick=f"if(confirm('Supprimer dÃ©finitivement cette discussion ?')) {{ htmx.ajax('POST', '/history/delete/{sid}', {{target: '#history-list-container'}}); }}"),
+                Button("🗑️", cls="text-xs hover:text-red-500", onclick=f"if(confirm('Supprimer définitivement cette discussion ?')) {{ htmx.ajax('POST', '/history/delete/{sid}', {{target: '#history-list-container'}}); }}"),
                 cls="flex-shrink-0"
             ),
             cls="flex justify-between items-center history-btn w-full mb-1"
@@ -215,14 +210,13 @@ def render_history_list():
         items.append(item)
     return Div(*items, id="history-list-container", hx_swap_oob="true")
 
-# --- CATALOGUE ---
 MODELS_DATA = []
 def init_models():
     global MODELS_DATA
     MODELS_DATA = [
-        {"id": "groq|llama3-8b-8192", "name": "Groq - Llama 3 (8B)", "is_free": True, "description": "ModÃ¨le ultra-rapide hÃ©bergÃ© par Groq.", "architecture": {"modality": "text"}},
-        {"id": "gemini|gemini-1.5-flash", "name": "Google - Gemini 1.5 Flash", "is_free": True, "description": "ModÃ¨le multimodal lÃ©ger de Google.", "architecture": {"modality": "text/vision"}},
-        {"id": "deepseek|deepseek-coder", "name": "DeepSeek - Coder", "is_free": False, "description": "GÃ©nÃ©ration de code complexe.", "architecture": {"modality": "text/code"}}
+        {"id": "groq|llama3-8b-8192", "name": "Groq - Llama 3 (8B)", "is_free": True, "description": "Modèle ultra-rapide hébergé par Groq.", "architecture": {"modality": "text"}},
+        {"id": "gemini|gemini-1.5-flash", "name": "Google - Gemini 1.5 Flash", "is_free": True, "description": "Modèle multimodal léger de Google.", "architecture": {"modality": "text/vision"}},
+        {"id": "deepseek|deepseek-coder", "name": "DeepSeek - Coder", "is_free": False, "description": "Génération de code complexe.", "architecture": {"modality": "text/code"}}
     ]
     try:
         res = requests.get("https://openrouter.ai/api/v1/models", timeout=5)
@@ -241,28 +235,42 @@ def get_model_options(filter_type="all"):
         options.append(Option(f"{m['name']} ({'Gratuit' if is_free else 'Payant'})", value=m['id']))
     return Select(*options, name="model_id", cls="model-select", style="width: 100%;")
 
-# --- MOTEUR IA ---
 def get_budget():
     mgmt_key = os.getenv("OPENROUTER_MANAGEMENT_KEY")
-    if not mgmt_key: return "ClÃ© manquante"
+    if not mgmt_key: return "Clé manquante"
     try:
         data = requests.get("https://openrouter.ai/api/v1/credits", headers={"Authorization": f"Bearer {mgmt_key}"}, timeout=5).json().get("data", {})
         return f"{data.get('total_credits', 0) - data.get('total_usage', 0):.4f} $"
     except: return "Erreur lecture"
 
+def call_ollama(model_name, prompt_text):
+    try:
+        res = requests.post(
+            "http://host.docker.internal:11434/api/generate", 
+            json={"model": model_name, "prompt": prompt_text, "stream": False}, 
+            timeout=60
+        )
+        data = res.json()
+        if "response" in data:
+            return data["response"]
+        elif "error" in data:
+            return f"⚠️ Erreur Ollama : {data['error']}"
+        else:
+            return f"⚠️ Réponse Ollama inattendue : {str(data)}"
+    except Exception as e:
+        return f"⚠️ Erreur de connexion à Ollama : {str(e)}"
+
 def handle_api_error(session_id, provider, raw_error):
     log_event(session_id, "ERROR", f"API {provider} : {raw_error}")
-    sys_prompt = "Tu es un assistant technique. Traduis cette erreur d'API en franÃ§ais."
-    try:
-        qwen_res = requests.post("http://host.docker.internal:11434/api/generate", json={"model": "qwen2.5-coder:7b", "prompt": f"{sys_prompt}\n\nErreur ({provider}): {raw_error}", "stream": False}, timeout=15).json()["response"]
-        return f"â ï¸ **Alerte Serveur ({provider})**\n{qwen_res}"
-    except: return f"â ï¸ Erreur brute ({provider}) : {raw_error}"
+    sys_prompt = "Tu es un assistant technique. Traduis cette erreur d'API en français."
+    qwen_res = call_ollama("qwen2.5-coder:7b", f"{sys_prompt}\n\nErreur ({provider}): {raw_error}")
+    return f"⚠️ **Alerte Serveur ({provider})**\n{qwen_res}"
 
 async def async_ask_llm(session_id, provider, actual_model, msg):
     return await asyncio.to_thread(ask_llm, session_id, provider, actual_model, msg)
 
 def ask_llm(session_id, provider, actual_model, msg):
-    log_event(session_id, "API_REQ", f"Interrogation : {provider} | ModÃ¨le : {actual_model}")
+    log_event(session_id, "API_REQ", f"Interrogation : {provider} | Modèle : {actual_model}")
     try:
         if provider == "openrouter":
             res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers={"Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"}, json={"model": actual_model, "messages": [{"role": "user", "content": msg}]})
@@ -276,33 +284,32 @@ def ask_llm(session_id, provider, actual_model, msg):
             res = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{actual_model}:generateContent?key={os.getenv('GEMINI_API_KEY')}", json={"contents": [{"parts": [{"text": msg}]}]})
             if res.status_code != 200: return handle_api_error(session_id, provider, res.text)
             return res.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return handle_api_error(session_id, provider, "Fournisseur non implÃ©mentÃ©.")
+        return handle_api_error(session_id, provider, "Fournisseur non implémenté.")
     except Exception as e: return handle_api_error(session_id, provider, str(e))
 
 def pipeline_minecraft(session_id, raw_msg):
     log_event(session_id, "PIPELINE", "Local Minecraft")
     try:
-        en_prompt = requests.post("http://host.docker.internal:11434/api/generate", json={"model": "qwen2.5-coder:7b", "prompt": f"Translate this Minecraft modding request into technical English. Return ONLY English text.\n\n{raw_msg}", "stream": False}).json()["response"]
-        phuzzy_res = requests.post("http://host.docker.internal:11434/api/generate", json={"model": "phuzzy:latest", "prompt": en_prompt, "stream": False}).json()["response"]
-        final_fr = requests.post("http://host.docker.internal:11434/api/generate", json={"model": "qwen2.5-coder:7b", "prompt": f"Traduis les explications techniques en franÃ§ais. NE TRADUIS PAS le code.\n\n{phuzzy_res}", "stream": False}).json()["response"]
-        return final_fr, "Qwen â Phuzzy â Qwen"
+        en_prompt = call_ollama("qwen2.5-coder:7b", f"Translate this Minecraft modding request into technical English. Return ONLY English text.\n\n{raw_msg}")
+        phuzzy_res = call_ollama("phuzzy:latest", en_prompt)
+        final_fr = call_ollama("qwen2.5-coder:7b", f"Traduis les explications techniques en français. NE TRADUIS PAS le code.\n\n{phuzzy_res}")
+        return final_fr, "Qwen ➔ Phuzzy ➔ Qwen"
     except Exception as e: return handle_api_error(session_id, "Ollama Local", str(e)), "Erreur Locale"
 
 async def pipeline_consolidated(session_id, raw_msg):
     log_event(session_id, "PIPELINE", "Consolidation Multi-IA")
     try:
-        opt_prompt = requests.post("http://host.docker.internal:11434/api/generate", json={"model": "qwen2.5-coder:7b", "prompt": f"Optimise cette demande pour des LLM codeurs. Sois ultra prÃ©cis.\n\n{raw_msg}", "stream": False}).json()["response"]
+        opt_prompt = call_ollama("qwen2.5-coder:7b", f"Optimise cette demande pour des LLM codeurs. Sois ultra précis.\n\n{raw_msg}")
         rep_groq, rep_gemini = await asyncio.gather(
             async_ask_llm(session_id, "groq", "llama3-8b-8192", opt_prompt),
             async_ask_llm(session_id, "gemini", "gemini-1.5-flash", opt_prompt)
         )
-        sys_synth = "Tu es un Architecte Logiciel Senior. Voici la mÃªme demande traitÃ©e par deux IA diffÃ©rentes. Lis leurs propositions, corrige les erreurs potentielles, garde le meilleur des deux, et gÃ©nÃ¨re le code final absolu et parfait en franÃ§ais."
+        sys_synth = "Tu es un Architecte Logiciel Senior. Voici la même demande traitée par deux IA différentes. Lis leurs propositions, corrige les erreurs potentielles, garde le meilleur des deux, et génère le code final absolu et parfait en français."
         final_prompt = f"{sys_synth}\n\n--- IA 1 (Groq) ---\n{rep_groq}\n\n--- IA 2 (Gemini) ---\n{rep_gemini}"
-        final_res = requests.post("http://host.docker.internal:11434/api/generate", json={"model": "qwen2.5-coder:7b", "prompt": final_prompt, "stream": False}).json()["response"]
-        return final_res, "Qwen â [Groq + Gemini] â SynthÃ¨se Qwen"
+        final_res = call_ollama("qwen2.5-coder:7b", final_prompt)
+        return final_res, "Qwen ➔ [Groq + Gemini] ➔ Synthèse Qwen"
     except Exception as e: return handle_api_error(session_id, "Pipeline Multi-IA", str(e)), "Erreur Consolidation"
 
-# --- ROUTES PRINCIPALES (PROTÃGÃES) ---
 @rt('/session/new')
 def get(session):
     if not session.get("authenticated"): return RedirectResponse('/login')
@@ -324,7 +331,7 @@ def post_pin(sid: str, session):
     if sid in idx:
         idx[sid]['pinned'] = not idx[sid].get('pinned', False)
         save_index(idx)
-        log_event(sid, "USER_ACTION", "Ãpinglage modifiÃ©.")
+        log_event(sid, "USER_ACTION", "Épinglage modifié.")
     return render_history_list()
 
 @rt('/history/rename/{sid}')
@@ -334,7 +341,7 @@ def post_rename(sid: str, title: str, session):
     if sid in idx:
         idx[sid]['title'] = title
         save_index(idx)
-        log_event(sid, "USER_ACTION", f"RenommÃ© en: {title}")
+        log_event(sid, "USER_ACTION", f"Renommé en: {title}")
     return render_history_list()
 
 @rt('/history/delete/{sid}')
@@ -345,7 +352,7 @@ def post_delete(sid: str, session):
         del idx[sid]
         save_index(idx)
         if os.path.exists(f"sessions/{sid}.json"): os.remove(f"sessions/{sid}.json")
-        log_event(sid, "USER_ACTION", "Session supprimÃ©e.")
+        log_event(sid, "USER_ACTION", "Session supprimée.")
     return render_history_list()
 
 @rt('/export_models')
@@ -368,8 +375,8 @@ def get(session):
                 P("Tech Core - Multi IA", style="color:#a855f7; margin-bottom: 20px;"),
                 
                 Div(
-                    P("STATUT SYSTÃME", style="color:#94a3b8; font-size:10px; font-weight:bold; margin-bottom:5px;"),
-                    Div("â³ VÃ©rification GitHub...", hx_get="/check_updates", hx_trigger="load", style="font-size:12px; font-weight:bold; margin-bottom:15px;"),
+                    P("STATUT SYSTÈME", style="color:#94a3b8; font-size:10px; font-weight:bold; margin-bottom:5px;"),
+                    Div("⏳ Vérification GitHub...", hx_get="/check_updates", hx_trigger="load", style="font-size:12px; font-weight:bold; margin-bottom:15px;"),
                 ),
 
                 Div(
@@ -377,8 +384,8 @@ def get(session):
                     render_history_list(),
                     style="display:flex; flex-direction:column; flex-grow:1; margin-bottom: 10px; overflow:hidden;"
                 ),
-                Button("ð¥ Exporter ModÃ¨les (.txt)", type="button", cls="export-btn w-full mt-2", onclick="downloadModels()"),
-                A("DÃ©connexion", href="/logout", cls="export-btn w-full mt-2", style="color:#ef4444; border-color:#ef4444; margin-bottom:10px;"),
+                Button("📥 Exporter Modèles (.txt)", type="button", cls="export-btn w-full mt-2", onclick="downloadModels()"),
+                A("Déconnexion", href="/logout", cls="export-btn w-full mt-2", style="color:#ef4444; border-color:#ef4444; margin-bottom:10px;"),
                 Div(
                     P("BUDGET OPENROUTER", style="color:#94a3b8; font-size:10px; font-weight:bold; margin-bottom:5px;"),
                     P(get_budget(), id="budget-display", style="color:#10b981; font-size:18px; font-weight:bold;"),
@@ -388,25 +395,25 @@ def get(session):
             ),
             Div(
                 Div(id="chat-history", cls="chat-container"),
-                Div("âï¸ Traitement de l'Architecture IA en cours...", id="loading-tracker", cls="htmx-indicator"),
+                Div("⚙️ Traitement de l'Architecture IA en cours...", id="loading-tracker", cls="htmx-indicator"),
                 
                 Form(
                     Input(type="hidden", name="session_id", value=session_id, id="current-session-id"),
                     Div(
-                        Label(Input(type="radio", name="context_type", value="generic", checked=True, onchange="updateUI()"), " ð» Code GÃ©nÃ©rique"),
-                        Label(Input(type="radio", name="context_type", value="consolidated", onchange="updateUI()"), " ð§  Consolidation"),
-                        Label(Input(type="radio", name="context_type", value="minecraft", onchange="updateUI()"), " â Minecraft"),
+                        Label(Input(type="radio", name="context_type", value="generic", checked=True, onchange="updateUI()"), " 💻 Code Générique"),
+                        Label(Input(type="radio", name="context_type", value="consolidated", onchange="updateUI()"), " 🧠 Consolidation"),
+                        Label(Input(type="radio", name="context_type", value="minecraft", onchange="updateUI()"), " ⛏ Minecraft"),
                         cls="context-radio-group text-sm text-white flex gap-4"
                     ),
                     Div(
-                        Select(Option("Tous les modÃ¨les", value="all"), Option("Gratuits", value="free"), Option("Payants", value="paid"), name="filter_type", cls="model-select", hx_get="/filter_models", hx_target="#model-select-wrapper", style="width: 250px;"),
+                        Select(Option("Tous les modèles", value="all"), Option("Gratuits", value="free"), Option("Payants", value="paid"), name="filter_type", cls="model-select", hx_get="/filter_models", hx_target="#model-select-wrapper", style="width: 250px;"),
                         Div(get_model_options("all"), id="model-select-wrapper", style="flex-grow: 1;"),
                         cls="flex gap-2 mb-2 w-full", id="model-selection-area"
                     ),
                     Div(
                         Input(type="file", name="fichiers", id="file-upload", multiple=True, style="display:none;", onchange="updateFileCount(this)"),
-                        Label(Span("ð Fichiers", id="file-label-text"), _for="file-upload", cls="file-upload-btn"),
-                        Input(type="text", name="msg", placeholder="InsÃ©rez votre requÃªte...", cls="input-box", required=True),
+                        Label(Span("📎 Fichiers", id="file-label-text"), _for="file-upload", cls="file-upload-btn"),
+                        Input(type="text", name="msg", placeholder="Insérez votre requête...", cls="input-box", required=True),
                         Button("Envoyer", type="submit", cls="send-btn"),
                         cls="input-row"
                     ),
@@ -435,7 +442,7 @@ async def post(msg: str, model_id: str, session_id: str, session, context_type: 
             if f.filename:
                 noms_fichiers.append(f.filename)
                 try: files_context += f"\n--- {f.filename} ---\n{(await f.read()).decode('utf-8')}\n"
-                except: files_context += f"\n--- {f.filename} (Binaire ignorÃ©) ---\n"
+                except: files_context += f"\n--- {f.filename} (Binaire ignoré) ---\n"
     
     full_req = f"Fichiers fournis:\n{files_context}\nDemande: {msg}" if files_context else msg
 
@@ -444,17 +451,17 @@ async def post(msg: str, model_id: str, session_id: str, session, context_type: 
         nom_affichage = "Local - Phuzzy/Minecraft"
     elif context_type == "consolidated":
         ia_reponse, pipeline_info = await pipeline_consolidated(session_id, full_req)
-        nom_affichage = "Qwen SynthÃ¨se (via Groq/Gemini)"
+        nom_affichage = "Qwen Synthèse (via Groq/Gemini)"
     else:
-        opt_prompt = requests.post("http://host.docker.internal:11434/api/generate", json={"model": "qwen2.5-coder:7b", "prompt": f"Optimise cette demande pour un LLM codeur. Retourne UNIQUEMENT le prompt.\n\n{full_req}", "stream": False}).json()["response"]
+        opt_prompt = call_ollama("qwen2.5-coder:7b", f"Optimise cette demande pour un LLM codeur. Retourne UNIQUEMENT le prompt.\n\n{full_req}")
         parts = model_id.split("|", 1)
         provider, actual_model = parts[0], parts[1] if len(parts) > 1 else model_id
         ia_reponse = ask_llm(session_id, provider, actual_model, opt_prompt)
         nom_affichage = f"{provider.capitalize()} - {actual_model.split('/')[-1]}"
-        pipeline_info = "Qwen â API Distante Unique"
+        pipeline_info = "Qwen ➔ API Distante Unique"
 
-    info_fichiers = f"<br><span style='color:#a855f7; font-size:10px;'>ð {len(noms_fichiers)} fichier(s)</span>" if noms_fichiers else ""
-    info_local = f"<br><span style='color:#38bdf8; font-size:10px;'>âï¸ Pipeline : {pipeline_info}</span>"
+    info_fichiers = f"<br><span style='color:#a855f7; font-size:10px;'>📎 {len(noms_fichiers)} fichier(s)</span>" if noms_fichiers else ""
+    info_local = f"<br><span style='color:#38bdf8; font-size:10px;'>⚙️ Pipeline : {pipeline_info}</span>"
     
     session_data = load_session_data(session_id)
     session_data.append({"user": msg, "ia": ia_reponse, "nom_affichage": nom_affichage, "info_fichiers": info_fichiers, "info_local": info_local})
