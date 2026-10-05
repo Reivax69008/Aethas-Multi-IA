@@ -13,13 +13,16 @@ load_dotenv()
 os.makedirs("sessions", exist_ok=True)
 os.makedirs("logs", exist_ok=True)
 
-def log_event(session_id, action, level="INFO"):
-    """Enregistre chaque action dans un fichier texte dédié à la session."""
-    sid = session_id if session_id else "system"
-    log_file = f"logs/session_{sid}.log"
+# Un seul fichier de log par lancement d'application
+APP_LAUNCH_TIME = datetime.now().strftime("%Y%m%d_%H%M%S")
+LOG_FILE = f"logs/AETHAS38_Run_{APP_LAUNCH_TIME}.log"
+
+def log_event(session_id, category, action):
+    """Enregistre chaque action dans le fichier log global avec catégorisation."""
+    sid_short = session_id[:8] if session_id and session_id != "system" else "SYSTEM"
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(log_file, "a", encoding="utf-8") as f:
-        f.write(f"[{timestamp}] [{level}] {action}\n")
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(f"[{timestamp}] [Session:{sid_short}] [{category}] {action}\n")
 
 # --- 1. GESTION DE L'HISTORIQUE (INDEX & SESSIONS) ---
 HISTORY_FILE = "history.json"
@@ -29,7 +32,6 @@ def load_index():
     with open(HISTORY_FILE, "r", encoding="utf-8") as f:
         try: 
             idx = json.load(f)
-            # Migration automatique si l'ancien format (avec "messages" dedans) est détecté
             for sid, data in list(idx.items()):
                 if "messages" in data:
                     save_session_data(sid, data["messages"])
@@ -58,7 +60,7 @@ def create_new_session():
     idx[session_id] = {"title": f"Discussion du {datetime.now().strftime('%d/%m %H:%M')}", "pinned": False}
     save_index(idx)
     save_session_data(session_id, [])
-    log_event(session_id, "Nouvelle session initialisée.")
+    log_event(session_id, "USER_ACTION", "Nouvelle session initialisée.")
     return session_id
 
 def render_history_list():
@@ -104,7 +106,7 @@ def init_models():
                 m["name"] = f"OR - {m['name']}"
                 MODELS_DATA.append(m)
     except Exception as e:
-        log_event("system", f"Erreur chargement catalogue OpenRouter : {e}", "ERROR")
+        log_event("system", "ERROR", f"Erreur chargement catalogue OpenRouter : {e}")
 init_models()
 
 def get_model_options(filter_type="all"):
@@ -128,7 +130,7 @@ def get_budget():
     except: return "Erreur lecture"
 
 def handle_api_error(session_id, provider, raw_error):
-    log_event(session_id, f"Erreur API {provider} : {raw_error}", "ERROR")
+    log_event(session_id, "ERROR", f"Erreur API {provider} : {raw_error}")
     sys_prompt = "Tu es un assistant technique. Une API distante a renvoyé l'erreur suivante. Traduis-la en français simplement et propose une explication claire pour aider l'utilisateur."
     try:
         qwen_res = requests.post("http://localhost:11434/api/generate", json={"model": "qwen2.5-coder:7b", "prompt": f"{sys_prompt}\n\nErreur ({provider}): {raw_error}", "stream": False}, timeout=15).json()["response"]
@@ -140,7 +142,7 @@ async def async_ask_llm(session_id, provider, actual_model, msg):
     return await asyncio.to_thread(ask_llm, session_id, provider, actual_model, msg)
 
 def ask_llm(session_id, provider, actual_model, msg):
-    log_event(session_id, f"Interrogation API distantes : {provider} | Modèle : {actual_model}")
+    log_event(session_id, "API_REQ", f"Interrogation API distantes : {provider} | Modèle : {actual_model}")
     try:
         if provider == "openrouter":
             res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers={"Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"}, json={"model": actual_model, "messages": [{"role": "user", "content": msg}]})
@@ -164,7 +166,7 @@ def ask_llm(session_id, provider, actual_model, msg):
 
 # --- 4. PIPELINES DE TRAITEMENT ---
 def pipeline_minecraft(session_id, raw_msg):
-    log_event(session_id, "Lancement Pipeline 100% Local Minecraft (Qwen -> Phuzzy -> Qwen)")
+    log_event(session_id, "PIPELINE", "Lancement Pipeline 100% Local Minecraft (Qwen -> Phuzzy -> Qwen)")
     try:
         en_prompt = requests.post("http://localhost:11434/api/generate", json={"model": "qwen2.5-coder:7b", "prompt": f"Translate this Minecraft modding request into technical English. Return ONLY English text.\n\n{raw_msg}", "stream": False}).json()["response"]
         phuzzy_res = requests.post("http://localhost:11434/api/generate", json={"model": "phuzzy:latest", "prompt": en_prompt, "stream": False}).json()["response"]
@@ -174,7 +176,7 @@ def pipeline_minecraft(session_id, raw_msg):
         return handle_api_error(session_id, "Ollama Local", str(e)), "Erreur Locale"
 
 async def pipeline_consolidated(session_id, raw_msg):
-    log_event(session_id, "Lancement Pipeline Consolidation Multi-IA")
+    log_event(session_id, "PIPELINE", "Lancement Pipeline Consolidation Multi-IA")
     try:
         opt_prompt = requests.post("http://localhost:11434/api/generate", json={"model": "qwen2.5-coder:7b", "prompt": f"Optimise cette demande pour des LLM codeurs. Sois ultra précis.\n\n{raw_msg}", "stream": False}).json()["response"]
         rep_groq, rep_gemini = await asyncio.gather(
@@ -211,11 +213,11 @@ theme_hdrs = [
         .bubble-ia { background: #1e293b; padding: 15px; border-radius: 8px; display: block; color: #e2e8f0; }
         .bubble-ia pre { background: #111827; padding: 15px; border-radius: 8px; margin-top: 10px; position: relative; border: 1px solid #333;}
         .context-radio-group { display: flex; gap: 15px; background: #1e293b; padding: 10px 15px; border-radius: 8px; border: 1px solid #333; margin-bottom: 10px; width: fit-content; }
-        .htmx-indicator { display: none; position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.9); border: 1px solid #00e5ff; padding: 15px 30px; border-radius: 50px; color: #00e5ff; font-weight: bold;}
+        .htmx-indicator { display: none; position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.9); border: 1px solid #00e5ff; padding: 15px 30px; border-radius: 50px; color: #00e5ff; font-weight: bold; z-index: 50;}
         .htmx-request .htmx-indicator { display: block; }
         .history-btn { background: #2a2a35; color: #e2e8f0; border: 1px solid #444; padding: 8px; border-radius: 5px; cursor: pointer; text-align: left; }
         .history-btn:hover { background: #38bdf8; color: #0f172a; }
-        .export-btn { display: block; background: #0f172a; border: 1px solid #00e5ff; color: #00e5ff; font-weight: bold; padding: 10px; border-radius: 5px; text-align: center; text-decoration: none; transition: 0.2s;}
+        .export-btn { display: block; background: #0f172a; border: 1px solid #00e5ff; color: #00e5ff; font-weight: bold; padding: 10px; border-radius: 5px; text-align: center; cursor: pointer; transition: 0.2s; width: 100%;}
         .export-btn:hover { background: #00e5ff; color: #0f172a; }
     """),
     Script("""
@@ -235,6 +237,30 @@ theme_hdrs = [
                 label.innerText = '📎 Fichiers'; 
                 label.style.color = '#94a3b8'; 
             }
+        }
+        
+        async function downloadModels() {
+            let tracker = document.getElementById('loading-tracker');
+            let oldText = tracker.innerText;
+            tracker.style.display = 'block';
+            tracker.innerText = '⚙️ Extraction et traduction du catalogue (Patientez ~1 min)...';
+            try {
+                let res = await fetch('/export_models');
+                let text = await res.text();
+                let blob = new Blob([text], {type: 'text/plain'});
+                let url = window.URL.createObjectURL(blob);
+                let a = document.createElement('a');
+                a.href = url;
+                let d = new Date();
+                let ds = d.getFullYear() + ("0"+(d.getMonth()+1)).slice(-2) + ("0"+d.getDate()).slice(-2) + "_" + ("0"+d.getHours()).slice(-2) + ("0"+d.getMinutes()).slice(-2);
+                a.download = 'modeles_ia_' + ds + '.txt';
+                a.click();
+                window.URL.revokeObjectURL(url);
+            } catch(e) {
+                alert("Erreur lors de l'exportation.");
+            }
+            tracker.style.display = 'none';
+            tracker.innerText = oldText;
         }
 
         htmx.onLoad(function(content) {
@@ -258,7 +284,7 @@ def get():
 
 @rt('/session/load/{sid}')
 def get(sid: str):
-    log_event(sid, "Chargement de la session.")
+    log_event(sid, "USER_ACTION", "Chargement de la session.")
     messages = load_session_data(sid)
     bubbles = []
     for msg in messages:
@@ -275,7 +301,7 @@ def post_pin(sid: str):
     if sid in idx:
         idx[sid]['pinned'] = not idx[sid].get('pinned', False)
         save_index(idx)
-        log_event(sid, "Épinglage modifié.")
+        log_event(sid, "USER_ACTION", "Épinglage modifié.")
     return render_history_list()
 
 @rt('/history/rename/{sid}')
@@ -284,7 +310,7 @@ def post_rename(sid: str, title: str):
     if sid in idx:
         idx[sid]['title'] = title
         save_index(idx)
-        log_event(sid, f"Renommé en: {title}")
+        log_event(sid, "USER_ACTION", f"Renommé en: {title}")
     return render_history_list()
 
 @rt('/history/delete/{sid}')
@@ -294,17 +320,16 @@ def post_delete(sid: str):
         del idx[sid]
         save_index(idx)
         if os.path.exists(f"sessions/{sid}.json"): os.remove(f"sessions/{sid}.json")
-        log_event(sid, "Session supprimée définitivement.", "WARNING")
+        log_event(sid, "USER_ACTION", "Session supprimée définitivement.")
     return render_history_list()
 
 @rt('/export_models')
 def get():
-    log_event("system", "Demande d'exportation du catalogue de modèles.")
+    log_event("system", "SYSTEM", "Demande d'exportation du catalogue de modèles.")
     now = datetime.now()
-    date_str = now.strftime('%d/%m/%Y à %H:%M:%S')
-    file_date = now.strftime('%Y%m%d_%H%M%S')
+    txt_content = f"=== CATALOGUE COMPLET DES MODÈLES (Généré le {now.strftime('%d/%m/%Y à %H:%M:%S')}) ===\n\n"
     
-    txt_content = f"=== CATALOGUE COMPLET DES MODÈLES (Généré le {date_str}) ===\n\n"
+    google_banned = False # Sécurité pour ne pas figer si Google bloque l'IP
     
     for m in MODELS_DATA:
         name = m.get('name', 'Inconnu')
@@ -332,24 +357,30 @@ def get():
         else:
             cout = "Gratuit" if is_free else "Payant"
             
-        desc = str(m.get('description', '')).replace('\n', ' ')
-        desc_courte = desc[:150] + "..." if len(desc) > 150 else desc
+        desc_courte = str(m.get('description', '')).replace('\n', ' ')[:150]
         desc_fr = desc_courte
         
         if "openrouter" in m_id and desc_courte:
-            try:
-                # Appel direct Google Translate
-                url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=fr&dt=t&q=" + requests.utils.quote(desc_courte)
-                trans_res = requests.get(url, timeout=2)
-                if trans_res.status_code == 200:
-                    desc_fr = "".join([x[0] for x in trans_res.json()[0]])
-            except: pass
+            if not google_banned:
+                try:
+                    url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=fr&dt=t&q=" + requests.utils.quote(desc_courte)
+                    trans_res = requests.get(url, timeout=1.5)
+                    if trans_res.status_code == 200:
+                        desc_fr = "".join([x[0] for x in trans_res.json()[0]])
+                    else:
+                        google_banned = True
+                        desc_fr += " [Traduction interrompue: Sécurité anti-spam]"
+                except: 
+                    google_banned = True
+                    desc_fr += " [Traduction interrompue: Délai d'attente]"
+            else:
+                desc_fr = desc_courte
                 
         if not desc_fr: desc_fr = "Aucune description fournie."
         
         txt_content += f"Nom : {name}\nID : {m_id}\nTarif : {cout}\nSpécialité : {usage}\nDescription : {desc_fr}\n{'-'*60}\n"
 
-    return Response(txt_content, media_type="text/plain", headers={"Content-Disposition": f"attachment; filename=modeles_ia_{file_date}.txt"})
+    return Response(txt_content, media_type="text/plain")
 
 
 @rt('/')
@@ -367,8 +398,8 @@ def get():
                     style="display:flex; flex-direction:column; flex-grow:1; margin-bottom: 10px; overflow:hidden;"
                 ),
                 
-                # hx_disable=True autorise le navigateur à télécharger le fichier généré
-                A("📥 Exporter Modèles (.txt)", cls="export-btn w-full mt-2", href="/export_models", hx_disable=True),
+                # Le bouton fait désormais appel à la fonction JavaScript de téléchargement
+                Button("📥 Exporter Modèles (.txt)", type="button", cls="export-btn w-full mt-2", onclick="downloadModels()"),
                 
                 Div(
                     P("BUDGET OPENROUTER", style="color:#94a3b8; font-size:10px; font-weight:bold; margin-bottom:5px;"),
@@ -415,7 +446,7 @@ def get(filter_type: str): return get_model_options(filter_type)
 
 @rt('/chat')
 async def post(msg: str, model_id: str, session_id: str, context_type: str = "generic", fichiers: list[UploadFile] = None):
-    log_event(session_id, f"Envoi d'un message (Contexte: {context_type})")
+    log_event(session_id, "USER_ACTION", f"Envoi d'un message (Contexte: {context_type})")
     
     files_context = ""
     noms_fichiers = []
@@ -426,7 +457,8 @@ async def post(msg: str, model_id: str, session_id: str, context_type: str = "ge
                 try: files_context += f"\n--- {f.filename} ---\n{(await f.read()).decode('utf-8')}\n"
                 except: 
                     files_context += f"\n--- {f.filename} (Binaire ignoré) ---\n"
-                    log_event(session_id, f"Fichier non lisible : {f.filename}", "WARNING")
+                    log_event(session_id, "FILE_SYS", f"Fichier non lisible ignoré : {f.filename}")
+        if noms_fichiers: log_event(session_id, "FILE_SYS", f"Fichiers joints : {', '.join(noms_fichiers)}")
     
     full_req = f"Fichiers fournis:\n{files_context}\nDemande: {msg}" if files_context else msg
 
@@ -449,7 +481,6 @@ async def post(msg: str, model_id: str, session_id: str, context_type: str = "ge
     info_fichiers = f"<br><span style='color:#a855f7; font-size:10px;'>📎 {len(noms_fichiers)} fichier(s) joint(s)</span>" if noms_fichiers else ""
     info_local = f"<br><span style='color:#38bdf8; font-size:10px;'>⚙️ Pipeline : {pipeline_info}</span>"
     
-    # Séparation et sauvegarde des données complètes pour la session
     session_data = load_session_data(session_id)
     session_data.append({
         "user": msg, 
@@ -459,7 +490,7 @@ async def post(msg: str, model_id: str, session_id: str, context_type: str = "ge
         "info_local": info_local
     })
     save_session_data(session_id, session_data)
-    log_event(session_id, "Réponse sauvegardée avec succès.")
+    log_event(session_id, "SYSTEM", "Réponse sauvegardée avec succès.")
 
     chat_bubble = Div(
         P("Vous", cls="msg-user"), Div(NotStr(f"{msg}{info_fichiers}{info_local}"), cls="bubble-user"),
