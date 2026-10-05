@@ -4,3 +4,4 @@ python-dotenv
 pyotp
 qrcode
 psutil
+openyxl

@@ -4,12 +4,15 @@ import requests
 import json
 import uuid
 import asyncio
+import time
+import re
 from datetime import datetime
 from dotenv import load_dotenv
 from auth import validate_password_strength, hash_password, verify_password, generate_totp_secret, verify_totp
 
 load_dotenv()
 
+# --- THEME & SCRIPTS ---
 theme_hdrs = [
     Script(src="https://cdn.tailwindcss.com"),
     Script(src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"),
@@ -22,16 +25,15 @@ theme_hdrs = [
         .chat-container { flex-grow: 1; overflow-y: auto; margin-bottom: 20px; border: 1px solid #333; padding: 15px; border-radius: 8px; background: #151e2e; }
         .input-row { display: flex; gap: 10px; align-items: flex-end; width: 100%; background: #1e293b; padding: 10px; border-radius: 10px; border: 1px solid #333;}
         .input-box { flex-grow: 1; padding: 12px; border-radius: 5px; background: #2a2a35; border: 1px solid #444; color: white; outline: none; }
-        .file-upload-btn { background: #2a2a35; border: 1px solid #444; color: #94a3b8; padding: 12px; border-radius: 5px; cursor: pointer; font-size:14px; display: flex; align-items:center;}
-        .model-select { padding: 12px; border-radius: 5px; background: #2a2a35; border: 1px solid #444; color: #00e5ff; outline: none; font-weight: bold; cursor: pointer;}
+        .file-upload-btn { background: #2a2a35; border: 1px solid #444; color: #94a3b8; padding: 12px; border-radius: 5px; cursor: pointer; font-size:14px; display: flex; align-items:center; justify-content:center;}
+        .model-selector { padding: 8px; border-radius: 5px; background: #1e293b; border: 1px solid #444; color: #00e5ff; width: 100%; font-size: 12px; outline:none; }
         .send-btn { padding: 12px 24px; border-radius: 5px; background: #00e5ff; color: #0f172a; font-weight: bold; cursor: pointer; border: none; }
         .msg-user { color: #00e5ff; font-size: 12px; font-weight: bold; margin-bottom: 2px; margin-top: 15px;}
         .msg-ia { color: #a855f7; font-size: 12px; font-weight: bold; margin-bottom: 2px; margin-top: 15px;}
         .bubble-user { background: #1e293b; padding: 10px; border-radius: 5px; display: inline-block; color: white; border: 1px solid #333;}
-        .bubble-ia { background: #1e293b; padding: 15px; border-radius: 8px; display: block; color: #e2e8f0; }
-        .bubble-ia pre { background: #111827; padding: 15px; border-radius: 8px; margin-top: 10px; position: relative; border: 1px solid #333;}
-        .context-radio-group { display: flex; gap: 15px; background: #1e293b; padding: 10px 15px; border-radius: 8px; border: 1px solid #333; margin-bottom: 10px; width: fit-content; }
-        .htmx-indicator { display: none; position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.9); border: 1px solid #00e5ff; padding: 15px 30px; border-radius: 50px; color: #00e5ff; font-weight: bold; z-index: 50;}
+        .bubble-ia { background: #1e293b; padding: 15px; border-radius: 8px; display: block; color: #e2e8f0; border: 1px solid #333;}
+        .bubble-ia pre { background: #111827; padding: 15px; border-radius: 8px; margin-top: 10px; position: relative; border: 1px solid #444;}
+        .htmx-indicator { display: none; position: absolute; bottom: 180px; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.9); border: 1px solid #00e5ff; padding: 15px 30px; border-radius: 50px; color: #00e5ff; font-weight: bold; z-index: 50;}
         .htmx-request .htmx-indicator { display: block; }
         .history-btn { background: #2a2a35; color: #e2e8f0; border: 1px solid #444; padding: 8px; border-radius: 5px; cursor: pointer; text-align: left; }
         .history-btn:hover { background: #38bdf8; color: #0f172a; }
@@ -39,44 +41,35 @@ theme_hdrs = [
         .export-btn:hover { background: #00e5ff; color: #0f172a; }
     """),
     Script("""
-        function updateUI() {
-            let ctx = document.querySelector('input[name="context_type"]:checked').value;
-            let modBox = document.getElementById('model-selection-area');
-            if(ctx === 'minecraft' || ctx === 'consolidated') { modBox.style.display = 'none'; } 
-            else { modBox.style.display = 'flex'; }
+        function filterModels() {
+            let filter = document.querySelector('input[name="filter_type"]:checked').value;
+            document.querySelectorAll('.model-selector option').forEach(opt => {
+                if(opt.value === "") return;
+                let isFree = opt.getAttribute('data-free') === 'true';
+                if(filter === 'free' && !isFree) opt.style.display = 'none';
+                else if(filter === 'paid' && isFree) opt.style.display = 'none';
+                else opt.style.display = 'block';
+            });
+        }
+        function validateMultiIA() {
+            let wCount = 0;
+            for(let i=1; i<=5; i++) { if(document.getElementById('worker'+i).value !== "") wCount++; }
+            if(wCount === 0) { 
+                alert("Erreur : Vous devez sélectionner au moins une IA de Travail."); 
+                return false; 
+            }
+            if(wCount > 1) {
+                if(document.getElementById('writer').value === "" || document.getElementById('synthesizer').value === "") {
+                    alert("Erreur : Puisque vous avez sélectionné plusieurs travailleurs, le Rédacteur et le Concaténeur sont obligatoires.");
+                    return false;
+                }
+            }
+            return true;
         }
         function updateFileCount(input) {
             let label = document.getElementById('file-label-text');
-            if(input && input.files && input.files.length > 0) { 
-                label.innerText = `📎 ${input.files.length} fichier(s)`; 
-                label.style.color = '#00e5ff'; 
-            } else { 
-                label.innerText = '📎 Fichiers'; 
-                label.style.color = '#94a3b8'; 
-            }
-        }
-        async function downloadModels() {
-            let tracker = document.getElementById('loading-tracker');
-            let oldText = tracker.innerText;
-            tracker.style.display = 'block';
-            tracker.innerText = '⚙️ Extraction et traduction du catalogue (Patientez ~1 min)...';
-            try {
-                let res = await fetch('/export_models');
-                let text = await res.text();
-                let blob = new Blob([text], {type: 'text/plain'});
-                let url = window.URL.createObjectURL(blob);
-                let a = document.createElement('a');
-                a.href = url;
-                let d = new Date();
-                let ds = d.getFullYear() + ("0"+(d.getMonth()+1)).slice(-2) + ("0"+d.getDate()).slice(-2) + "_" + ("0"+d.getHours()).slice(-2) + ("0"+d.getMinutes()).slice(-2);
-                a.download = 'modeles_ia_' + ds + '.txt';
-                a.click();
-                window.URL.revokeObjectURL(url);
-            } catch(e) {
-                alert("Erreur lors de l'exportation.");
-            }
-            tracker.style.display = 'none';
-            tracker.innerText = oldText;
+            if(input.files && input.files.length > 0) { label.innerText = `📎 ${input.files.length} fichier(s)`; label.style.color = '#00e5ff'; } 
+            else { label.innerText = '📎 Fichiers Joints'; label.style.color = '#94a3b8'; }
         }
         htmx.onLoad(function(content) {
             content.querySelectorAll('.bubble-ia:not(.rendered)').forEach(function(el) {
@@ -91,6 +84,7 @@ theme_hdrs = [
 
 app, rt = fast_app(secret_key=os.getenv("SESSION_SECRET", "super-secret-key-fallback"), hdrs=theme_hdrs)
 
+# --- AUTHENTIFICATION ---
 @rt('/login')
 def get():
     return Title("Connexion - AETHAS38"), Body(
@@ -129,16 +123,16 @@ def get(session):
     session.clear()
     return RedirectResponse('/login')
 
+# --- SYSTEM & LOGS ---
 @rt('/check_updates')
-def get():
+def get(session):
+    if not session.get("authenticated"): return Span("")
     try:
-        # Appel à l'API Gitea officielle pour récupérer le dernier commit
         res = requests.get("https://gitea.aethas38.duckdns.org/api/v1/repos/xavier/MULTI-IA-CODAGE/commits?limit=1", timeout=3)
         if res.status_code == 200:
             remote_commit = res.json()[0].get("sha", "")[:7]
             return Span(f"🟢 Gitea Connecté (Dernier commit : {remote_commit})", style="color:#10b981;")
-        else:
-            return Span("🟠 Gitea injoignable", style="color:#fbbf24;")
+        return Span("🟠 Gitea injoignable", style="color:#fbbf24;")
     except Exception as e:
         return Span("⚪ Statut réseau inconnu", style="color:#94a3b8;")
 
@@ -153,17 +147,44 @@ def log_event(session_id, category, action):
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"[{timestamp}] [Session:{sid_short}] [{category}] {action}\n")
 
+# --- CATALOGUE MANAGER ---
+CATALOG_FILE = "catalog.json"
+MODELS_DATA = []
+
+def load_catalog():
+    global MODELS_DATA
+    if os.path.exists(CATALOG_FILE):
+        with open(CATALOG_FILE, "r", encoding="utf-8") as f:
+            try: MODELS_DATA = json.load(f)
+            except: MODELS_DATA = []
+    if not MODELS_DATA:
+        # Fallback de sécurité si aucun catalogue n'a été importé
+        MODELS_DATA = [
+            {"id": "groq|llama3-8b-8192", "name": "Groq - Llama 3 (8B)", "is_free": True, "provider": "Général / Texte", "description": "Modèle par défaut."},
+            {"id": "gemini|gemini-1.5-flash", "name": "Google - Gemini 1.5 Flash", "is_free": True, "provider": "Vision", "description": "Modèle par défaut."}
+        ]
+load_catalog()
+
+def save_catalog(data):
+    global MODELS_DATA
+    MODELS_DATA = data
+    with open(CATALOG_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
+def get_budget():
+    mgmt_key = os.getenv("OPENROUTER_MANAGEMENT_KEY")
+    if not mgmt_key: return "Clé manquante"
+    try:
+        data = requests.get("https://openrouter.ai/api/v1/credits", headers={"Authorization": f"Bearer {mgmt_key}"}, timeout=5).json().get("data", {})
+        return f"{data.get('total_credits', 0) - data.get('total_usage', 0):.4f} $"
+    except: return "Erreur réseau"
+
+# --- PERSISTENCE HISTORIQUE ---
 HISTORY_FILE = "history.json"
 def load_index():
     if not os.path.exists(HISTORY_FILE): return {}
     with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-        try: 
-            idx = json.load(f)
-            for sid, data in list(idx.items()):
-                if "messages" in data:
-                    save_session_data(sid, data["messages"])
-                    del data["messages"]
-            return idx
+        try: return json.load(f)
         except: return {}
 def save_index(idx):
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
@@ -180,256 +201,216 @@ def save_session_data(session_id, messages):
 def create_new_session():
     session_id = str(uuid.uuid4())
     idx = load_index()
-    idx[session_id] = {"title": f"Discussion du {datetime.now().strftime('%d/%m %H:%M')}", "pinned": False}
+    idx[session_id] = {"title": f"Projet du {datetime.now().strftime('%d/%m %H:%M')}", "pinned": False}
     save_index(idx)
     save_session_data(session_id, [])
-    log_event(session_id, "USER_ACTION", "Nouvelle session initialisée.")
     return session_id
+
 def render_history_list():
     idx = load_index()
     sorted_sessions = sorted(idx.items(), key=lambda x: (not x[1].get('pinned', False), x[1]['title']), reverse=False)
-    items = [Button("➕ Nouvelle Discussion", cls="history-btn w-full mb-3 text-center", style="background:#00e5ff; color:#0f172a; font-weight:bold;", hx_get="/session/new", hx_target="#chat-history")]
+    items = [Button("➕ Nouveau Projet", cls="export-btn mb-3", style="background:#10b981; color:#0f172a;", hx_get="/session/new", hx_target="#chat-history")]
     for sid, data in sorted_sessions:
         pin_icon, pin_color = ("📍", "#10b981") if data.get('pinned') else ("📌", "#94a3b8")
         item = Div(
-            Div(data['title'], cls="truncate flex-grow cursor-pointer hover:text-cyan-400", hx_get=f"/session/load/{sid}", hx_target="#chat-history"),
+            Div(data['title'], cls="truncate flex-grow cursor-pointer text-sm hover:text-cyan-400", hx_get=f"/session/load/{sid}", hx_target="#chat-history"),
             Div(
-                Button("✏️️", cls="text-xs mx-1 hover:text-white", onclick=f"let name = prompt('Nouveau nom:'); if(name) {{ htmx.ajax('POST', '/history/rename/{sid}', {{values: {{title: name}}, target: '#history-list-container'}}); }}"),
+                Button("✏", cls="text-xs mx-1 hover:text-white", onclick=f"let name = prompt('Nouveau nom:'); if(name) {{ htmx.ajax('POST', '/history/rename/{sid}', {{values: {{title: name}}, target: '#history-list-container'}}); }}"),
                 Button(pin_icon, style=f"color:{pin_color};", cls="text-xs mx-1 hover:text-white", hx_post=f"/history/pin/{sid}", hx_target="#history-list-container"),
-                Button("🗑️", cls="text-xs hover:text-red-500", onclick=f"if(confirm('Supprimer définitivement cette discussion ?')) {{ htmx.ajax('POST', '/history/delete/{sid}', {{target: '#history-list-container'}}); }}"),
+                Button("🗑️", cls="text-xs hover:text-red-500", onclick=f"if(confirm('Supprimer ce projet ?')) {{ htmx.ajax('POST', '/history/delete/{sid}', {{target: '#history-list-container'}}); }}"),
                 cls="flex-shrink-0"
             ),
-            cls="flex justify-between items-center history-btn w-full mb-1"
+            cls="flex justify-between items-center w-full mb-2 bg-[#2a2a35] p-2 rounded border border-[#444]"
         )
         items.append(item)
     return Div(*items, id="history-list-container", hx_swap_oob="true")
 
-MODELS_DATA = []
-def init_models():
-    global MODELS_DATA
-    MODELS_DATA = [
-        {"id": "groq|llama3-8b-8192", "name": "Groq - Llama 3 (8B)", "is_free": True, "description": "Modèle ultra-rapide hébergé par Groq.", "architecture": {"modality": "text"}},
-        {"id": "gemini|gemini-1.5-flash", "name": "Google - Gemini 1.5 Flash", "is_free": True, "description": "Modèle multimodal léger de Google.", "architecture": {"modality": "text/vision"}},
-        {"id": "deepseek|deepseek-coder", "name": "DeepSeek - Coder", "is_free": False, "description": "Génération de code complexe.", "architecture": {"modality": "text/code"}}
-    ]
-    try:
-        res = requests.get("https://openrouter.ai/api/v1/models", timeout=5)
-        if res.status_code == 200:
-            for m in res.json().get("data", []):
-                m["id"], m["name"] = f"openrouter|{m['id']}", f"OR - {m['name']}"
-                MODELS_DATA.append(m)
-    except Exception as e: log_event("system", "ERROR", f"Erreur catalogue OR : {e}")
-init_models()
-def get_model_options(filter_type="all"):
-    options = []
-    for m in sorted(MODELS_DATA, key=lambda x: x['name']):
-        is_free = m.get("is_free", "free" in m.get("id", "").lower())
-        if filter_type == "free" and not is_free: continue
-        if filter_type == "paid" and is_free: continue
-        options.append(Option(f"{m['name']} ({'Gratuit' if is_free else 'Payant'})", value=m['id']))
-    return Select(*options, name="model_id", cls="model-select", style="width: 100%;")
+# --- UI COMPONENTS ---
+def render_model_dropdown(field_id, placeholder):
+    groups = {}
+    for m in MODELS_DATA:
+        prov = m.get('provider', 'Général')
+        if prov not in groups: groups[prov] = []
+        groups[prov].append(m)
+    
+    opts = [Option("--- Laisser vide ---", value="")]
+    for prov in sorted(groups.keys()):
+        grp_opts = []
+        for m in sorted(groups[prov], key=lambda x: x['name']):
+            is_free = str(m.get('is_free', False)).lower()
+            label = f"{m['name']} ({'Gratuit' if is_free=='true' else 'Payant'})"
+            grp_opts.append(Option(label, value=m['id'], **{"data-free": is_free}))
+        opts.append(Optgroup(label=prov)(*grp_opts))
+        
+    return Div(
+        P(placeholder, style="color:#94a3b8; font-size:10px; font-weight:bold; margin-bottom:2px;"),
+        Select(*opts, name=field_id, id=field_id, cls="model-selector", onchange="filterModels()"),
+        style="margin-bottom: 8px;"
+    )
 
-def get_budget():
-    mgmt_key = os.getenv("OPENROUTER_MANAGEMENT_KEY")
-    if not mgmt_key: return "Clé manquante"
-    try:
-        data = requests.get("https://openrouter.ai/api/v1/credits", headers={"Authorization": f"Bearer {mgmt_key}"}, timeout=5).json().get("data", {})
-        return f"{data.get('total_credits', 0) - data.get('total_usage', 0):.4f} $"
-    except: return "Erreur lecture"
+def parse_txt_catalog(content: str):
+    """ Logique VBA traduite en Python pour le fallback du fichier TXT """
+    lines = content.split('\n')
+    models = []
+    current = {}
+    ext_date = "Inconnue"
+    ext_time = ""
+    
+    for line in lines:
+        line_trim = line.strip()
+        
+        # Extraction de la date comme dans la macro
+        if "Généré le" in line_trim:
+            match = re.search(r"Généré le (\d{2}/\d{2}/\d{4}) à (\d{2}:\d{2}:\d{2})", line_trim)
+            if match:
+                ext_date = match.group(1)
+                ext_time = match.group(2)
+        
+        if line_trim.startswith("Nom : "): current['name'] = line_trim.replace("Nom : ", "").strip()
+        elif line_trim.startswith("ID : "): current['id'] = line_trim.replace("ID : ", "").strip()
+        elif line_trim.startswith("Tarif : "): current['is_free'] = ("Gratuit" in line_trim)
+        elif line_trim.startswith("Spécialité : "): current['provider'] = line_trim.replace("Spécialité : ", "").strip()
+        elif line_trim.startswith("Description : "): current['description'] = line_trim.replace("Description : ", "").strip()
+        elif line_trim.startswith("---"):
+            if 'id' in current and 'name' in current: models.append(current)
+            current = {}
+            
+    return models, ext_date, ext_time
 
-def call_ollama(model_name, prompt_text):
-    try:
-        res = requests.post(
-            "http://host.docker.internal:11434/api/generate", 
-            json={"model": model_name, "prompt": prompt_text, "stream": False}, 
-            timeout=None
-        )
-        data = res.json()
-        if "response" in data:
-            return data["response"]
-        elif "error" in data:
-            return f"⚠️ Erreur Ollama : {data['error']}"
-        else:
-            return f"⚠️ Réponse Ollama inattendue : {str(data)}"
-    except Exception as e:
-        return f"⚠️ Erreur de connexion à Ollama : {str(e)}"
-
-def handle_api_error(session_id, provider, raw_error):
-    log_event(session_id, "ERROR", f"API {provider} : {raw_error}")
-    sys_prompt = "Tu es un assistant technique. Traduis cette erreur d'API en français."
-    qwen_res = call_ollama("qwen2.5-coder:3b", f"{sys_prompt}\n\nErreur ({provider}): {raw_error}")
-    return f"⚠️ **Alerte Serveur ({provider})**\n{qwen_res}"
-
-async def async_ask_llm(session_id, provider, actual_model, msg):
-    return await asyncio.to_thread(ask_llm, session_id, provider, actual_model, msg)
-
-def ask_llm(session_id, provider, actual_model, msg):
-    log_event(session_id, "API_REQ", f"Interrogation : {provider} | Modèle : {actual_model}")
+# --- API DISTANTE ---
+def ask_llm(session_id, full_id, msg):
+    parts = full_id.split("|", 1)
+    provider = parts[0]
+    actual_model = parts[1] if len(parts) > 1 else full_id
+    
+    log_event(session_id, "API_REQ", f"Provider: {provider} | Modèle: {actual_model}")
     try:
         if provider == "openrouter":
             res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers={"Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"}, json={"model": actual_model, "messages": [{"role": "user", "content": msg}]})
-            if res.status_code != 200: return handle_api_error(session_id, provider, res.text)
-            return res.json()["choices"][0]["message"]["content"]
+            if res.status_code == 200: return res.json()["choices"][0]["message"]["content"]
+            return f"⚠️ Erreur API ({provider}) : {res.text}"
         elif provider == "groq":
             res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers={"Authorization": f"Bearer {os.getenv('GROQ_API_KEY')}"}, json={"model": actual_model, "messages": [{"role": "user", "content": msg}]})
-            if res.status_code != 200: return handle_api_error(session_id, provider, res.text)
-            return res.json()["choices"][0]["message"]["content"]
+            if res.status_code == 200: return res.json()["choices"][0]["message"]["content"]
+            return f"⚠️ Erreur API ({provider}) : {res.text}"
         elif provider == "gemini":
             res = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{actual_model}:generateContent?key={os.getenv('GEMINI_API_KEY')}", json={"contents": [{"parts": [{"text": msg}]}]})
-            if res.status_code != 200: return handle_api_error(session_id, provider, res.text)
-            return res.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return handle_api_error(session_id, provider, "Fournisseur non implémenté.")
-    except Exception as e: return handle_api_error(session_id, provider, str(e))
+            if res.status_code == 200: return res.json()["candidates"][0]["content"]["parts"][0]["text"]
+            return f"⚠️ Erreur API ({provider}) : {res.text}"
+        return "⚠️ Fournisseur API non implémenté ou ID invalide."
+    except Exception as e: return f"⚠️ Erreur de connexion : {str(e)}"
 
-def pipeline_minecraft(session_id, raw_msg):
-    log_event(session_id, "PIPELINE", "Local Minecraft")
-    try:
-        en_prompt = call_ollama("qwen2.5-coder:3b", f"Translate this Minecraft modding request into technical English. Return ONLY English text.\n\n{raw_msg}")
-        phuzzy_res = call_ollama("phuzzy:latest", en_prompt)
-        final_fr = call_ollama("qwen2.5-coder:3b", f"Traduis les explications techniques en français. NE TRADUIS PAS le code.\n\n{phuzzy_res}")
-        return final_fr, "Qwen ➔ Phuzzy ➔ Qwen"
-    except Exception as e: return handle_api_error(session_id, "Ollama Local", str(e)), "Erreur Locale"
+async def async_ask_llm(session_id, full_id, msg):
+    return await asyncio.to_thread(ask_llm, session_id, full_id, msg)
 
-async def pipeline_consolidated(session_id, raw_msg):
-    log_event(session_id, "PIPELINE", "Consolidation Multi-IA")
-    try:
-        opt_prompt = call_ollama("qwen2.5-coder:3b", f"Optimise cette demande pour des LLM codeurs. Sois ultra précis.\n\n{raw_msg}")
-        rep_groq, rep_gemini = await asyncio.gather(
-            async_ask_llm(session_id, "groq", "llama3-8b-8192", opt_prompt),
-            async_ask_llm(session_id, "gemini", "gemini-1.5-flash", opt_prompt)
-        )
-        sys_synth = "Tu es un Architecte Logiciel Senior. Voici la même demande traitée par deux IA différentes. Lis leurs propositions, corrige les erreurs potentielles, garde le meilleur des deux, et génère le code final absolu et parfait en français."
-        final_prompt = f"{sys_synth}\n\n--- IA 1 (Groq) ---\n{rep_groq}\n\n--- IA 2 (Gemini) ---\n{rep_gemini}"
-        final_res = call_ollama("qwen2.5-coder:3b", final_prompt)
-        return final_res, "Qwen ➔ [Groq + Gemini] ➔ Synthèse Qwen"
-    except Exception as e: return handle_api_error(session_id, "Pipeline Multi-IA", str(e)), "Erreur Consolidation"
+# --- ROUTES & VIEWS ---
+SESSION_PROGRESS = {}
 
-@rt('/session/new')
-def get(session):
-    if not session.get("authenticated"): return RedirectResponse('/login')
-    sid = create_new_session()
-    return Div(), Input(type="hidden", name="session_id", value=sid, id="current-session-id", hx_swap_oob="true"), render_history_list()
-
-@rt('/session/load/{sid}')
-def get(sid: str, session):
-    if not session.get("authenticated"): return RedirectResponse('/login')
-    log_event(sid, "USER_ACTION", "Chargement de la session.")
-    messages = load_session_data(sid)
-    bubbles = [Div(P("Vous", cls="msg-user"), Div(NotStr(f"{msg['user']}{msg.get('info_fichiers', '')}{msg.get('info_local', '')}"), cls="bubble-user"), P(f"AETHAS38 ({msg.get('nom_affichage', 'IA')})", cls="msg-ia"), Div(msg['ia'], cls="bubble-ia")) for msg in messages]
-    return tuple(bubbles) + (Input(type="hidden", name="session_id", value=sid, id="current-session-id", hx_swap_oob="true"),)
-
-@rt('/history/pin/{sid}')
-def post_pin(sid: str, session):
-    if not session.get("authenticated"): return RedirectResponse('/login')
-    idx = load_index()
-    if sid in idx:
-        idx[sid]['pinned'] = not idx[sid].get('pinned', False)
-        save_index(idx)
-        log_event(sid, "USER_ACTION", "Épinglage modifié.")
-    return render_history_list()
-
-@rt('/history/rename/{sid}')
-def post_rename(sid: str, title: str, session):
-    if not session.get("authenticated"): return RedirectResponse('/login')
-    idx = load_index()
-    if sid in idx:
-        idx[sid]['title'] = title
-        save_index(idx)
-        log_event(sid, "USER_ACTION", f"Renommé en: {title}")
-    return render_history_list()
-
-@rt('/history/delete/{sid}')
-def post_delete(sid: str, session):
-    if not session.get("authenticated"): return RedirectResponse('/login')
-    idx = load_index()
-    if sid in idx:
-        del idx[sid]
-        save_index(idx)
-        if os.path.exists(f"sessions/{sid}.json"): os.remove(f"sessions/{sid}.json")
-        log_event(sid, "USER_ACTION", "Session supprimée.")
-    return render_history_list()
-
-@rt('/export_models')
-def get(session):
-    if not session.get("authenticated"): return RedirectResponse('/login')
-    log_event("system", "SYSTEM", "Export catalogue.")
-    txt_content = f"=== CATALOGUE ({datetime.now().strftime('%d/%m/%Y %H:%M:%S')}) ===\n\n"
-    for m in MODELS_DATA: txt_content += f"Nom : {m.get('name')}\nID : {m.get('id')}\nDescription : {str(m.get('description', ''))[:150]}\n{'-'*60}\n"
-    return Response(txt_content, media_type="text/plain")
+@rt('/status/{sid}')
+def get_status(sid: str):
+    return SESSION_PROGRESS.get(sid, "⚙️ Traitement en cours...")
 
 @rt('/')
 def get(session):
     if not session.get("authenticated"): return RedirectResponse('/login')
-    
     session_id = create_new_session()
-    return Title("AETHAS38 Multi-IA"), Body(
+    return Title("AETHAS38 Orchestrateur"), Body(
         Div(
+            # --- SIDEBAR GAUCHE ---
             Div(
                 H2("AETHAS 38", style="color:#00e5ff; font-weight:bold; font-size:24px;"),
-                P("Tech Core - Multi IA", style="color:#a855f7; margin-bottom: 20px;"),
+                P("Orchestrateur Distant", style="color:#a855f7; margin-bottom: 10px; font-size:12px;"),
+                Div("⏳ Vérification GitHub...", hx_get="/check_updates", hx_trigger="load", style="font-size:10px; margin-bottom:15px;"),
                 
                 Div(
-                    P("STATUT SYSTÈME", style="color:#94a3b8; font-size:10px; font-weight:bold; margin-bottom:5px;"),
-                    Div("⏳ Vérification GitHub...", hx_get="/check_updates", hx_trigger="load", style="font-size:12px; font-weight:bold; margin-bottom:15px;"),
+                    H3("Importer Nouveaux Modèles", style="color:#94a3b8; font-size:12px; font-weight:bold; margin-bottom:5px;"),
+                    Form(
+                        Input(type="file", name="catalog_file", accept=".txt,.xlsm,.xlsx", required=True, id="cat-upload", style="display:none;", onchange="document.getElementById('cat-label').innerText = '📎 Fichier Sélectionné';"),
+                        Label(Span("📎 Sélectionner (.txt ou .xlsm)", id="cat-label"), _for="cat-upload", cls="file-upload-btn mb-2"),
+                        Button("Importer le Catalogue", type="submit", cls="export-btn", style="background:#a855f7; color:#fff; border:none;"),
+                        hx_post="/import_catalog", hx_target="#catalog-status", enctype="multipart/form-data"
+                    ),
+                    Div(id="catalog-status", style="font-size:10px; color:#10b981; margin-top:5px; text-align:center;"),
+                    style="background:#151e2e; padding:10px; border-radius:5px; border:1px solid #333; margin-bottom:15px;"
                 ),
 
-                Div(
-                    H3("Historique de Code", style="color:#94a3b8; font-size:12px; font-weight:bold; margin-bottom:10px;"),
-                    render_history_list(),
-                    style="display:flex; flex-direction:column; flex-grow:1; margin-bottom: 10px; overflow:hidden;"
-                ),
-                Button("📥 Exporter Modèles (.txt)", type="button", cls="export-btn w-full mt-2", onclick="downloadModels()"),
+                Div(H3("Historique", style="color:#94a3b8; font-size:12px; font-weight:bold; margin-bottom:10px;"), render_history_list(), style="flex-grow:1; overflow:hidden;"),
+                
+                Button("📥 Exporter Modèles Actuels (.txt)", type="button", cls="export-btn", onclick="window.location.href='/export_models'"),
                 A("Déconnexion", href="/logout", cls="export-btn w-full mt-2", style="color:#ef4444; border-color:#ef4444; margin-bottom:10px;"),
-                Div(
-                    P("BUDGET OPENROUTER", style="color:#94a3b8; font-size:10px; font-weight:bold; margin-bottom:5px;"),
-                    P(get_budget(), id="budget-display", style="color:#10b981; font-size:18px; font-weight:bold;"),
-                    cls="budget-box"
-                ),
+                Div(P("BUDGET", style="color:#94a3b8; font-size:10px; font-weight:bold;"), P(get_budget(), id="budget-display", style="color:#10b981; font-size:16px; font-weight:bold;")),
                 cls="sidebar"
             ),
+            # --- ZONE PRINCIPALE ---
             Div(
                 Div(id="chat-history", cls="chat-container"),
-                Div("⚙️ Traitement de l'Architecture IA en cours...", id="loading-tracker", cls="htmx-indicator"),
+                Div(Span("⚙️ Préparation du Pipeline...", id="loading-text"), id="loading-tracker", cls="htmx-indicator"),
                 
                 Form(
                     Input(type="hidden", name="session_id", value=session_id, id="current-session-id"),
+                    
                     Div(
-                        Label(Input(type="radio", name="context_type", value="generic", checked=True, onchange="updateUI()"), " 💻 Code Générique"),
-                        Label(Input(type="radio", name="context_type", value="consolidated", onchange="updateUI()"), " 🧠 Consolidation"),
-                        Label(Input(type="radio", name="context_type", value="minecraft", onchange="updateUI()"), " ⛏ Minecraft"),
-                        cls="context-radio-group text-sm text-white flex gap-4"
+                        P("Filtre d'affichage :", style="color:#00e5ff; font-weight:bold; font-size:12px; margin-right:15px;"),
+                        Label(Input(type="radio", name="filter_type", value="all", checked=True, onchange="filterModels()"), " Tous"),
+                        Label(Input(type="radio", name="filter_type", value="free", onchange="filterModels()"), " Gratuits Uniquement"),
+                        Label(Input(type="radio", name="filter_type", value="paid", onchange="filterModels()"), " Payants Uniquement"),
+                        cls="flex items-center text-sm text-white gap-4 mb-4 bg-[#1e293b] p-2 rounded border border-[#333] w-fit"
                     ),
+                    
                     Div(
-                        Select(Option("Tous les modèles", value="all"), Option("Gratuits", value="free"), Option("Payants", value="paid"), name="filter_type", cls="model-select", hx_get="/filter_models", hx_target="#model-select-wrapper", style="width: 250px;"),
-                        Div(get_model_options("all"), id="model-select-wrapper", style="flex-grow: 1;"),
-                        cls="flex gap-2 mb-2 w-full", id="model-selection-area"
+                        Div(render_model_dropdown("writer", "1. Rédacteur de Prompt"), render_model_dropdown("synthesizer", "7. Concaténeur Final"), style="border-right: 1px solid #444; padding-right:15px;"),
+                        Div(
+                            render_model_dropdown("worker1", "2. IA Travailleur 1 (Obligatoire)"),
+                            render_model_dropdown("worker2", "3. IA Travailleur 2"),
+                            render_model_dropdown("worker3", "4. IA Travailleur 3"),
+                            style="padding: 0 15px;"
+                        ),
+                        Div(
+                            render_model_dropdown("worker4", "5. IA Travailleur 4"),
+                            render_model_dropdown("worker5", "6. IA Travailleur 5"),
+                            style="padding-left: 15px;"
+                        ),
+                        cls="grid grid-cols-3 gap-4 mb-4 bg-[#151e2e] p-4 rounded border border-[#333]"
                     ),
+                    
                     Div(
                         Input(type="file", name="fichiers", id="file-upload", multiple=True, style="display:none;", onchange="updateFileCount(this)"),
-                        Label(Span("📎 Fichiers", id="file-label-text"), _for="file-upload", cls="file-upload-btn"),
-                        Input(type="text", name="msg", placeholder="Insérez votre requête...", cls="input-box", required=True),
-                        Button("Envoyer", type="submit", cls="send-btn"),
+                        Label(Span("📎 Fichiers Joints", id="file-label-text"), _for="file-upload", cls="file-upload-btn w-40"),
+                        Input(type="text", name="msg", placeholder="Détaillez le travail à effectuer...", cls="input-box", required=True),
+                        Button("Lancer le Pipeline", type="submit", cls="send-btn"),
                         cls="input-row"
                     ),
                     hx_post="/chat", hx_target="#chat-history", hx_swap="beforeend", hx_indicator="#loading-tracker", enctype="multipart/form-data",
-                    **{"hx-on:htmx:afterRequest": "if(event.detail.successful) { this.reset(); updateFileCount(document.getElementById('file-upload')); }"}
+                    onsubmit="return validateMultiIA();",
+                    **{"hx-on:htmx:afterRequest": "if(event.detail.successful) { this.reset(); document.getElementById('file-label-text').innerText='📎 Fichiers Joints'; filterModels(); }"}
                 ),
                 cls="main-content"
             ),
-            style="display: grid; grid-template-columns: 250px 1fr;"
-        )
+            style="display: grid; grid-template-columns: 280px 1fr;"
+        ),
+        Script("""
+            let statusInterval;
+            document.addEventListener('htmx:beforeRequest', function(evt) {
+                if(evt.detail.target.id === 'chat-history') {
+                    let sid = document.getElementById('current-session-id').value;
+                    document.getElementById('loading-text').innerText = "⚙️ Envoi des données...";
+                    statusInterval = setInterval(async () => {
+                        try { let res = await fetch('/status/' + sid); if(res.ok) document.getElementById('loading-text').innerText = await res.text(); } catch(e) {}
+                    }, 800);
+                }
+            });
+            document.addEventListener('htmx:afterRequest', function(evt) { if(evt.detail.target.id === 'chat-history') clearInterval(statusInterval); });
+            filterModels();
+        """)
     )
 
-@rt('/filter_models')
-def get(filter_type: str, session):
-    if not session.get("authenticated"): return RedirectResponse('/login')
-    return get_model_options(filter_type)
-
+# --- PIPELINE DE TRAITEMENT ---
 @rt('/chat')
-async def post(msg: str, model_id: str, session_id: str, session, context_type: str = "generic", fichiers: list[UploadFile] = None):
+async def post(msg: str, session_id: str, session, writer: str = "", worker1: str = "", worker2: str = "", worker3: str = "", worker4: str = "", worker5: str = "", synthesizer: str = "", fichiers: list[UploadFile] = None):
     if not session.get("authenticated"): return RedirectResponse('/login')
-    log_event(session_id, "USER_ACTION", f"Message ({context_type})")
+    t_start = time.time()
     
+    # 1. Préparation
     files_context, noms_fichiers = "", []
     if fichiers:
         for f in fichiers:
@@ -438,31 +419,56 @@ async def post(msg: str, model_id: str, session_id: str, session, context_type: 
                 try: files_context += f"\n--- {f.filename} ---\n{(await f.read()).decode('utf-8')}\n"
                 except: files_context += f"\n--- {f.filename} (Binaire ignoré) ---\n"
     
-    full_req = f"Fichiers fournis:\n{files_context}\nDemande: {msg}" if files_context else msg
-
-    if context_type == "minecraft":
-        ia_reponse, pipeline_info = pipeline_minecraft(session_id, full_req)
-        nom_affichage = "Local - Phuzzy/Minecraft"
-    elif context_type == "consolidated":
-        ia_reponse, pipeline_info = await pipeline_consolidated(session_id, full_req)
-        nom_affichage = "Qwen Synthèse (via Groq/Gemini)"
+    base_prompt = f"Fichiers fournis :\n{files_context}\n\nConsigne de l'utilisateur : {msg}" if files_context else msg
+    workers = [w for w in [worker1, worker2, worker3, worker4, worker5] if w]
+    
+    # 2. Phase Rédacteur (Optionnel)
+    t_w0 = time.time()
+    if writer:
+        SESSION_PROGRESS[session_id] = "🧠 Étape 1 : Le Rédacteur prépare l'invite..."
+        prompt_to_work = ask_llm(session_id, writer, "Tu es un Ingénieur Prompt Senior. Reformule et optimise techniquement cette demande pour des LLM spécialisés. Retourne uniquement l'invite optimisée sans salutations :\n\n" + base_prompt)
     else:
-        opt_prompt = call_ollama("qwen2.5-coder:3b", f"Optimise cette demande pour un LLM codeur. Retourne UNIQUEMENT le prompt.\n\n{full_req}")
-        parts = model_id.split("|", 1)
-        provider, actual_model = parts[0], parts[1] if len(parts) > 1 else model_id
-        ia_reponse = ask_llm(session_id, provider, actual_model, opt_prompt)
-        nom_affichage = f"{provider.capitalize()} - {actual_model.split('/')[-1]}"
-        pipeline_info = "Qwen ➔ API Distante Unique"
+        prompt_to_work = base_prompt
+    t_w1 = time.time()
 
-    info_fichiers = f"<br><span style='color:#a855f7; font-size:10px;'>📎 {len(noms_fichiers)} fichier(s)</span>" if noms_fichiers else ""
-    info_local = f"<br><span style='color:#38bdf8; font-size:10px;'>⚙️ Pipeline : {pipeline_info}</span>"
+    # 3. Phase Travailleurs (Parallèle)
+    SESSION_PROGRESS[session_id] = f"⚡ Étape 2 : Travail en cours ({len(workers)} IA en parallèle)..."
+    tasks = [async_ask_llm(session_id, w, prompt_to_work) for w in workers]
+    results = await asyncio.gather(*tasks)
+    t_w2 = time.time()
+
+    # 4. Phase Concaténeur
+    if synthesizer and len(workers) > 0:
+        SESSION_PROGRESS[session_id] = "🏗️ Étape 3 : Synthèse et assemblage final..."
+        synth_input = "Tu es l'Architecte Final. Voici la même tâche effectuée par plusieurs intelligences artificielles :\n\n"
+        for i, res in enumerate(results): synth_input += f"--- Proposition IA {i+1} ---\n{res}\n\n"
+        synth_input += "Analyse ces propositions, garde le meilleur code, corrige les erreurs potentielles et génère la solution finale absolue et complète en français."
+        final_response = ask_llm(session_id, synthesizer, synth_input)
+    else:
+        final_response = results[0]
+    t_w3 = time.time()
+    SESSION_PROGRESS[session_id] = "✅ Pipeline Terminé"
+
+    # Rapport Chrono
+    rapport = (
+        f"\n\n---\n⏱️ **Rapport de Performance (Pipeline Distant)**\n"
+        f"- **Rédacteur** : {t_w1 - t_w0:.2f} s\n"
+        f"- **Travailleurs (Parallèle)** : {t_w2 - t_w1:.2f} s\n"
+        f"- **Concaténeur** : {t_w3 - t_w2:.2f} s\n"
+        f"- **Temps Total du Cycle** : {t_w3 - t_start:.2f} s"
+    )
+
+    info_lbl = f"<br><span style='color:#38bdf8; font-size:10px;'>⚙️ {len(workers)} Travailleur(s) | 📎 {len(noms_fichiers)} fichier(s)</span>"
     
     session_data = load_session_data(session_id)
-    session_data.append({"user": msg, "ia": ia_reponse, "nom_affichage": nom_affichage, "info_fichiers": info_fichiers, "info_local": info_local})
+    session_data.append({"user": msg, "ia": final_response + rapport, "info": info_lbl})
     save_session_data(session_id, session_data)
 
-    chat_bubble = Div(P("Vous", cls="msg-user"), Div(NotStr(f"{msg}{info_fichiers}{info_local}"), cls="bubble-user"), P(f"AETHAS38 ({nom_affichage})", cls="msg-ia"), Div(ia_reponse, cls="bubble-ia"))
-    return chat_bubble, P(get_budget(), id="budget-display", style="color:#10b981; font-size:18px; font-weight:bold;", hx_swap_oob="true")
+    return Div(P("Vous", cls="msg-user"), Div(NotStr(f"{msg}{info_lbl}"), cls="bubble-user"), P("AETHAS38", cls="msg-ia"), Div(final_response + rapport, cls="bubble-ia")), P(get_budget(), id="budget-display", style="color:#10b981; font-size:16px; font-weight:bold;", hx_swap_oob="true")
 
-if __name__ == '__main__':
-    serve(port=5001)
+# --- IMPORT / EXPORT CATALOGUE ---
+@rt('/export_models')
+def get(session):
+    if not session.get("authenticated"): return RedirectResponse('/login')
+    txt_content = f"=== CATALOGUE ({datetime.now().strftime('%d/%m/%Y %H:%M:%S')}) ===\n\n"
+    for m in MODELS_DATA: txt_content += f"Nom : {m.get('name')}\nID : {m.get('id')}\nTarif :
