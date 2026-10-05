@@ -463,16 +463,34 @@ async def post(msg: str, session_id: str, session, writer: str = "", worker1: st
     return Div(P("Vous", cls="msg-user"), Div(NotStr(f"{msg}{info_lbl}"), cls="bubble-user"), P("AETHAS38", cls="msg-ia"), Div(final_response + rapport, cls="bubble-ia")), P(get_budget(), id="budget-display", style="color:#10b981; font-size:16px; font-weight:bold;", hx_swap_oob="true")
 
 # --- IMPORT / EXPORT CATALOGUE ---
+# --- IMPORT / EXPORT CATALOGUE ---
 @rt('/export_models')
 def get(session):
     if not session.get("authenticated"): return RedirectResponse('/login')
-    log_event("system", "SYSTEM", "Demande d'exportation du catalogue de modèles.")
+    log_event("system", "SYSTEM", "Demande d'exportation du catalogue depuis OpenRouter.")
     now = datetime.now()
     txt_content = f"=== CATALOGUE COMPLET DES MODÈLES (Généré le {now.strftime('%d/%m/%Y à %H:%M:%S')}) ===\n\n"
     
+    # 1. Ajout des modèles de base gratuits
+    models_to_export = [
+        {"id": "groq|llama-3.1-8b-instant", "name": "Groq - Llama 3.1 (8B)", "pricing": {"prompt": 0, "completion": 0}, "architecture": {"modality": "text"}, "description": "Modèle ultra-rapide hébergé par Groq."},
+        {"id": "gemini|gemini-1.5-flash", "name": "Google - Gemini 1.5 Flash", "pricing": {"prompt": 0, "completion": 0}, "architecture": {"modality": "text/vision"}, "description": "Modèle multimodal léger de Google."}
+    ]
+    
+    # 2. Téléchargement en direct de tous les modèles d'OpenRouter
+    try:
+        res = requests.get("https://openrouter.ai/api/v1/models", timeout=10)
+        if res.status_code == 200:
+            for m in res.json().get("data", []):
+                m["id"] = f"openrouter|{m['id']}"
+                m["name"] = f"OR - {m['name']}"
+                models_to_export.append(m)
+    except Exception as e:
+        log_event("system", "ERROR", f"Erreur API OpenRouter lors de l'export : {e}")
+
     google_banned = False
     
-    for m in MODELS_DATA:
+    for m in models_to_export:
         name = m.get('name', 'Inconnu')
         m_id = m.get('id', 'Inconnu')
         
