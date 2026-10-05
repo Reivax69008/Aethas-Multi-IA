@@ -263,7 +263,7 @@ def call_ollama(model_name, prompt_text):
 def handle_api_error(session_id, provider, raw_error):
     log_event(session_id, "ERROR", f"API {provider} : {raw_error}")
     sys_prompt = "Tu es un assistant technique. Traduis cette erreur d'API en français."
-    qwen_res = call_ollama("qwen2.5-coder:7b", f"{sys_prompt}\n\nErreur ({provider}): {raw_error}")
+    qwen_res = call_ollama("qwen2.5-coder:3b", f"{sys_prompt}\n\nErreur ({provider}): {raw_error}")
     return f"⚠️ **Alerte Serveur ({provider})**\n{qwen_res}"
 
 async def async_ask_llm(session_id, provider, actual_model, msg):
@@ -290,23 +290,23 @@ def ask_llm(session_id, provider, actual_model, msg):
 def pipeline_minecraft(session_id, raw_msg):
     log_event(session_id, "PIPELINE", "Local Minecraft")
     try:
-        en_prompt = call_ollama("qwen2.5-coder:7b", f"Translate this Minecraft modding request into technical English. Return ONLY English text.\n\n{raw_msg}")
+        en_prompt = call_ollama("qwen2.5-coder:3b", f"Translate this Minecraft modding request into technical English. Return ONLY English text.\n\n{raw_msg}")
         phuzzy_res = call_ollama("phuzzy:latest", en_prompt)
-        final_fr = call_ollama("qwen2.5-coder:7b", f"Traduis les explications techniques en français. NE TRADUIS PAS le code.\n\n{phuzzy_res}")
+        final_fr = call_ollama("qwen2.5-coder:3b", f"Traduis les explications techniques en français. NE TRADUIS PAS le code.\n\n{phuzzy_res}")
         return final_fr, "Qwen ➔ Phuzzy ➔ Qwen"
     except Exception as e: return handle_api_error(session_id, "Ollama Local", str(e)), "Erreur Locale"
 
 async def pipeline_consolidated(session_id, raw_msg):
     log_event(session_id, "PIPELINE", "Consolidation Multi-IA")
     try:
-        opt_prompt = call_ollama("qwen2.5-coder:7b", f"Optimise cette demande pour des LLM codeurs. Sois ultra précis.\n\n{raw_msg}")
+        opt_prompt = call_ollama("qwen2.5-coder:3b", f"Optimise cette demande pour des LLM codeurs. Sois ultra précis.\n\n{raw_msg}")
         rep_groq, rep_gemini = await asyncio.gather(
             async_ask_llm(session_id, "groq", "llama3-8b-8192", opt_prompt),
             async_ask_llm(session_id, "gemini", "gemini-1.5-flash", opt_prompt)
         )
         sys_synth = "Tu es un Architecte Logiciel Senior. Voici la même demande traitée par deux IA différentes. Lis leurs propositions, corrige les erreurs potentielles, garde le meilleur des deux, et génère le code final absolu et parfait en français."
         final_prompt = f"{sys_synth}\n\n--- IA 1 (Groq) ---\n{rep_groq}\n\n--- IA 2 (Gemini) ---\n{rep_gemini}"
-        final_res = call_ollama("qwen2.5-coder:7b", final_prompt)
+        final_res = call_ollama("qwen2.5-coder:3b", final_prompt)
         return final_res, "Qwen ➔ [Groq + Gemini] ➔ Synthèse Qwen"
     except Exception as e: return handle_api_error(session_id, "Pipeline Multi-IA", str(e)), "Erreur Consolidation"
 
@@ -453,7 +453,7 @@ async def post(msg: str, model_id: str, session_id: str, session, context_type: 
         ia_reponse, pipeline_info = await pipeline_consolidated(session_id, full_req)
         nom_affichage = "Qwen Synthèse (via Groq/Gemini)"
     else:
-        opt_prompt = call_ollama("qwen2.5-coder:7b", f"Optimise cette demande pour un LLM codeur. Retourne UNIQUEMENT le prompt.\n\n{full_req}")
+        opt_prompt = call_ollama("qwen2.5-coder:3b", f"Optimise cette demande pour un LLM codeur. Retourne UNIQUEMENT le prompt.\n\n{full_req}")
         parts = model_id.split("|", 1)
         provider, actual_model = parts[0], parts[1] if len(parts) > 1 else model_id
         ia_reponse = ask_llm(session_id, provider, actual_model, opt_prompt)
