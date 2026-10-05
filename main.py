@@ -132,20 +132,14 @@ def get(session):
 @rt('/check_updates')
 def get():
     try:
-        res = requests.get("https://gitea.aethas38.duckdns.org/xavier/MULTI-IA-CODAGE/git/commits/main", timeout=3).json()
-        remote_commit = res.get("sha", "")
-        local_commit = ""
-        if os.path.exists(".git/refs/heads/main"):
-            with open(".git/refs/heads/main", "r") as f:
-                local_commit = f.read().strip()
-        
-        if local_commit and remote_commit and remote_commit != local_commit:
-            return Span("🚀 MAJ disponible (GitHub)", style="color:#fbbf24;")
-        elif local_commit == remote_commit:
-            return Span("🟢 Système à jour", style="color:#10b981;")
+        # Appel à l'API Gitea officielle pour récupérer le dernier commit
+        res = requests.get("https://gitea.aethas38.duckdns.org/api/v1/repos/xavier/MULTI-IA-CODAGE/commits?limit=1", timeout=3)
+        if res.status_code == 200:
+            remote_commit = res.json()[0].get("sha", "")[:7]
+            return Span(f"🟢 Gitea Connecté (Dernier commit : {remote_commit})", style="color:#10b981;")
         else:
-            return Span(f"🟢 Connecté (Git: {remote_commit[:7]})", style="color:#38bdf8;")
-    except:
+            return Span("🟠 Gitea injoignable", style="color:#fbbf24;")
+    except Exception as e:
         return Span("⚪ Statut réseau inconnu", style="color:#94a3b8;")
 
 os.makedirs("sessions", exist_ok=True)
