@@ -254,7 +254,7 @@ def handle_api_error(session_id, provider, raw_error):
     log_event(session_id, "ERROR", f"API {provider} : {raw_error}")
     sys_prompt = "Tu es un assistant technique. Traduis cette erreur d'API en français."
     try:
-        qwen_res = requests.post("http://localhost:11434/api/generate", json={"model": "qwen2.5-coder:7b", "prompt": f"{sys_prompt}\n\nErreur ({provider}): {raw_error}", "stream": False}, timeout=15).json()["response"]
+        qwen_res = requests.post("http://host.docker.internal:11434/api/generate", json={"model": "qwen2.5-coder:7b", "prompt": f"{sys_prompt}\n\nErreur ({provider}): {raw_error}", "stream": False}, timeout=15).json()["response"]
         return f"⚠️ **Alerte Serveur ({provider})**\n{qwen_res}"
     except: return f"⚠️ Erreur brute ({provider}) : {raw_error}"
 
