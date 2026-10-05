@@ -9,6 +9,26 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from auth import validate_password_strength, hash_password, verify_password, generate_totp_secret, verify_totp
+
+# Exemple de structure pour les routes de connexion (Login / Setup initial)
+@rt('/login')
+def get():
+    return Title("Connexion - AETHAS38"), Body(
+        Div(
+            H2("AETHAS 38 - Sécurité", style="color:#00e5ff; margin-bottom:20px;"),
+            Form(
+                Input(type="email", name="email", placeholder="E-mail", cls="input-box mb-3", required=True),
+                Input(type="password", name="password", placeholder="Mot de passe", cls="input-box mb-3", required=True),
+                Input(type="text", name="totp_code", placeholder="Code 2FA (6 chiffres)", cls="input-box mb-3", required=True),
+                Button("Se connecter", type="submit", cls="send-btn w-full"),
+                hx_post="/auth/login", hx_target="#auth-response"
+            ),
+            Div(id="auth-response", style="color:red; margin-top:10px;"),
+            cls="sidebar", style="margin: auto; width: 400px; height: auto; border-radius: 10px; margin-top: 15vh;"
+        ), style="background-color: #0f172a; height: 100vh; display: flex;"
+    )
+
 # --- 0. INITIALISATION DES DOSSIERS (BDD & LOGS) ---
 os.makedirs("sessions", exist_ok=True)
 os.makedirs("logs", exist_ok=True)

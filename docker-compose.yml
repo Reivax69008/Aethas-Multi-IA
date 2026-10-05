@@ -1,0 +1,23 @@
+services:
+  aethas38-core:
+    build: .
+    container_name: aethas38-multi-ia
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    environment:
+      - TZ=Europe/Paris
+    env_file:
+      - .env
+    volumes:
+      - ./sessions:/app/sessions
+      - ./logs:/app/logs
+      - ./history.json:/app/history.json
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - dockge-network
+
+networks:
+  dockge-network:
+    external: true

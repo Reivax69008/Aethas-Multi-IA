@@ -1,0 +1,6 @@
+python-fasthtml
+requests
+python-dotenv
+pyotp
+qrcode
+psutil

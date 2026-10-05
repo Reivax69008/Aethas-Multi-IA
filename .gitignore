@@ -37,3 +37,17 @@ Projet IA.pdf
 Multi IA Personnel & familliale.pdf
 WF ATTACHEMENT STIC.pdf
 gitea cmd.md
+consignes.txt
+history.json
+# Environnement et clés secrètes
+.env
+
+# Dossiers dynamiques d'exécution
+/logs/
+/sessions/
+
+# Fichiers de données locales et clés de session
+history.json
+*.sesskey
+__pycache__/
+*.pyc
