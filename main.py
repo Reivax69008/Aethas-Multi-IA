@@ -536,3 +536,8 @@ def get(session):
     # Forcer le téléchargement du fichier TXT
     filename = f"modeles_ia_{datetime.now().strftime('%Y%m%d_%H%M')}.txt"
     return Response(txt_content, media_type="text/plain", headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+if __name__ == '__main__':
+    import uvicorn
+    # Démarre le serveur Uvicorn en mode production, accroché à Docker de manière stable
+    uvicorn.run(app, host="0.0.0.0", port=5001)
