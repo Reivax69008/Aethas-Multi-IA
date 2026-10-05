@@ -1,18 +1,26 @@
-name: Deploiement Automatique Aethas38
+name: Build and Push Docker Image
+
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest  # Correspond au libellé exact de votre capture Gitea
+  build-and-push:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout du code
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: Synchronisation sur le serveur et redémarrage Dockge
-        run: |
-          cd /opt/stacks/codage
-          git pull origin main
-          docker compose restart aethas38-core
+      - name: Log in to Gitea Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: gitea.aethas38.duckdns.org
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: gitea.aethas38.duckdns.org/xavier/multi-ia-codage:latest
