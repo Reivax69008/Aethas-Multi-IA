@@ -9,6 +9,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# 2. INITIALISATION DE FASTHTML EN PREMIER (C'est ici que 'rt' est créé)
+app, rt = fast_app()
+
 from auth import validate_password_strength, hash_password, verify_password, generate_totp_secret, verify_totp
 
 # Exemple de structure pour les routes de connexion (Login / Setup initial)
