@@ -18,8 +18,8 @@
 ## Phase 0 : Audit Infrastructure et Initialisation de l'Environnement
 *   [x] **Tâche 0.1 :** Exécution du script d'audit sur le serveur Debian pour définir les limites matérielles CPU/RAM.
 *   [x] **Tâche 0.2 :** Configuration de l'environnement VSCode (liste des extensions nécessaires et configuration du workspace).
-*   [ ] **Tâche 0.3 :** Initialisation du dépôt sur Gitea et premier commit de cette roadmap.
-*   [ ] **Tâche 0.4 :** Extraction des codes couleurs et de la typographie depuis `https://serfimtic.com` et préparation des assets graphiques.
+*   [x] **Tâche 0.3 :** Initialisation du dépôt sur Gitea et premier commit de cette roadmap.
+*   [x] **Tâche 0.4 :** Création du Dashboard local et extraction des codes couleurs/typographie depuis `https://serfimtic.com` pour les assets graphiques.
 
 ## Phase 1 : Audit et Restructuration des Fichiers Excel (Data Foundation)
 *   [ ] **Tâche 1.1 - Mécanisme de Sauvegarde Préalable :** Création du protocole garantissant que *chaque fichier* est sauvegardé avant modification, indicé sous le format `Semaine_Année_CodeAffaire`.
