@@ -248,7 +248,7 @@ def call_ollama(model_name, prompt_text):
         res = requests.post(
             "http://host.docker.internal:11434/api/generate", 
             json={"model": model_name, "prompt": prompt_text, "stream": False}, 
-            timeout=60
+            timeout=None
         )
         data = res.json()
         if "response" in data:
