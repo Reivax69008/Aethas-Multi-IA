@@ -347,7 +347,8 @@ def post_delete(sid: str):
     return render_history_list()
 
 @rt('/export_models')
-def get():
+def get(session):
+    if not session.get("authenticated"): return RedirectResponse('/login')
     log_event("system", "SYSTEM", "Demande d'exportation du catalogue de modèles.")
     now = datetime.now()
     txt_content = f"=== CATALOGUE COMPLET DES MODÈLES (Généré le {now.strftime('%d/%m/%Y à %H:%M:%S')}) ===\n\n"
@@ -401,10 +402,19 @@ def get():
                 
         if not desc_fr: desc_fr = "Aucune description fournie."
         
-        txt_content += f"Nom : {name}\nID : {m_id}\nTarif : {cout}\nSpécialité : {usage}\nDescription : {desc_fr}\n{'-'*60}\n"
+        # SÉCURITÉ DOCKER : Découpage propre de la chaîne pour éviter le crash f-string
+        txt_content += (
+            f"Nom : {name}\n"
+            f"ID : {m_id}\n"
+            f"Tarif : {cout}\n"
+            f"Spécialité : {usage}\n"
+            f"Description : {desc_fr}\n"
+            f"{'-'*60}\n"
+        )
 
-    return Response(txt_content, media_type="text/plain")
-
+    # Forcer le téléchargement du fichier TXT
+    filename = f"modeles_ia_{datetime.now().strftime('%Y%m%d_%H%M')}.txt"
+    return Response(txt_content, media_type="text/plain", headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 @rt('/')
 def get():
