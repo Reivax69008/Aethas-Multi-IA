@@ -470,5 +470,69 @@ async def post(msg: str, session_id: str, session, writer: str = "", worker1: st
 @rt('/export_models')
 def get(session):
     if not session.get("authenticated"): return RedirectResponse('/login')
-    txt_content = f"=== CATALOGUE ({datetime.now().strftime('%d/%m/%Y %H:%M:%S')}) ===\n\n"
-    for m in MODELS_DATA: txt_content += f"Nom : {m.get('name')}\nID : {m.get('id')}\nTarif :
+    log_event("system", "SYSTEM", "Demande d'exportation du catalogue de modèles.")
+    now = datetime.now()
+    txt_content = f"=== CATALOGUE COMPLET DES MODÈLES (Généré le {now.strftime('%d/%m/%Y à %H:%M:%S')}) ===\n\n"
+    
+    google_banned = False # Sécurité pour ne pas figer si Google bloque l'IP
+    
+    for m in MODELS_DATA:
+        name = m.get('name', 'Inconnu')
+        m_id = m.get('id', 'Inconnu')
+        
+        usage = "Général / Texte"
+        arch_mod = str(m.get('architecture', {}).get('modality', '')).lower()
+        m_id_lower = m_id.lower()
+        
+        if "vision" in arch_mod or "vision" in m_id_lower or "vl" in m_id_lower or "image" in arch_mod:
+            usage = "Vision (Analyse d'images & Multimodal)"
+        elif "coder" in m_id_lower or "code" in m_id_lower or "math" in m_id_lower:
+            usage = "Codage & Mathématiques"
+        elif "video" in m_id_lower:
+            usage = "Vidéo"
+        elif "rp" in m_id_lower or "uncensored" in m_id_lower or "roleplay" in m_id_lower:
+            usage = "Non-censuré / Roleplay"
+            
+        is_free = m.get("is_free")
+        if is_free is None:
+            pricing = m.get('pricing', {})
+            p_prompt = float(pricing.get('prompt', -1))
+            p_comp = float(pricing.get('completion', -1))
+            cout = "Gratuit" if p_prompt == 0.0 and p_comp == 0.0 else f"Payant (In: {p_prompt}, Out: {p_comp})"
+        else:
+            cout = "Gratuit" if is_free else "Payant"
+            
+        desc_courte = str(m.get('description', '')).replace('\n', ' ')[:150]
+        desc_fr = desc_courte
+        
+        if "openrouter" in m_id and desc_courte:
+            if not google_banned:
+                try:
+                    url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=fr&dt=t&q=" + requests.utils.quote(desc_courte)
+                    trans_res = requests.get(url, timeout=1.5)
+                    if trans_res.status_code == 200:
+                        desc_fr = "".join([x[0] for x in trans_res.json()[0]])
+                    else:
+                        google_banned = True
+                        desc_fr += " [Traduction interrompue: Sécurité anti-spam]"
+                except: 
+                    google_banned = True
+                    desc_fr += " [Traduction interrompue: Délai d'attente]"
+            else:
+                desc_fr = desc_courte
+                
+        if not desc_fr: desc_fr = "Aucune description fournie."
+        
+        # SÉCURITÉ DOCKER : Le texte est découpé proprement pour éviter la coupure (SyntaxError)
+        txt_content += (
+            f"Nom : {name}\n"
+            f"ID : {m_id}\n"
+            f"Tarif : {cout}\n"
+            f"Spécialité : {usage}\n"
+            f"Description : {desc_fr}\n"
+            f"{'-'*60}\n"
+        )
+
+    # Forcer le téléchargement du fichier TXT
+    filename = f"modeles_ia_{datetime.now().strftime('%Y%m%d_%H%M')}.txt"
+    return Response(txt_content, media_type="text/plain", headers={"Content-Disposition": f"attachment; filename={filename}"})
