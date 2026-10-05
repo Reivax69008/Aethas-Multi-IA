@@ -136,6 +136,7 @@ def get(session):
     except Exception as e:
         return Span("⚪ Statut réseau inconnu", style="color:#94a3b8;")
 
+# Création des dossiers qui seront mappés sur le RAID
 os.makedirs("sessions", exist_ok=True)
 os.makedirs("logs", exist_ok=True)
 APP_LAUNCH_TIME = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -147,8 +148,8 @@ def log_event(session_id, category, action):
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"[{timestamp}] [Session:{sid_short}] [{category}] {action}\n")
 
-# --- CATALOGUE MANAGER ---
-CATALOG_FILE = "catalog.json"
+# --- CATALOGUE MANAGER (Sécurisé sur le RAID) ---
+CATALOG_FILE = "sessions/catalog.json"
 MODELS_DATA = []
 
 def load_catalog():
@@ -158,9 +159,9 @@ def load_catalog():
             try: MODELS_DATA = json.load(f)
             except: MODELS_DATA = []
     if not MODELS_DATA:
-        # Fallback de sécurité si aucun catalogue n'a été importé
+        # Fallback de sécurité mis à jour
         MODELS_DATA = [
-            {"id": "groq|llama3-8b-8192", "name": "Groq - Llama 3 (8B)", "is_free": True, "provider": "Général / Texte", "description": "Modèle par défaut."},
+            {"id": "groq|llama-3.1-8b-instant", "name": "Groq - Llama 3.1 (8B)", "is_free": True, "provider": "Général / Texte", "description": "Modèle par défaut."},
             {"id": "gemini|gemini-1.5-flash", "name": "Google - Gemini 1.5 Flash", "is_free": True, "provider": "Vision", "description": "Modèle par défaut."}
         ]
 load_catalog()
@@ -179,8 +180,9 @@ def get_budget():
         return f"{data.get('total_credits', 0) - data.get('total_usage', 0):.4f} $"
     except: return "Erreur réseau"
 
-# --- PERSISTENCE HISTORIQUE ---
-HISTORY_FILE = "history.json"
+# --- PERSISTENCE HISTORIQUE (Sécurisé sur le RAID) ---
+HISTORY_FILE = "sessions/history.json"
+
 def load_index():
     if not os.path.exists(HISTORY_FILE): return {}
     with open(HISTORY_FILE, "r", encoding="utf-8") as f:
@@ -287,7 +289,7 @@ def ask_llm(session_id, full_id, msg):
         if provider == "openrouter":
             res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers={"Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"}, json={"model": actual_model, "messages": [{"role": "user", "content": msg}]})
             if res.status_code == 200: return res.json()["choices"][0]["message"]["content"]
-            return f"⚠️️ Erreur API ({provider}) : {res.text}"
+            return f"⚠️ Erreur API ({provider}) : {res.text}"
         elif provider == "groq":
             res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers={"Authorization": f"Bearer {os.getenv('GROQ_API_KEY')}"}, json={"model": actual_model, "messages": [{"role": "user", "content": msg}]})
             if res.status_code == 200: return res.json()["choices"][0]["message"]["content"]
@@ -297,7 +299,7 @@ def ask_llm(session_id, full_id, msg):
             if res.status_code == 200: return res.json()["candidates"][0]["content"]["parts"][0]["text"]
             return f"⚠️ Erreur API ({provider}) : {res.text}"
         return "⚠️ Fournisseur API non implémenté ou ID invalide."
-    except Exception as e: return f"⚠️ Erreur de connexion : {str(e)}"
+    except Exception as e: return f"⚠️️ Erreur de connexion : {str(e)}"
 
 async def async_ask_llm(session_id, full_id, msg):
     return await asyncio.to_thread(ask_llm, session_id, full_id, msg)
@@ -624,5 +626,4 @@ def post_delete(sid: str, session):
 
 if __name__ == '__main__':
     import uvicorn
-    # Démarre le serveur Uvicorn en mode production, accroché à Docker de manière stable
     uvicorn.run(app, host="0.0.0.0", port=5001)
