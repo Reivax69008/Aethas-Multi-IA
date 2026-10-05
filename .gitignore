@@ -1,0 +1,38 @@
+__pycache__/
+venv/
+.env
+.sesskey
+aethas_history.json
+Echange GEMINY.txt
+.vscode/
+aethas_logs.txt
+Important/
+ARCHIVAGE ECHANGE GEMINY.txt
+test financier/
+SAVE/
+Fichiers de configuration sensibles
+.env
+*.env
+.env.local
+Environnements virtuels Python
+venv/
+.venv/
+env/
+ENV/
+Fichiers compilés Python
+pycache/
+*.py[cod]
+*$py.class
+Fichiers de logs
+*.log
+Dossiers d'IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+Historique local de l'orchestrateur (si vous sauvegardez les conversations en JSON)
+historique_*.json
+sessions/
+Projet IA.pdf
+Multi IA Personnel & familliale.pdf
+WF ATTACHEMENT STIC.pdf
