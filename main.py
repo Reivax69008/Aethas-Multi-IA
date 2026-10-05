@@ -259,7 +259,6 @@ def parse_txt_catalog(content: str):
     for line in lines:
         line_trim = line.strip()
         
-        # Extraction de la date comme dans la macro
         if "Généré le" in line_trim:
             match = re.search(r"Généré le (\d{2}/\d{2}/\d{4}) à (\d{2}:\d{2}:\d{2})", line_trim)
             if match:
@@ -288,7 +287,7 @@ def ask_llm(session_id, full_id, msg):
         if provider == "openrouter":
             res = requests.post("https://openrouter.ai/api/v1/chat/completions", headers={"Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"}, json={"model": actual_model, "messages": [{"role": "user", "content": msg}]})
             if res.status_code == 200: return res.json()["choices"][0]["message"]["content"]
-            return f"⚠️ Erreur API ({provider}) : {res.text}"
+            return f"⚠️️ Erreur API ({provider}) : {res.text}"
         elif provider == "groq":
             res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers={"Authorization": f"Bearer {os.getenv('GROQ_API_KEY')}"}, json={"model": actual_model, "messages": [{"role": "user", "content": msg}]})
             if res.status_code == 200: return res.json()["choices"][0]["message"]["content"]
@@ -410,7 +409,6 @@ async def post(msg: str, session_id: str, session, writer: str = "", worker1: st
     if not session.get("authenticated"): return RedirectResponse('/login')
     t_start = time.time()
     
-    # 1. Préparation
     files_context, noms_fichiers = "", []
     if fichiers:
         for f in fichiers:
@@ -422,7 +420,6 @@ async def post(msg: str, session_id: str, session, writer: str = "", worker1: st
     base_prompt = f"Fichiers fournis :\n{files_context}\n\nConsigne de l'utilisateur : {msg}" if files_context else msg
     workers = [w for w in [worker1, worker2, worker3, worker4, worker5] if w]
     
-    # 2. Phase Rédacteur (Optionnel)
     t_w0 = time.time()
     if writer:
         SESSION_PROGRESS[session_id] = "🧠 Étape 1 : Le Rédacteur prépare l'invite..."
@@ -431,13 +428,11 @@ async def post(msg: str, session_id: str, session, writer: str = "", worker1: st
         prompt_to_work = base_prompt
     t_w1 = time.time()
 
-    # 3. Phase Travailleurs (Parallèle)
     SESSION_PROGRESS[session_id] = f"⚡ Étape 2 : Travail en cours ({len(workers)} IA en parallèle)..."
     tasks = [async_ask_llm(session_id, w, prompt_to_work) for w in workers]
     results = await asyncio.gather(*tasks)
     t_w2 = time.time()
 
-    # 4. Phase Concaténeur
     if synthesizer and len(workers) > 0:
         SESSION_PROGRESS[session_id] = "🏗️ Étape 3 : Synthèse et assemblage final..."
         synth_input = "Tu es l'Architecte Final. Voici la même tâche effectuée par plusieurs intelligences artificielles :\n\n"
@@ -449,7 +444,6 @@ async def post(msg: str, session_id: str, session, writer: str = "", worker1: st
     t_w3 = time.time()
     SESSION_PROGRESS[session_id] = "✅ Pipeline Terminé"
 
-    # Rapport Chrono
     rapport = (
         f"\n\n---\n⏱️ **Rapport de Performance (Pipeline Distant)**\n"
         f"- **Rédacteur** : {t_w1 - t_w0:.2f} s\n"
@@ -474,7 +468,7 @@ def get(session):
     now = datetime.now()
     txt_content = f"=== CATALOGUE COMPLET DES MODÈLES (Généré le {now.strftime('%d/%m/%Y à %H:%M:%S')}) ===\n\n"
     
-    google_banned = False # Sécurité pour ne pas figer si Google bloque l'IP
+    google_banned = False
     
     for m in MODELS_DATA:
         name = m.get('name', 'Inconnu')
@@ -523,7 +517,6 @@ def get(session):
                 
         if not desc_fr: desc_fr = "Aucune description fournie."
         
-        # SÉCURITÉ DOCKER : Le texte est découpé proprement pour éviter la coupure (SyntaxError)
         txt_content += (
             f"Nom : {name}\n"
             f"ID : {m_id}\n"
@@ -533,9 +526,101 @@ def get(session):
             f"{'-'*60}\n"
         )
 
-    # Forcer le téléchargement du fichier TXT
     filename = f"modeles_ia_{datetime.now().strftime('%Y%m%d_%H%M')}.txt"
     return Response(txt_content, media_type="text/plain", headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+@rt('/import_catalog')
+async def post(catalog_file: UploadFile, session):
+    if not session.get("authenticated"): return RedirectResponse('/login')
+    filename = catalog_file.filename.lower()
+    new_models = []
+    ext_date, ext_time = "Inconnue", ""
+    
+    if filename.endswith(".txt"):
+        content = (await catalog_file.read()).decode('utf-8').replace('\r\n', '\n')
+        new_models, ext_date, ext_time = parse_txt_catalog(content)
+        
+    elif filename.endswith((".xlsx", ".xlsm")):
+        try:
+            import openpyxl
+            from io import BytesIO
+            content = await catalog_file.read()
+            wb = openpyxl.load_workbook(BytesIO(content), data_only=True)
+            ws = wb.active
+            
+            val_b2 = ws["B2"].value
+            val_c2 = ws["C2"].value
+            
+            if val_b2 and hasattr(val_b2, 'strftime'): ext_date = val_b2.strftime('%d/%m/%Y')
+            else: ext_date = str(val_b2) if val_b2 else "Inconnue"
+            
+            if val_c2 and hasattr(val_c2, 'strftime'): ext_time = val_c2.strftime('%H:%M:%S')
+            else: ext_time = str(val_c2) if val_c2 else ""
+            
+            for row in ws.iter_rows(min_row=5, values_only=True):
+                if row[0] and row[1]:
+                    new_models.append({
+                        'name': str(row[0]).strip(),
+                        'id': str(row[1]).strip(),
+                        'is_free': ("Gratuit" in str(row[2])) if row[2] else False,
+                        'provider': str(row[3]).strip() if row[3] else "Général",
+                        'description': str(row[4]).strip() if row[4] else ""
+                    })
+        except ImportError:
+            return Div("❌ Erreur : 'openpyxl' n'est pas installé sur le serveur. Veuillez uploader le fichier .txt.", style="color:red;")
+        except Exception as e:
+            return Div(f"❌ Erreur Excel : {str(e)}", style="color:red;")
+    else:
+        return Div("❌ Format invalide (.txt ou .xlsm attendu)", style="color:red;")
+        
+    if new_models:
+        save_catalog(new_models)
+        date_str = f"Extrait le {ext_date} à {ext_time}." if ext_date != "Inconnue" else ""
+        return Div(f"✅ Catalogue mis à jour ({len(new_models)} modèles). {date_str}", Script("setTimeout(()=>window.location.reload(), 2000);"), style="color:#10b981;")
+    else:
+        return Div("❌ Aucun modèle valide trouvé.", style="color:red;")
+
+# --- HISTORY SYSTEM ---
+@rt('/session/new')
+def get(session):
+    if not session.get("authenticated"): return RedirectResponse('/login')
+    sid = create_new_session()
+    return Div(), Input(type="hidden", name="session_id", value=sid, id="current-session-id", hx_swap_oob="true"), render_history_list()
+
+@rt('/session/load/{sid}')
+def get(sid: str, session):
+    if not session.get("authenticated"): return RedirectResponse('/login')
+    messages = load_session_data(sid)
+    bubbles = [Div(P("Vous", cls="msg-user"), Div(NotStr(f"{msg['user']}{msg.get('info', '')}"), cls="bubble-user"), P("AETHAS38", cls="msg-ia"), Div(msg['ia'], cls="bubble-ia")) for msg in messages]
+    return tuple(bubbles) + (Input(type="hidden", name="session_id", value=sid, id="current-session-id", hx_swap_oob="true"),)
+
+@rt('/history/pin/{sid}')
+def post_pin(sid: str, session):
+    if not session.get("authenticated"): return RedirectResponse('/login')
+    idx = load_index()
+    if sid in idx:
+        idx[sid]['pinned'] = not idx[sid].get('pinned', False)
+        save_index(idx)
+    return render_history_list()
+
+@rt('/history/rename/{sid}')
+def post_rename(sid: str, title: str, session):
+    if not session.get("authenticated"): return RedirectResponse('/login')
+    idx = load_index()
+    if sid in idx:
+        idx[sid]['title'] = title
+        save_index(idx)
+    return render_history_list()
+
+@rt('/history/delete/{sid}')
+def post_delete(sid: str, session):
+    if not session.get("authenticated"): return RedirectResponse('/login')
+    idx = load_index()
+    if sid in idx:
+        del idx[sid]
+        save_index(idx)
+        if os.path.exists(f"sessions/{sid}.json"): os.remove(f"sessions/{sid}.json")
+    return render_history_list()
 
 if __name__ == '__main__':
     import uvicorn
