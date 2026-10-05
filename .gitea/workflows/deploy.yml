@@ -1,0 +1,23 @@
+name: Deploiement Automatique Aethas38
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Synchronisation sur le serveur et redémarrage Dockge
+        run: |
+          # Se place dans le dossier de votre stack sur le serveur
+          cd /opt/stacks/codage
+          
+          # Force la mise à jour des fichiers depuis Gitea
+          git pull origin main
+          
+          # Relance le conteneur pour appliquer immédiatement le nouveau code
+          docker compose restart aethas38-core

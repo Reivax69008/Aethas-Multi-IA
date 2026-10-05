@@ -132,7 +132,7 @@ def get(session):
 @rt('/check_updates')
 def get():
     try:
-        res = requests.get("https://api.github.com/repos/Reivax69008/Aethas-Multi-IA/commits/main", timeout=3).json()
+        res = requests.get("https://gitea.aethas38.duckdns.org/xavier/MULTI-IA-CODAGE/git/commits/main", timeout=3).json()
         remote_commit = res.get("sha", "")
         local_commit = ""
         if os.path.exists(".git/refs/heads/main"):
