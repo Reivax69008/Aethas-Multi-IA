@@ -1,0 +1,21 @@
+{
+    "e1464d87-5d53-4469-b21d-5d0dbeb4d515": {
+        "title": "Discussion du 05/10 09:53",
+        "pinned": false,
+        "messages": [
+            {
+                "user": "Génére un fichier kubejs pour améliorer les botany pots et leur vitesse de production.",
+                "ia": "Erreur Pipeline Minecraft: 'response'"
+            },
+            {
+                "user": "Génére un fichier kubejs pour améliorer les botany pots et leur vitesse de production.",
+                "ia": "Voici la traduction en français, tout en conservant les blocs de code, les noms de variables et les commandes Minecraft inchangés :\n\n```bash\n#!/usr/bin/kubectl run --replicas=1 --expose-port=8080 --name=botany_pots_enhancer --image=registry.apps.example.com/botany_pots_enhancer --namespace=example --restart=always\n```\n\nCette ligne de commande utilise `kubectl`, un outil de ligne de commande pour gérer Kubernetes, pour déployer une application. Voici une explication des options utilisées :\n\n- `run` : crée et démarre un nouveau pod ou un déploiement.\n- `--replicas=1` : spécifie que le déploiement doit contenir 1 réplica.\n- `--expose-port=8080` : expose le port 8080 de l'application pour qu'il soit accessible.\n- `--name=botany_pots_enhancer` : nomme le déploiement \"botany_pots_enhancer\".\n- `--image=registry.apps.example.com/botany_pots_enhancer` : spécifie l'image Docker à utiliser pour le déploiement.\n- `--namespace=example` : déploie le déploiement dans le namespace \"example\".\n- `--restart=always` : assure que le pod est redémarré en cas de panne."
+            }
+        ]
+    },
+    "9dc0f3cf-5f41-452c-bfba-12eb43da4cb2": {
+        "title": "Discussion du 05/10 10:06",
+        "pinned": false,
+        "messages": []
+    }
+}
