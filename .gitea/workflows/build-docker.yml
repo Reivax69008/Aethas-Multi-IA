@@ -8,6 +8,10 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      
     steps:
       - name: Checkout du code
         uses: actions/checkout@v3
@@ -16,9 +20,8 @@ jobs:
         uses: docker/login-action@v2
         with:
           registry: gitea.aethas38.duckdns.org
-          username: ${{ github.actor }}
-          # Gitea génère ce token automatiquement lors de l'exécution
-          password: ${{ secrets.GITEA_TOKEN }} 
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_TOKEN }} 
 
       - name: Build et Push de l'image
         uses: docker/build-push-action@v4
