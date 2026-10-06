@@ -18,7 +18,7 @@ Le développement suit un versioning strict (format `vX.Y.Z`) synchronisé avec 
 
 ## 🚀 ROADMAP (Ordre d'exécution strict)
 
-- [ ] **Étape 1 :** Création de la page d'administration (changement des clés, ajout de fournisseurs, configuration serveur mail, etc.).
+- [X] **Étape 1 :** Création de la page d'administration (changement des clés, ajout de fournisseurs, configuration serveur mail, etc.).
 - [ ] **Étape 2 :** Ajout des fournisseurs pour le traitement d'images, de sons (génération de voix, musique, calage sur vidéo) et de vidéos.
 - [ ] **Étape 3 :** Possibilité de télécharger les prompts en PDF, TXT, MD et JSON.
 - [ ] **Étape 4 :** Possibilité de télécharger les réponses en PDF, TXT, MD et JSON.
