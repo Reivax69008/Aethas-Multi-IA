@@ -1,23 +1,11 @@
 services:
   aethas38-core:
-    build:
-      context: .
-      no_cache: true
-    container_name: aethas38-multi-ia
-    restart: unless-stopped
+    build: ./backend
+    container_name: aethas38-core
     ports:
       - "5002:5001"
-    environment:
-      - TZ=Europe/Paris
-    env_file:
-      - .env
     volumes:
-      - ./:/app
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks:
-      - dockge-network
-
-networks:
-  dockge-network:
-    external: true
+      - ./backend:/app
+      - ./frontend:/frontend
+      - ./sessions:/sessions
+    restart: unless-stopped

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AETHAS38 - Administration</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; }
+        .card { background-color: #1e293b; border: 1px solid #333; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+        .input-box { width: 100%; padding: 10px; border-radius: 5px; background: #2a2a35; border: 1px solid #444; color: white; margin-top: 5px; outline: none; }
+        .input-box:focus { border-color: #00e5ff; }
+        .btn-primary { background-color: #00e5ff; color: #0f172a; font-weight: bold; padding: 10px 20px; border-radius: 5px; cursor: pointer; transition: 0.2s; }
+        .btn-primary:hover { background-color: #38bdf8; }
+        .btn-danger { background-color: #f43f5e; color: white; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 12px; }
+    </style>
+</head>
+<body class="p-8">
+    <div id="app" class="max-w-4xl mx-auto">
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-[#00e5ff]">⚙️ Administration AETHAS38</h1>
+            <span class="text-xs text-gray-400">v2.0.0</span>
+        </div>
+
+        <div v-if="notification" class="mb-4 p-4 rounded bg-emerald-900/50 border border-emerald-500 text-emerald-400">
+            {{ notification }}
+        </div>
+
+        <!-- Clés API -->
+        <div class="card">
+            <h2 class="text-xl font-bold text-purple-400 mb-4">🔑 Clés API Principales</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="text-xs font-bold text-gray-400">OpenRouter API Key</label>
+                    <input type="password" v-model="config.api_keys.openrouter" class="input-box" placeholder="sk-or-v1-...">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-gray-400">Groq API Key</label>
+                    <input type="password" v-model="config.api_keys.groq" class="input-box" placeholder="gsk_...">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-gray-400">Gemini API Key</label>
+                    <input type="password" v-model="config.api_keys.gemini" class="input-box" placeholder="AIzaSy...">
+                </div>
+            </div>
+        </div>
+
+        <!-- Serveur SMTP -->
+        <div class="card">
+            <h2 class="text-xl font-bold text-blue-400 mb-4">📧 Configuration Serveur Mail (SMTP)</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="text-xs font-bold text-gray-400">Hôte (Serveur)</label>
+                    <input type="text" v-model="config.smtp.host" class="input-box" placeholder="smtp.mail.com">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-gray-400">Port</label>
+                    <input type="number" v-model="config.smtp.port" class="input-box" placeholder="587">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-gray-400">Utilisateur / Email</label>
+                    <input type="text" v-model="config.smtp.user" class="input-box" placeholder="admin@aethas38.com">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-gray-400">Mot de passe</label>
+                    <input type="password" v-model="config.smtp.password" class="input-box" placeholder="••••••••">
+                </div>
+            </div>
+        </div>
+
+        <!-- Fournisseurs Personnalisés -->
+        <div class="card">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-amber-400">🔌 Fournisseurs Personnalisés</h2>
+                <button @click="addProvider" class="btn-primary text-sm py-1 px-3">+ Ajouter</button>
+            </div>
+            <div v-for="(provider, index) in config.custom_providers" :key="index" class="p-4 bg-slate-800 rounded border border-slate-700 mb-4">
+                <div class="flex justify-between mb-2">
+                    <h3 class="font-bold text-sm">Fournisseur #{{ index + 1 }}</h3>
+                    <button @click="removeProvider(index)" class="btn-danger">Supprimer</button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="text-xs text-gray-400">Nom</label>
+                        <input type="text" v-model="provider.name" class="input-box" placeholder="Ex: Ollama Local">
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-400">URL de Base</label>
+                        <input type="text" v-model="provider.base_url" class="input-box" placeholder="http://192.168.1.X:11434/v1">
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-400">Clé API (Optionnel)</label>
+                        <input type="password" v-model="provider.api_key" class="input-box" placeholder="...">
+                    </div>
+                </div>
+            </div>
+            <p v-if="config.custom_providers.length === 0" class="text-sm text-gray-500 italic">Aucun fournisseur supplémentaire configuré.</p>
+        </div>
+
+        <!-- Sauvegarde -->
+        <div class="flex justify-end mt-6">
+            <button @click="saveConfig" class="btn-primary text-lg">💾 Sauvegarder la Configuration</button>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted } = Vue;
+        createApp({
+            setup() {
+                const config = ref({ api_keys: {}, smtp: {}, custom_providers: [] });
+                const notification = ref("");
+
+                const loadConfig = async () => {
+                    const res = await fetch('/api/config');
+                    config.value = await res.json();
+                };
+
+                const saveConfig = async () => {
+                    const res = await fetch('/api/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(config.value)
+                    });
+                    const data = await res.json();
+                    notification.value = data.message;
+                    setTimeout(() => notification.value = "", 3000);
+                };
+
+                const addProvider = () => {
+                    config.value.custom_providers.push({ name: "", base_url: "", api_key: "" });
+                };
+
+                const removeProvider = (index) => {
+                    config.value.custom_providers.splice(index, 1);
+                };
+
+                onMounted(loadConfig);
+                return { config, notification, saveConfig, addProvider, removeProvider };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

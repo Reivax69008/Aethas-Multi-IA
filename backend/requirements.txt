@@ -5,3 +5,7 @@ pyotp
 qrcode
 psutil
 openpyxl
+fastapi
+uvicorn
+pydantic
+python-dotenv
