@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AETHAS38 - Installation</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        aethas: {
+                            dark: '#0f172a',
+                            panel: '#1e293b',
+                            cyan: '#06b6d4',
+                            purple: '#a855f7'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Vue.js 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- QRCode.js pour générer le flashcode 2FA -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: 'Inter', sans-serif; }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(6, 182, 212, 0.2);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+        }
+        .neon-text { background: linear-gradient(to right, #06b6d4, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4 sm:p-8">
+
+<div id="app" class="w-full max-w-md transition-all duration-500">
+    
+    <!-- En-tête / Logo -->
+    <div class="text-center mb-8">
+        <!-- Remplacer le src par le lien direct de votre image hébergée sur Google Drive -->
+        <img src="https://via.placeholder.com/150x150/0f172a/06b6d4?text=Logo+A38" alt="AETHAS38 Logo" class="w-24 h-24 mx-auto mb-4 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)]">
+        <h1 class="text-3xl font-bold tracking-wider neon-text">AETHAS38</h1>
+        <p class="text-gray-400 text-sm mt-2">Configuration de l'Orchestrateur Multi-IA</p>
+    </div>
+
+    <!-- Panneau principal -->
+    <div class="glass-panel rounded-2xl p-6 sm:p-8">
+        
+        <!-- Étape 1 : Formulaire -->
+        <form v-if="!setupComplete" @submit.prevent="submitSetup" class="space-y-5">
+            <div v-if="errorMessage" class="p-3 bg-red-900/50 border border-red-500 rounded text-red-200 text-sm text-center">
+                {{ errorMessage }}
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Email Administrateur</label>
+                <input v-model="form.email" type="email" required class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2.5 focus:outline-none focus:border-aethas-cyan focus:ring-1 focus:ring-aethas-cyan transition-colors" placeholder="admin@domaine.com">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Nom d'utilisateur</label>
+                <input v-model="form.username" type="text" required class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2.5 focus:outline-none focus:border-aethas-cyan focus:ring-1 focus:ring-aethas-cyan transition-colors" placeholder="Admin">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Mot de passe</label>
+                <input v-model="form.password" type="password" required class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2.5 focus:outline-none focus:border-aethas-cyan focus:ring-1 focus:ring-aethas-cyan transition-colors" placeholder="••••••••">
+            </div>
+
+            <button type="submit" :disabled="isSubmitting" class="w-full bg-gradient-to-r from-aethas-cyan to-aethas-purple hover:opacity-90 text-white font-semibold py-3 px-4 rounded-lg transition-all shadow-[0_0_10px_rgba(168,85,247,0.4)] flex justify-center items-center mt-6">
+                <span v-if="isSubmitting">Création en cours...</span>
+                <span v-else>Initialiser le système</span>
+            </button>
+        </form>
+
+        <!-- Étape 2 : Validation 2FA -->
+        <div v-else class="text-center space-y-6 animate-fade-in">
+            <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-900/50 text-green-400 mb-2">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+            </div>
+            <h2 class="text-xl font-bold text-white">Compte créé avec succès</h2>
+            
+            <div class="bg-white p-4 rounded-xl inline-block mx-auto">
+                <canvas id="qrcode"></canvas>
+            </div>
+            
+            <div class="text-sm text-gray-300 space-y-2">
+                <p>Scannez ce QR Code avec votre application 2FA (Keepassium, Google Authenticator...).</p>
+                <p class="text-xs text-gray-500 break-all bg-aethas-dark p-2 rounded">Secret manuel : {{ totpSecret }}</p>
+            </div>
+
+            <a href="/login" class="block w-full border border-aethas-cyan text-aethas-cyan hover:bg-aethas-cyan hover:text-aethas-dark font-semibold py-3 px-4 rounded-lg transition-colors mt-6">
+                Aller à la page de connexion
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, reactive, nextTick } = Vue;
+
+    createApp({
+        setup() {
+            const form = reactive({ email: '', username: '', password: '' });
+            const isSubmitting = ref(false);
+            const setupComplete = ref(false);
+            const errorMessage = ref('');
+            const totpSecret = ref('');
+
+            const submitSetup = async () => {
+                isSubmitting.value = true;
+                errorMessage.value = '';
+
+                try {
+                    const response = await fetch('/api/setup', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(form)
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(data.detail || "Erreur lors de l'installation");
+                    }
+
+                    totpSecret.value = data.totp_secret;
+                    setupComplete.value = true;
+
+                    // Génération du QR code sur le canvas après le rendu Vue
+                    nextTick(() => {
+                        const canvas = document.getElementById('qrcode');
+                        QRCode.toCanvas(canvas, data.totp_uri, {
+                            width: 200,
+                            margin: 1,
+                            color: { dark: "#0f172a", light: "#ffffff" }
+                        });
+                    });
+
+                } catch (error) {
+                    errorMessage.value = error.message;
+                } finally {
+                    isSubmitting.value = false;
+                }
+            };
+
+            return { form, isSubmitting, setupComplete, errorMessage, totpSecret, submitSetup };
+        }
+    }).mount('#app');
+</script>
+
+</body>
+</html>
