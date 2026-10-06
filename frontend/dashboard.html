@@ -4,28 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AETHAS38 - Dashboard</title>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
             theme: {
-                extend: {
-                    colors: {
-                        aethas: { dark: '#0f172a', panel: '#1e293b', cyan: '#06b6d4', purple: '#a855f7' }
-                    }
-                }
+                extend: { colors: { aethas: { dark: '#0f172a', panel: '#1e293b', cyan: '#06b6d4', purple: '#a855f7' } } }
             }
         }
     </script>
     <!-- Vue.js 3 -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <!-- Icônes Lucide (légères et modernes) -->
+    <!-- Icônes Lucide -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         body { background-color: #0f172a; color: #f8fafc; font-family: 'Inter', sans-serif; }
-        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(6, 182, 212, 0.2); }
         .neon-text { background: linear-gradient(to right, #06b6d4, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        /* Masquer la scrollbar pour un look épuré */
+        /* Style de la scrollbar pour le champ de texte */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
@@ -33,104 +29,149 @@
 </head>
 <body class="h-screen flex overflow-hidden">
 
-<div id="app" class="flex w-full h-full">
-    
-    <!-- Barre latérale (Sidebar) - Projets & Historique -->
-    <aside class="w-72 bg-aethas-panel border-r border-gray-700 flex flex-col transition-all duration-300 hidden md:flex">
-        <!-- En-tête Sidebar -->
-        <div class="p-4 border-b border-gray-700 flex items-center gap-3">
-            <img src="https://via.placeholder.com/150x150/0f172a/06b6d4?text=Logo+A38" alt="Logo" class="w-10 h-10 rounded-full border border-aethas-cyan">
-            <span class="font-bold text-lg tracking-wider neon-text">AETHAS38</span>
-        </div>
+<div id="app" class="flex w-full h-full relative bg-aethas-dark">
+
+    <!-- Overlay assombrissant pour mobile si la sidebar est ouverte -->
+    <div v-if="isSidebarOpen" @click="toggleSidebar" class="md:hidden fixed inset-0 bg-black/60 z-40 transition-opacity"></div>
+
+    <!-- 1. BARRE LATÉRALE (Rétractable) -->
+    <!-- Conteneur qui gère l'espace (w-72 ou w-0) pour pousser le contenu principal sans l'écraser -->
+    <div :class="['transition-all duration-300 flex-shrink-0 relative z-50', isSidebarOpen ? 'w-72' : 'w-0']">
         
-        <!-- Bouton Nouveau Projet -->
-        <div class="p-4">
-            <button class="w-full bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 rounded-lg py-2.5 px-4 flex items-center gap-2 transition-colors">
-                <i data-lucide="plus" class="w-5 h-5 text-aethas-cyan"></i>
-                Nouveau Projet IA
-            </button>
-        </div>
-
-        <!-- Liste des projets (Catégories Épinglés / Récents à venir) -->
-        <div class="flex-1 overflow-y-auto p-4 space-y-6">
-            <div>
-                <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Épinglés</h3>
-                <ul class="space-y-1">
-                    <li class="p-2 hover:bg-gray-800 rounded cursor-pointer text-sm text-gray-300 truncate">Projet Assistant Code</li>
-                </ul>
-            </div>
-            <div>
-                <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Récents</h3>
-                <ul class="space-y-1">
-                    <li class="p-2 hover:bg-gray-800 rounded cursor-pointer text-sm text-gray-300 truncate">Traduction Document</li>
-                </ul>
-            </div>
-        </div>
-
-        <!-- Profil & Paramètres -->
-        <div class="p-4 border-t border-gray-700 flex justify-between items-center">
-            <div class="flex items-center gap-2">
-                <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-aethas-cyan to-aethas-purple flex items-center justify-center text-sm font-bold">
-                    {{ username.charAt(0).toUpperCase() }}
+        <!-- Contenu réel de la sidebar, taille fixe à 72 -->
+        <aside :class="['absolute top-0 left-0 h-full w-72 bg-aethas-panel border-r border-gray-700 flex flex-col transition-transform duration-300', isSidebarOpen ? 'translate-x-0' : '-translate-x-full']">
+            <!-- En-tête Sidebar avec Logo -->
+            <div class="p-4 border-b border-gray-700 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <!-- LOGO LATÉRAL : Remplacez l'URL par le lien direct de votre Google Drive -->
+                    <img src="https://drive.google.com/file/d/1RqkxQzLKzrS4m2vGedt1sQEPRDed8FnP/view?usp=drive_link" alt="Logo" class="w-10 h-10 rounded-full border border-aethas-cyan object-cover bg-gray-800 flex-shrink-0">
+                    <span class="font-bold text-lg tracking-wider neon-text">AETHAS38</span>
                 </div>
-                <span class="text-sm font-medium">{{ username }}</span>
+                <!-- Bouton fermer (surtout utile sur mobile) -->
+                <button @click="toggleSidebar" class="md:hidden text-gray-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
             </div>
-            <button class="text-gray-400 hover:text-white"><i data-lucide="settings" class="w-5 h-5"></i></button>
-        </div>
-    </aside>
+            
+            <div class="p-4">
+                <button class="w-full bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 rounded-lg py-2.5 px-4 flex items-center gap-2 transition-colors">
+                    <i data-lucide="plus" class="w-5 h-5 text-aethas-cyan"></i>
+                    Nouveau Projet IA
+                </button>
+            </div>
 
-    <!-- Zone Principale (Chat & Orchestration) -->
-    <main class="flex-1 flex flex-col bg-aethas-dark relative">
-        <!-- Header Mobile (visible uniquement sur petits écrans) -->
-        <header class="md:hidden flex items-center justify-between p-4 border-b border-gray-700 bg-aethas-panel">
-            <div class="flex items-center gap-2">
-                <img src="https://via.placeholder.com/150x150/0f172a/06b6d4?text=Logo+A38" alt="Logo" class="w-8 h-8 rounded-full border border-aethas-cyan">
-                <span class="font-bold text-lg neon-text">AETHAS38</span>
+            <div class="flex-1 overflow-y-auto p-4 space-y-6">
+                <div>
+                    <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Épinglés</h3>
+                    <ul class="space-y-1">
+                        <li class="p-2 hover:bg-gray-800 rounded cursor-pointer text-sm text-gray-300 truncate">Projet Assistant Code</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Récents</h3>
+                    <ul class="space-y-1">
+                        <li class="p-2 hover:bg-gray-800 rounded cursor-pointer text-sm text-gray-300 truncate">Traduction Document</li>
+                    </ul>
+                </div>
             </div>
-            <button class="text-gray-300"><i data-lucide="menu" class="w-6 h-6"></i></button>
+
+            <div class="p-4 border-t border-gray-700 flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-aethas-cyan to-aethas-purple flex items-center justify-center text-sm font-bold shadow-md">
+                        {{ username.charAt(0).toUpperCase() }}
+                    </div>
+                    <span class="text-sm font-medium">{{ username }}</span>
+                </div>
+                <button class="text-gray-400 hover:text-white transition-colors"><i data-lucide="settings" class="w-5 h-5"></i></button>
+            </div>
+        </aside>
+    </div>
+
+    <!-- ZONE PRINCIPALE -->
+    <main class="flex-1 flex flex-col min-w-0 z-10 transition-all duration-300">
+        
+        <!-- Header (Affichage du menu et du logo quand la barre est réduite) -->
+        <header class="flex items-center justify-between p-4 border-b border-gray-700 bg-aethas-panel h-[73px]">
+            <div class="flex items-center gap-3">
+                <!-- Bouton Menu (Burger) -->
+                <button @click="toggleSidebar" class="text-gray-400 hover:text-white transition-colors p-1.5 rounded hover:bg-gray-700" title="Basculer le menu">
+                    <i data-lucide="menu" class="w-6 h-6"></i>
+                </button>
+                
+                <!-- Logo du Header (Visible uniquement quand la sidebar est cachée) -->
+                <div v-show="!isSidebarOpen" class="flex items-center gap-2 transition-opacity duration-300">
+                    <!-- LOGO HEADER : Remplacez l'URL ici aussi -->
+                    <img src="https://drive.google.com/file/d/1RqkxQzLKzrS4m2vGedt1sQEPRDed8FnP/view?usp=drive_link" alt="Logo" class="w-8 h-8 rounded-full border border-aethas-cyan object-cover bg-gray-800 flex-shrink-0">
+                    <span class="font-bold text-lg neon-text">AETHAS38</span>
+                </div>
+            </div>
         </header>
 
-        <!-- Zone de conversation (vide pour l'instant) -->
+        <!-- Zone de conversation Centrale -->
         <div class="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-center">
-            <img src="https://via.placeholder.com/150x150/0f172a/06b6d4?text=Logo+A38" alt="AETHAS38 Logo" class="w-24 h-24 mb-6 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)]">
-            <h2 class="text-2xl font-bold text-gray-200 mb-2">Comment puis-je vous aider aujourd'hui ?</h2>
-            <p class="text-gray-500 text-sm">L'orchestrateur Multi-IA est prêt.</p>
+            <!-- LOGO CENTRAL : Et ici -->
+            <img src="https://drive.google.com/file/d/1RqkxQzLKzrS4m2vGedt1sQEPRDed8FnP/view?usp=drive_link" alt="AETHAS38 Logo" class="w-24 h-24 mb-6 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)] object-cover bg-gray-800 flex-shrink-0">
+            <h2 class="text-2xl font-bold text-gray-200 mb-2 text-center">Comment puis-je vous aider aujourd'hui ?</h2>
+            <p class="text-gray-500 text-sm text-center">L'orchestrateur Multi-IA est prêt.</p>
         </div>
 
-        <!-- Zone de saisie (Prompt) -->
-        <div class="p-4 md:p-6 max-w-4xl mx-auto w-full">
+        <!-- 2. CHAMP DE TEXTE (Auto-extensible avec ascenseur) -->
+        <div class="p-4 md:p-6 w-full max-w-4xl mx-auto">
             <div class="relative flex items-end bg-gray-800 border border-gray-600 rounded-2xl p-2 shadow-lg focus-within:border-aethas-cyan focus-within:ring-1 focus-within:ring-aethas-cyan transition-all">
-                <button class="p-3 text-gray-400 hover:text-aethas-cyan transition-colors" title="Joindre un fichier">
+                <button class="p-3 text-gray-400 hover:text-aethas-cyan transition-colors flex-shrink-0" title="Joindre un fichier">
                     <i data-lucide="paperclip" class="w-5 h-5"></i>
                 </button>
-                <textarea rows="1" class="w-full bg-transparent text-gray-200 p-3 max-h-32 focus:outline-none resize-none" placeholder="Posez votre question à l'Orchestrateur..."></textarea>
-                <button class="p-3 text-aethas-cyan hover:text-white transition-colors">
+                
+                <!-- Textarea connecté à Vue.js pour la hauteur dynamique -->
+                <textarea 
+                    v-model="prompt" 
+                    @input="autoResize"
+                    ref="promptTextarea"
+                    rows="1" 
+                    class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none leading-relaxed" 
+                    placeholder="Posez votre question à l'Orchestrateur..."></textarea>
+                
+                <button class="p-3 text-aethas-cyan hover:text-white transition-colors flex-shrink-0" title="Envoyer">
                     <i data-lucide="send" class="w-5 h-5"></i>
                 </button>
             </div>
             <p class="text-center text-xs text-gray-500 mt-3">AETHAS38 peut faire des erreurs. Vérifiez toujours les informations importantes.</p>
         </div>
     </main>
-
 </div>
 
 <script>
-    const { createApp, ref, onMounted } = Vue;
+    const { createApp, ref, onMounted, nextTick } = Vue;
 
     createApp({
         setup() {
-            // Nom d'utilisateur par défaut, sera mis à jour par l'API
             const username = ref("Admin");
+            const isSidebarOpen = ref(true); // La barre latérale est ouverte par défaut
+            const prompt = ref("");
+            const promptTextarea = ref(null);
 
-            onMounted(async () => {
-                // Initialisation des icônes Lucide
-                lucide.createIcons();
+            // Gère l'ouverture/fermeture de la barre latérale
+            const toggleSidebar = () => {
+                isSidebarOpen.value = !isSidebarOpen.value;
+            };
+
+            // Ajuste la hauteur de la zone de texte dynamiquement
+            const autoResize = () => {
+                const el = promptTextarea.value;
+                if (!el) return;
                 
-                // Ici, nous pourrons appeler une route API (ex: /api/me) 
-                // pour récupérer le profil utilisateur et ses projets.
+                // On réinitialise temporairement la hauteur pour recalculer la vraie taille du contenu
+                el.style.height = 'auto'; 
+                // On ajuste à la hauteur du texte. Le CSS "max-h-[200px]" bloquera l'agrandissement et fera apparaître l'ascenseur
+                el.style.height = el.scrollHeight + 'px'; 
+            };
+
+            onMounted(() => {
+                // Initialise les icônes à l'ouverture de la page
+                lucide.createIcons();
             });
 
-            return { username };
+            return { username, isSidebarOpen, toggleSidebar, prompt, autoResize, promptTextarea };
         }
     }).mount('#app');
 </script>
