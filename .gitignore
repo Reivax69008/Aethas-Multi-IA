@@ -1,0 +1,32 @@
+# Environnement et secrets (NE JAMAIS COMMIT)
+.env
+.sesskey
+
+# Données locales, sessions et logs (Mappés sur le RAID en production)
+/logs/
+/sessions/
+/postgres_data/
+*.json
+!app_config.json
+!package.json
+
+# Fichiers d'historique et logs des anciennes versions (au cas où)
+aethas_logs.txt*
+aethas_history.json
+aethas_balances.json
+catalogue_dynamique.json
+tarifs_openrouter.json
+
+# Environnement Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.venv/
+env/
+
+# IDE et OS
+.vscode/
+.DS_Store
+Thumbs.db
