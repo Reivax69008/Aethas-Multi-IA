@@ -1,16 +1,14 @@
-from passlib.context import CryptContext
+import bcrypt
 import pyotp
-
-# Configuration du hachage (bcrypt)
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Vérifie si le mot de passe en clair correspond au hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 def get_password_hash(password: str) -> str:
-    """Génère le hash d'un mot de passe."""
-    return pwd_context.hash(password)
+    """Génère le hash sécurisé d'un mot de passe."""
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 def generate_totp_secret() -> str:
     """Génère un secret aléatoire pour l'application 2FA (Authenticator, Keepassium)."""

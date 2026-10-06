@@ -8,5 +8,5 @@ qrcode
 psutil
 python-dotenv
 python-multipart
-passlib[bcrypt]
+bcrypt
 email-validator
