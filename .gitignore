@@ -51,3 +51,4 @@ history.json
 *.sesskey
 __pycache__/
 *.pyc
+app_config.json
