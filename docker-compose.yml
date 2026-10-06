@@ -13,7 +13,7 @@ services:
       - dockge-network
 
   aethas38-core:
-    build: .
+    image: gitea.aethas38.duckdns.org/xavier/multi-ia-codage:latest
     container_name: aethas38-multi-ia
     restart: unless-stopped
     ports:
