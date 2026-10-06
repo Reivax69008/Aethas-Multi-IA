@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Response
 from fastapi.responses import RedirectResponse, FileResponse
 from sqlalchemy.orm import Session
 import os
@@ -6,7 +6,7 @@ import os
 # Importation de nos modules locaux
 from .database import engine, Base, get_db
 from .models import User
-from .auth import get_password_hash, generate_totp_secret, get_totp_uri, verify_password, verify_totp
+from .auth import get_password_hash, generate_totp_secret, get_totp_uri, verify_password, verify_totp, create_access_token, verify_token
 from .schemas import AdminCreate, LoginRequest
 
 # Création des tables dans la base de données
@@ -85,8 +85,8 @@ def create_admin(admin_data: AdminCreate, db: Session = Depends(get_db)):
     }
 
 @app.post("/api/login")
-def login(login_data: LoginRequest, db: Session = Depends(get_db)):
-    """Vérifie les identifiants et le code 2FA."""
+def login(login_data: LoginRequest, response: Response, db: Session = Depends(get_db)):
+    """Vérifie les identifiants et crée une session de 60 minutes."""
     user = db.query(User).filter(User.username == login_data.username).first()
     
     # Vérification de l'utilisateur et du mot de passe
@@ -103,8 +103,31 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
             detail="Code 2FA invalide."
         )
     
+    # Création du jeton de session
+    access_token = create_access_token(data={"sub": user.username})
+    
+    # Injection du jeton dans un cookie sécurisé (invisible pour le JavaScript côté client)
+    response.set_cookie(
+        key="session_token",
+        value=access_token,
+        httponly=True,
+        max_age=3600, # 3600 secondes = 60 minutes
+        samesite="lax"
+    )
+    
     return {"message": "Connexion réussie"}
 
 @app.get("/dashboard")
-def dashboard():
-    return {"message": "Bienvenue sur le tableau de bord de l'Orchestrateur AETHAS38 ! (Interface à venir)"}
+def dashboard(request: Request):
+    """Route protégée : nécessite un cookie de session valide."""
+    token = request.cookies.get("session_token")
+    if not token:
+        return RedirectResponse(url="/login")
+        
+    payload = verify_token(token)
+    if not payload:
+        # Si le token a expiré (60 min) ou est invalide, retour au login
+        return RedirectResponse(url="/login")
+        
+    username = payload.get("sub")
+    return {"message": f"Bienvenue sur le tableau de bord sécurisé, {username} !"}
