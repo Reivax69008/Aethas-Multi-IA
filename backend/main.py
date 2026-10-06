@@ -119,15 +119,17 @@ def login(login_data: LoginRequest, response: Response, db: Session = Depends(ge
 
 @app.get("/dashboard")
 def dashboard(request: Request):
-    """Route protégée : nécessite un cookie de session valide."""
+    """Route protégée : affiche l'interface principale si le cookie est valide."""
     token = request.cookies.get("session_token")
     if not token:
         return RedirectResponse(url="/login")
         
     payload = verify_token(token)
     if not payload:
-        # Si le token a expiré (60 min) ou est invalide, retour au login
         return RedirectResponse(url="/login")
         
-    username = payload.get("sub")
-    return {"message": f"Bienvenue sur le tableau de bord sécurisé, {username} !"}
+    frontend_path = os.path.join(os.getcwd(), "frontend", "dashboard.html")
+    if not os.path.exists(frontend_path):
+        raise HTTPException(status_code=404, detail="Interface du tableau de bord introuvable.")
+        
+    return FileResponse(frontend_path)
