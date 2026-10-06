@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, FileResponse
 from sqlalchemy.orm import Session
+import os
 
 # Importation de nos modules locaux
 from .database import engine, Base, get_db
@@ -26,15 +27,23 @@ def read_root(db: Session = Depends(get_db)):
 
 @app.get("/setup")
 def setup_page(db: Session = Depends(get_db)):
+    """Affiche l'interface d'installation Vue.js."""
     if not is_setup_required(db):
         return RedirectResponse(url="/login")
-    return {"message": "Assistant d'installation AETHAS38. Veuillez créer le compte Administrateur."}
+    
+    # Chemin vers le fichier HTML depuis la racine de l'application Docker (/app)
+    frontend_path = os.path.join(os.getcwd(), "frontend", "index.html")
+    if not os.path.exists(frontend_path):
+        raise HTTPException(status_code=404, detail="Interface introuvable.")
+        
+    return FileResponse(frontend_path)
 
 @app.get("/login")
 def login_page(db: Session = Depends(get_db)):
+    """Affiche la page de connexion sécurisée."""
     if is_setup_required(db):
         return RedirectResponse(url="/setup")
-    return {"message": "Page de connexion."}
+    return {"message": "Page de connexion (Interface Vue.js à venir)."}
 
 @app.post("/api/setup")
 def create_admin(admin_data: AdminCreate, db: Session = Depends(get_db)):
