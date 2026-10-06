@@ -1,3 +1,4 @@
+# auth.py
 import re
 import pyotp
 import hashlib
@@ -35,7 +36,6 @@ def send_invite_email(to_email, setup_link):
     smtp_pass = os.getenv("SMTP_PASS")
     
     if not all([smtp_server, smtp_user, smtp_pass]):
-        print("Erreur: Configuration SMTP incomplète dans .env")
         return False
 
     msg = MIMEMultipart()
@@ -52,6 +52,5 @@ def send_invite_email(to_email, setup_link):
         server.send_message(msg)
         server.quit()
         return True
-    except Exception as e:
-        print(f"Erreur SMTP: {e}")
+    except Exception:
         return False
