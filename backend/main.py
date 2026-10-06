@@ -6,8 +6,8 @@ import os
 # Importation de nos modules locaux
 from .database import engine, Base, get_db
 from .models import User
-from .auth import get_password_hash, generate_totp_secret, get_totp_uri
-from .schemas import AdminCreate
+from .auth import get_password_hash, generate_totp_secret, get_totp_uri, verify_password, verify_totp
+from .schemas import AdminCreate, LoginRequest
 
 # Création des tables dans la base de données
 Base.metadata.create_all(bind=engine)
@@ -43,7 +43,12 @@ def login_page(db: Session = Depends(get_db)):
     """Affiche la page de connexion sécurisée."""
     if is_setup_required(db):
         return RedirectResponse(url="/setup")
-    return {"message": "Page de connexion (Interface Vue.js à venir)."}
+        
+    frontend_path = os.path.join(os.getcwd(), "frontend", "login.html")
+    if not os.path.exists(frontend_path):
+        raise HTTPException(status_code=404, detail="Interface de connexion introuvable.")
+        
+    return FileResponse(frontend_path)
 
 @app.post("/api/setup")
 def create_admin(admin_data: AdminCreate, db: Session = Depends(get_db)):
@@ -78,3 +83,28 @@ def create_admin(admin_data: AdminCreate, db: Session = Depends(get_db)):
         "totp_secret": totp_secret,
         "totp_uri": totp_uri
     }
+
+@app.post("/api/login")
+def login(login_data: LoginRequest, db: Session = Depends(get_db)):
+    """Vérifie les identifiants et le code 2FA."""
+    user = db.query(User).filter(User.username == login_data.username).first()
+    
+    # Vérification de l'utilisateur et du mot de passe
+    if not user or not verify_password(login_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Nom d'utilisateur ou mot de passe incorrect."
+        )
+    
+    # Vérification du code 2FA
+    if not verify_totp(user.totp_secret, login_data.totp_code):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Code 2FA invalide."
+        )
+    
+    return {"message": "Connexion réussie"}
+
+@app.get("/dashboard")
+def dashboard():
+    return {"message": "Bienvenue sur le tableau de bord de l'Orchestrateur AETHAS38 ! (Interface à venir)"}
