@@ -5,7 +5,6 @@ from .models import SystemSettings
 def get_ai_response(messages: list, settings: SystemSettings) -> str:
     """
     Route la conversation vers le premier fournisseur IA disponible configuré par l'admin.
-    Prend l'historique des messages et retourne le texte généré.
     """
     if not settings:
         raise HTTPException(status_code=500, detail="Configuration système introuvable.")
@@ -13,41 +12,62 @@ def get_ai_response(messages: list, settings: SystemSettings) -> str:
     # Formatage de l'historique pour l'API (OpenAI compatible)
     formatted_messages = [{"role": msg.role, "content": msg.content} for msg in messages]
 
-    # 1. Test OpenRouter (Idéal car donne accès à tout)
-    if settings.openrouter_api_key:
-        client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=settings.openrouter_api_key,
-        )
-        model = "google/gemini-pro" # Fallback par défaut via OpenRouter
-    
-    # 2. Test DeepSeek
-    elif settings.deepseek_api_key:
-        client = OpenAI(
-            base_url="https://api.deepseek.com/v1",
-            api_key=settings.deepseek_api_key,
-        )
-        model = "deepseek-chat"
-        
-    # 3. Test Groq
-    elif settings.groq_api_key:
-        client = OpenAI(
-            base_url="https://api.groq.com/openai/v1",
-            api_key=settings.groq_api_key,
-        )
-        model = "llama3-8b-8192"
-        
-    else:
-        raise HTTPException(status_code=400, detail="Aucun moteur IA (OpenRouter, DeepSeek, Groq) n'est configuré avec une clé API.")
-
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=formatted_messages,
-            # Identifiant unique de l'application pour OpenRouter
-            extra_headers={"HTTP-Referer": "https://aethas38.duckdns.org", "X-Title": "AETHAS38 Multi-IA"} if settings.openrouter_api_key else {}
-        )
+        # 1. Test OpenRouter
+        if settings.openrouter_api_key:
+            client = OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=settings.openrouter_api_key,
+            )
+            model = "google/gemini-pro"
+            response = client.chat.completions.create(
+                model=model,
+                messages=formatted_messages,
+                extra_headers={"HTTP-Referer": "https://aethas38.duckdns.org", "X-Title": "AETHAS38"}
+            )
+        
+        # 2. Test Gemini direct (Google propose désormais une API compatible OpenAI !)
+        elif settings.gemini_api_key:
+            client = OpenAI(
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                api_key=settings.gemini_api_key,
+            )
+            model = "gemini-1.5-flash"
+            response = client.chat.completions.create(
+                model=model,
+                messages=formatted_messages
+            )
+
+        # 3. Test DeepSeek
+        elif settings.deepseek_api_key:
+            client = OpenAI(
+                base_url="https://api.deepseek.com/v1",
+                api_key=settings.deepseek_api_key,
+            )
+            model = "deepseek-chat"
+            response = client.chat.completions.create(
+                model=model,
+                messages=formatted_messages
+            )
+            
+        # 4. Test Groq
+        elif settings.groq_api_key:
+            client = OpenAI(
+                base_url="https://api.groq.com/openai/v1",
+                api_key=settings.groq_api_key,
+            )
+            model = "llama3-8b-8192"
+            response = client.chat.completions.create(
+                model=model,
+                messages=formatted_messages
+            )
+            
+        else:
+            raise HTTPException(status_code=400, detail="Aucune clé API IA n'est configurée.")
+
         return response.choices[0].message.content
+
     except Exception as e:
-        print(f"Erreur API IA : {str(e)}")
-        raise HTTPException(status_code=502, detail="Erreur de communication avec le fournisseur IA.")
+        # On capture l'erreur exacte et on la renvoie au frontend pour comprendre le blocage
+        print(f"Erreur détaillée : {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Détail du fournisseur : {str(e)}")
