@@ -35,19 +35,13 @@
     <div v-if="isSidebarOpen" @click="toggleSidebar" class="md:hidden fixed inset-0 bg-black/60 z-40 transition-opacity"></div>
 
     <!-- 1. BARRE LATÉRALE (Rétractable) -->
-    <!-- Conteneur qui gère l'espace (w-72 ou w-0) pour pousser le contenu principal sans l'écraser -->
     <div :class="['transition-all duration-300 flex-shrink-0 relative z-50', isSidebarOpen ? 'w-72' : 'w-0']">
-        
-        <!-- Contenu réel de la sidebar, taille fixe à 72 -->
         <aside :class="['absolute top-0 left-0 h-full w-72 bg-aethas-panel border-r border-gray-700 flex flex-col transition-transform duration-300', isSidebarOpen ? 'translate-x-0' : '-translate-x-full']">
-            <!-- En-tête Sidebar avec Logo -->
             <div class="p-4 border-b border-gray-700 flex items-center justify-between">
                 <div class="flex items-center gap-3">
-                    <!-- LOGO LATÉRAL : Remplacez l'URL par le lien direct de votre Google Drive -->
-                    <img src="https://drive.google.com/file/d/1RqkxQzLKzrS4m2vGedt1sQEPRDed8FnP/view?usp=drive_link" alt="Logo" class="w-10 h-10 rounded-full border border-aethas-cyan object-cover bg-gray-800 flex-shrink-0">
+                    <img src="/static/logo.png" alt="Logo" class="w-10 h-10 rounded-full border border-aethas-cyan object-cover bg-gray-800 flex-shrink-0">
                     <span class="font-bold text-lg tracking-wider neon-text">AETHAS38</span>
                 </div>
-                <!-- Bouton fermer (surtout utile sur mobile) -->
                 <button @click="toggleSidebar" class="md:hidden text-gray-400 hover:text-white">
                     <i data-lucide="x" class="w-5 h-5"></i>
                 </button>
@@ -89,40 +83,29 @@
 
     <!-- ZONE PRINCIPALE -->
     <main class="flex-1 flex flex-col min-w-0 z-10 transition-all duration-300">
-        
-        <!-- Header (Affichage du menu et du logo quand la barre est réduite) -->
         <header class="flex items-center justify-between p-4 border-b border-gray-700 bg-aethas-panel h-[73px]">
             <div class="flex items-center gap-3">
-                <!-- Bouton Menu (Burger) -->
                 <button @click="toggleSidebar" class="text-gray-400 hover:text-white transition-colors p-1.5 rounded hover:bg-gray-700" title="Basculer le menu">
                     <i data-lucide="menu" class="w-6 h-6"></i>
                 </button>
-                
-                <!-- Logo du Header (Visible uniquement quand la sidebar est cachée) -->
                 <div v-show="!isSidebarOpen" class="flex items-center gap-2 transition-opacity duration-300">
-                    <!-- LOGO HEADER : Remplacez l'URL ici aussi -->
-                    <img src="https://drive.google.com/file/d/1RqkxQzLKzrS4m2vGedt1sQEPRDed8FnP/view?usp=drive_link" alt="Logo" class="w-8 h-8 rounded-full border border-aethas-cyan object-cover bg-gray-800 flex-shrink-0">
+                    <img src="/static/logo.png" alt="Logo" class="w-8 h-8 rounded-full border border-aethas-cyan object-cover bg-gray-800 flex-shrink-0">
                     <span class="font-bold text-lg neon-text">AETHAS38</span>
                 </div>
             </div>
         </header>
 
-        <!-- Zone de conversation Centrale -->
         <div class="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-center">
-            <!-- LOGO CENTRAL : Et ici -->
-            <img src="https://drive.google.com/file/d/1RqkxQzLKzrS4m2vGedt1sQEPRDed8FnP/view?usp=drive_link" alt="AETHAS38 Logo" class="w-24 h-24 mb-6 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)] object-cover bg-gray-800 flex-shrink-0">
+            <img src="/static/logo.png" alt="AETHAS38 Logo" class="w-24 h-24 mb-6 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)] object-cover bg-gray-800 flex-shrink-0">
             <h2 class="text-2xl font-bold text-gray-200 mb-2 text-center">Comment puis-je vous aider aujourd'hui ?</h2>
             <p class="text-gray-500 text-sm text-center">L'orchestrateur Multi-IA est prêt.</p>
         </div>
 
-        <!-- 2. CHAMP DE TEXTE (Auto-extensible avec ascenseur) -->
         <div class="p-4 md:p-6 w-full max-w-4xl mx-auto">
             <div class="relative flex items-end bg-gray-800 border border-gray-600 rounded-2xl p-2 shadow-lg focus-within:border-aethas-cyan focus-within:ring-1 focus-within:ring-aethas-cyan transition-all">
                 <button class="p-3 text-gray-400 hover:text-aethas-cyan transition-colors flex-shrink-0" title="Joindre un fichier">
                     <i data-lucide="paperclip" class="w-5 h-5"></i>
                 </button>
-                
-                <!-- Textarea connecté à Vue.js pour la hauteur dynamique -->
                 <textarea 
                     v-model="prompt" 
                     @input="autoResize"
@@ -130,7 +113,6 @@
                     rows="1" 
                     class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none leading-relaxed" 
                     placeholder="Posez votre question à l'Orchestrateur..."></textarea>
-                
                 <button class="p-3 text-aethas-cyan hover:text-white transition-colors flex-shrink-0" title="Envoyer">
                     <i data-lucide="send" class="w-5 h-5"></i>
                 </button>
@@ -146,28 +128,22 @@
     createApp({
         setup() {
             const username = ref("Admin");
-            const isSidebarOpen = ref(true); // La barre latérale est ouverte par défaut
+            const isSidebarOpen = ref(true);
             const prompt = ref("");
             const promptTextarea = ref(null);
 
-            // Gère l'ouverture/fermeture de la barre latérale
             const toggleSidebar = () => {
                 isSidebarOpen.value = !isSidebarOpen.value;
             };
 
-            // Ajuste la hauteur de la zone de texte dynamiquement
             const autoResize = () => {
                 const el = promptTextarea.value;
                 if (!el) return;
-                
-                // On réinitialise temporairement la hauteur pour recalculer la vraie taille du contenu
                 el.style.height = 'auto'; 
-                // On ajuste à la hauteur du texte. Le CSS "max-h-[200px]" bloquera l'agrandissement et fera apparaître l'ascenseur
                 el.style.height = el.scrollHeight + 'px'; 
             };
 
             onMounted(() => {
-                // Initialise les icônes à l'ouverture de la page
                 lucide.createIcons();
             });
 

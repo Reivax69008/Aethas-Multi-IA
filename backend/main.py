@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request, Response
 from fastapi.responses import RedirectResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 import os
 
@@ -13,6 +14,11 @@ from .schemas import AdminCreate, LoginRequest
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="AETHAS38 - Orchestrateur Multi-IA")
+
+# Configuration des fichiers statiques (images, css locaux, etc.)
+assets_path = os.path.join(os.getcwd(), "frontend", "assets")
+os.makedirs(assets_path, exist_ok=True) # Crée le dossier s'il n'existe pas
+app.mount("/static", StaticFiles(directory=assets_path), name="static")
 
 def is_setup_required(db: Session) -> bool:
     """Vérifie si la base de données contient au moins un administrateur."""
@@ -31,7 +37,6 @@ def setup_page(db: Session = Depends(get_db)):
     if not is_setup_required(db):
         return RedirectResponse(url="/login")
     
-    # Chemin vers le fichier HTML depuis la racine de l'application Docker (/app)
     frontend_path = os.path.join(os.getcwd(), "frontend", "index.html")
     if not os.path.exists(frontend_path):
         raise HTTPException(status_code=404, detail="Interface introuvable.")
