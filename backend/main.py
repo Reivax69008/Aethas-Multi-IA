@@ -27,6 +27,16 @@ def is_setup_required(db: Session) -> bool:
     admin = db.query(User).filter(User.is_admin == True).first()
     return admin is None
 
+def get_current_user(request: Request, db: Session = Depends(get_db)):
+    """Extrait et vérifie l'utilisateur actuel via le token de session."""
+    token = request.cookies.get("session_token")
+    if not token: raise HTTPException(status_code=401, detail="Non authentifié")
+    payload = verify_token(token)
+    if not payload: raise HTTPException(status_code=401, detail="Session expirée")
+    user = db.query(User).filter(User.username == payload.get("sub")).first()
+    if not user: raise HTTPException(status_code=401, detail="Utilisateur introuvable")
+    return user
+
 @app.get("/")
 def read_root(db: Session = Depends(get_db)):
     if is_setup_required(db):
@@ -106,15 +116,6 @@ def change_password(passwords: PasswordChange, db: Session = Depends(get_db), cu
     current_user.hashed_password = get_password_hash(passwords.new_password)
     db.commit()
     return {"message": "Mot de passe mis à jour avec succès."}
-
-def get_current_user(request: Request, db: Session = Depends(get_db)):
-    token = request.cookies.get("session_token")
-    if not token: raise HTTPException(status_code=401, detail="Non authentifié")
-    payload = verify_token(token)
-    if not payload: raise HTTPException(status_code=401, detail="Session expirée")
-    user = db.query(User).filter(User.username == payload.get("sub")).first()
-    if not user: raise HTTPException(status_code=401, detail="Utilisateur introuvable")
-    return user
 
 # --- GESTION DES PROJETS ---
 @app.get("/api/projects", response_model=List[ProjectResponse])
