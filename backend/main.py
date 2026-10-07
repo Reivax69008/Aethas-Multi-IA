@@ -60,7 +60,6 @@ def login_page(db: Session = Depends(get_db)): return RedirectResponse(url="/set
 @app.post("/api/setup")
 def create_admin(admin_data: AdminCreate, db: Session = Depends(get_db)):
     if not is_setup_required(db): raise HTTPException(status_code=403, detail="Déjà installé.")
-    # Le créateur initial devient automatiquement Super-Admin ET Admin
     new_admin = User(email=admin_data.email, username=admin_data.username, hashed_password=get_password_hash(admin_data.password), totp_secret=generate_totp_secret(), is_admin=True, is_superadmin=True)
     db.add(new_admin)
     new_settings = SystemSettings(smtp_host=admin_data.smtp_host, smtp_port=admin_data.smtp_port, smtp_user=admin_data.smtp_user, smtp_password=admin_data.smtp_password, openrouter_api_key=admin_data.openrouter_api_key, openrouter_management_key=admin_data.openrouter_management_key, groq_api_key=admin_data.groq_api_key, gemini_api_key=admin_data.gemini_api_key, deepseek_api_key=admin_data.deepseek_api_key, mistral_api_key=admin_data.mistral_api_key, cloudflare_account_id=admin_data.cloudflare_account_id, cloudflare_api_token=admin_data.cloudflare_api_token, huggingface_api_key=admin_data.huggingface_api_key)
@@ -97,15 +96,12 @@ def change_password(passwords: PasswordChange, db: Session = Depends(get_db), cu
 
 @app.post("/api/users/me/avatar")
 async def upload_avatar(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Enregistre l'avatar. Le redimensionnement parfait est géré visuellement par CSS (object-cover) dans le frontend."""
     file_location = os.path.join(avatars_path, f"user_{current_user.id}.jpg")
-    with open(file_location, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    with open(file_location, "wb") as buffer: shutil.copyfileobj(file.file, buffer)
     current_user.avatar_path = f"/assets/avatars/user_{current_user.id}.jpg?v={int(datetime.now().timestamp())}"
     db.commit()
     return {"message": "Avatar mis à jour", "avatar_path": current_user.avatar_path}
 
-# --- GESTION DES PROJETS ET MESSAGES ---
 @app.get("/api/projects", response_model=List[ProjectResponse])
 def get_projects(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)): return db.query(Project).filter(Project.user_id == current_user.id).order_by(Project.created_at.desc()).all()
 
@@ -151,7 +147,9 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
     history = db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
     settings = db.query(SystemSettings).first()
     conf = message.config.dict() if message.config else {"workers": ["gemini-3.5-flash-lite"]} 
-    ai_resp = await run_orchestrator(history, settings, conf)
+    
+    ai_resp = await run_orchestrator(db, history, settings, conf) # Transmission de DB
+    
     db.add(Message(role="assistant", content=ai_resp, project_id=project_id)); db.commit()
     return db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
 
@@ -165,6 +163,10 @@ def get_models_info(db: Session = Depends(get_db), current_user: User = Depends(
         "models": db.query(AIModel).order_by(AIModel.name.asc()).all(),
         "finances": db.query(FinancialLog).all()
     }
+
+@app.get("/api/finances")
+def get_finances(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return db.query(FinancialLog).all()
 
 @app.post("/api/models/sync")
 async def trigger_model_sync(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

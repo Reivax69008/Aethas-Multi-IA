@@ -14,20 +14,33 @@ def determine_domain(model_id: str) -> str:
     return "Texte Polyvalent"
 
 async def sync_finances(db: Session, settings: SystemSettings):
+    """Interroge les fournisseurs pour récupérer le solde financier exact."""
     async with httpx.AsyncClient() as client:
         if settings.openrouter_management_key or settings.openrouter_api_key:
             try:
                 key = settings.openrouter_management_key or settings.openrouter_api_key
-                resp = await client.get("https://openrouter.ai/api/v1/auth/key", headers={"Authorization": f"Bearer {key}"})
-                if resp.status_code == 200:
-                    data = resp.json().get("data", {})
-                    limit = data.get("limit")
-                    usage = data.get("usage", 0)
-                    balance = (limit - usage) if limit is not None else 0.0
-                    update_finance_db(db, "OpenRouter", balance, usage)
-            except Exception: pass
+                # Test de l'endpoint des crédits prépayés en priorité
+                cred_resp = await client.get("https://openrouter.ai/api/v1/credits", headers={"Authorization": f"Bearer {key}"})
+                balance = 0.0
+                usage = 0.0
+                
+                if cred_resp.status_code == 200 and cred_resp.json().get("data"):
+                    data = cred_resp.json().get("data", {})
+                    balance = float(data.get("total_credits") or 0.0) - float(data.get("total_usage") or 0.0)
+                    usage = float(data.get("total_usage") or 0.0)
+                else:
+                    # Fallback sur l'usage de la clé si pas de crédits prépayés
+                    key_resp = await client.get("https://openrouter.ai/api/v1/auth/key", headers={"Authorization": f"Bearer {key}"})
+                    if key_resp.status_code == 200:
+                        data = key_resp.json().get("data", {})
+                        limit = data.get("limit")
+                        usage = float(data.get("usage") or 0.0)
+                        balance = (float(limit) - usage) if limit is not None else -usage
+                
+                update_finance_db(db, "OpenRouter", balance, usage)
+            except Exception as e: print(f"Erreur Finance OR: {e}")
             
-        if settings.groq_api_key: update_finance_db(db, "Groq", 999.0, 0.0)
+        if settings.groq_api_key: update_finance_db(db, "Groq", 999.0, 0.0) # Gratuit en Beta
             
         if settings.deepseek_api_key:
             try:
@@ -53,14 +66,14 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
                 resp = await client.get("https://openrouter.ai/api/v1/models")
                 if resp.status_code == 200:
                     for item in resp.json().get("data", []):
-                        pricing = item.get("pricing", {})
-                        pp = float(pricing.get("prompt", 0)) * 1000000 if pricing.get("prompt") else 0.0
-                        pc = float(pricing.get("completion", 0)) * 1000000 if pricing.get("completion") else 0.0
+                        pricing = item.get("pricing") or {}
+                        pp = float(pricing.get("prompt") or 0.0) * 1000000
+                        pc = float(pricing.get("completion") or 0.0) * 1000000
                         is_free = (pp == 0.0 and pc == 0.0)
                         desc = item.get("description", "Modèle IA générique.")[:200] + "..."
                         process_model(db, "openrouter", item["id"], item["name"], desc, determine_domain(item["id"]), is_free, item.get("context_length", 0), pp, pc)
                         added += 1
-            except Exception: pass
+            except Exception as e: print(f"Erreur Modèles OR: {e}")
             
         if settings.groq_api_key:
             try:
@@ -95,21 +108,26 @@ async def ask_agent(client, model_id, messages, is_openrouter=False):
     resp = await client.chat.completions.create(**kwargs)
     return resp.choices[0].message.content
 
-async def run_orchestrator(history: list, settings: SystemSettings, config: dict) -> str:
+async def run_orchestrator(db: Session, history: list, settings: SystemSettings, config: dict) -> str:
     workers = config.get("workers", ["gemini-3.5-flash-lite"])
     user_prompt = history[-1].content
     formatted_history = [{"role": msg.role, "content": msg.content} for msg in history[:-1]]
 
+    final_response = ""
     if len(workers) == 1:
         w_mod = workers[0]
-        return await ask_agent(get_client_for_model(w_mod, settings), w_mod, formatted_history + [{"role": "user", "content": user_prompt}], "openrouter" in w_mod.lower())
+        final_response = await ask_agent(get_client_for_model(w_mod, settings), w_mod, formatted_history + [{"role": "user", "content": user_prompt}], "openrouter" in w_mod.lower())
+    else:
+        p_mod = config.get("prompter", "gemini-3.5-flash-lite")
+        optimized = await ask_agent(get_client_for_model(p_mod, settings), p_mod, [{"role": "system", "content": "Optimise cette requête."}, {"role": "user", "content": user_prompt}])
 
-    p_mod = config.get("prompter", "gemini-3.5-flash-lite")
-    optimized = await ask_agent(get_client_for_model(p_mod, settings), p_mod, [{"role": "system", "content": "Optimise cette requête."}, {"role": "user", "content": user_prompt}])
+        w_tasks = [ask_agent(get_client_for_model(w, settings), w, formatted_history + [{"role": "user", "content": optimized}], "openrouter" in w.lower()) for w in workers]
+        responses = await asyncio.gather(*w_tasks, return_exceptions=True)
 
-    w_tasks = [ask_agent(get_client_for_model(w, settings), w, formatted_history + [{"role": "user", "content": optimized}], "openrouter" in w.lower()) for w in workers]
-    responses = await asyncio.gather(*w_tasks, return_exceptions=True)
-
-    c_mod = config.get("concatenator", "gemini-3.5-flash-lite")
-    synth = f"Requête: {user_prompt}\n\n" + "\n".join([f"--- EXPERT {i+1} ---\n{r}" for i, r in enumerate(responses)]) + "\n\nFais une synthèse finale."
-    return await ask_agent(get_client_for_model(c_mod, settings), c_mod, [{"role": "user", "content": synth}])
+        c_mod = config.get("concatenator", "gemini-3.5-flash-lite")
+        synth = f"Requête: {user_prompt}\n\n" + "\n".join([f"--- EXPERT {i+1} ---\n{r}" for i, r in enumerate(responses)]) + "\n\nFais une synthèse finale."
+        final_response = await ask_agent(get_client_for_model(c_mod, settings), c_mod, [{"role": "user", "content": synth}])
+    
+    # MAJ Financière après requête
+    await sync_finances(db, settings)
+    return final_response
