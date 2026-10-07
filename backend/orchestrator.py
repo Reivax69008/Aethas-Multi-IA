@@ -3,125 +3,113 @@ import httpx
 from openai import AsyncOpenAI
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from .models import SystemSettings, AIModel
-from .logger import system_logger
+from .models import SystemSettings, AIModel, FinancialLog
 from datetime import datetime, timezone
 
-# --- PARTIE 1 : EXTRACTION DES MODÈLES ---
-async def sync_providers_models(db: Session, settings: SystemSettings):
-    """Extrait et met à jour les modèles depuis les fournisseurs configurés."""
-    added_or_updated = 0
-    
-    # httpx.AsyncClient permet des requêtes non-bloquantes (ultra rapide)
+def determine_domain(model_id: str) -> str:
+    mid = model_id.lower()
+    if "vision" in mid or "vl" in mid: return "Vision & Texte"
+    if "coder" in mid or "code" in mid or "math" in mid: return "Code & Logique"
+    if "audio" in mid or "whisper" in mid: return "Audio"
+    return "Texte Polyvalent"
+
+async def sync_finances(db: Session, settings: SystemSettings):
     async with httpx.AsyncClient() as client:
-        # 1. OpenRouter (Exemple principal pour l'extraction massive)
+        if settings.openrouter_management_key or settings.openrouter_api_key:
+            try:
+                key = settings.openrouter_management_key or settings.openrouter_api_key
+                resp = await client.get("https://openrouter.ai/api/v1/auth/key", headers={"Authorization": f"Bearer {key}"})
+                if resp.status_code == 200:
+                    data = resp.json().get("data", {})
+                    limit = data.get("limit")
+                    usage = data.get("usage", 0)
+                    balance = (limit - usage) if limit is not None else 0.0
+                    update_finance_db(db, "OpenRouter", balance, usage)
+            except Exception: pass
+            
+        if settings.groq_api_key: update_finance_db(db, "Groq", 999.0, 0.0)
+            
+        if settings.deepseek_api_key:
+            try:
+                resp = await client.get("https://api.deepseek.com/user/balance", headers={"Authorization": f"Bearer {settings.deepseek_api_key}"})
+                if resp.status_code == 200:
+                    infos = resp.json().get("balance_infos", [{}])[0]
+                    update_finance_db(db, "DeepSeek", float(infos.get("total_balance", 0)), 0.0)
+            except Exception: pass
+    db.commit()
+
+def update_finance_db(db, provider, balance, usage):
+    log = db.query(FinancialLog).filter(FinancialLog.provider == provider).first()
+    if log:
+        log.balance = balance; log.total_usage = usage; log.checked_at = datetime.now(timezone.utc)
+    else:
+        db.add(FinancialLog(provider=provider, balance=balance, total_usage=usage))
+
+async def sync_providers_models(db: Session, settings: SystemSettings, sync_type: str = "Automatique"):
+    added = 0
+    async with httpx.AsyncClient() as client:
         if settings.openrouter_api_key:
             try:
-                response = await client.get("https://openrouter.ai/api/v1/models")
-                if response.status_code == 200:
-                    for item in response.json().get("data", []):
-                        model_id = item["id"]
-                        existing = db.query(AIModel).filter(AIModel.model_id == model_id).first()
-                        
+                resp = await client.get("https://openrouter.ai/api/v1/models")
+                if resp.status_code == 200:
+                    for item in resp.json().get("data", []):
                         pricing = item.get("pricing", {})
-                        # Conversion en coût pour 1 Million de tokens
-                        p_prompt = float(pricing.get("prompt", 0)) * 1000000 if pricing.get("prompt") else 0.0
-                        p_comp = float(pricing.get("completion", 0)) * 1000000 if pricing.get("completion") else 0.0
+                        pp = float(pricing.get("prompt", 0)) * 1000000 if pricing.get("prompt") else 0.0
+                        pc = float(pricing.get("completion", 0)) * 1000000 if pricing.get("completion") else 0.0
+                        is_free = (pp == 0.0 and pc == 0.0)
+                        desc = item.get("description", "Modèle IA générique.")[:200] + "..."
+                        process_model(db, "openrouter", item["id"], item["name"], desc, determine_domain(item["id"]), is_free, item.get("context_length", 0), pp, pc)
+                        added += 1
+            except Exception: pass
+            
+        if settings.groq_api_key:
+            try:
+                resp = await client.get("https://api.groq.com/openai/v1/models", headers={"Authorization": f"Bearer {settings.groq_api_key}"})
+                if resp.status_code == 200:
+                    for item in resp.json().get("data", []):
+                        process_model(db, "groq", item["id"], item["id"].capitalize(), "Modèle ultra-rapide exécuté sur LPU Groq.", determine_domain(item["id"]), True, 8192, 0.0, 0.0)
+                        added += 1
+            except Exception: pass
 
-                        if existing:
-                            existing.pricing_prompt = p_prompt
-                            existing.pricing_completion = p_comp
-                            existing.last_updated = datetime.now(timezone.utc)
-                        else:
-                            new_model = AIModel(
-                                provider="openrouter",
-                                model_id=model_id,
-                                name=item["name"],
-                                context_length=item.get("context_length", 0),
-                                pricing_prompt=p_prompt,
-                                pricing_completion=p_comp
-                            )
-                            db.add(new_model)
-                        added_or_updated += 1
-            except Exception as e:
-                system_logger.error(f"Erreur Sync OpenRouter: {e}")
-    
+    settings.last_sync_date = datetime.now(timezone.utc)
+    settings.last_sync_type = sync_type
     db.commit()
-    return {"status": "success", "models_processed": added_or_updated}
+    await sync_finances(db, settings)
+    return {"status": "success", "models_processed": added}
 
-# --- PARTIE 2 : MOTEUR MULTI-AGENTS ---
+def process_model(db, provider, mod_id, name, desc, domain, is_free, ctx, pp, pc):
+    existing = db.query(AIModel).filter(AIModel.model_id == mod_id).first()
+    if existing:
+        existing.pricing_prompt = pp; existing.pricing_completion = pc; existing.is_free = is_free; existing.last_updated = datetime.now(timezone.utc)
+    else:
+        db.add(AIModel(provider=provider, model_id=mod_id, name=name, description_fr=desc, domain=domain, is_free=is_free, context_length=ctx, pricing_prompt=pp, pricing_completion=pc))
+
 def get_client_for_model(model_id: str, settings: SystemSettings):
-    """Retourne le client AsyncOpenAI approprié selon le modèle sélectionné."""
-    if "gemini" in model_id.lower() and settings.gemini_api_key:
-        return AsyncOpenAI(base_url="https://generativelanguage.googleapis.com/v1beta/openai/", api_key=settings.gemini_api_key)
-    elif settings.openrouter_api_key:
-        return AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=settings.openrouter_api_key)
-    raise ValueError(f"Aucun fournisseur configuré pour {model_id}")
+    if "gemini" in model_id.lower() and settings.gemini_api_key: return AsyncOpenAI(base_url="https://generativelanguage.googleapis.com/v1beta/openai/", api_key=settings.gemini_api_key)
+    elif "groq" in model_id.lower() or "llama" in model_id.lower(): return AsyncOpenAI(base_url="https://api.groq.com/openai/v1", api_key=settings.groq_api_key)
+    return AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=settings.openrouter_api_key)
 
 async def ask_agent(client, model_id, messages, is_openrouter=False):
-    """Appel asynchrone à un modèle IA."""
     kwargs = {"model": model_id, "messages": messages}
-    if is_openrouter:
-        kwargs["extra_headers"] = {"HTTP-Referer": "https://aethas38.duckdns.org", "X-Title": "AETHAS38 Orchestrator"}
-    
-    response = await client.chat.completions.create(**kwargs)
-    return response.choices[0].message.content
+    if is_openrouter: kwargs["extra_headers"] = {"HTTP-Referer": "https://aethas38.duckdns.org", "X-Title": "AETHAS38 Orchestrator"}
+    resp = await client.chat.completions.create(**kwargs)
+    return resp.choices[0].message.content
 
 async def run_orchestrator(history: list, settings: SystemSettings, config: dict) -> str:
-    """
-    Gère la logique : 1 Prompteur -> N Travailleurs -> 1 Concaténeur.
-    Le dictionnaire 'config' proviendra de l'interface graphique.
-    """
-    workers = config.get("workers", [])
-    if not workers:
-        workers = ["gemini-3.5-flash-lite"] # Fallback de sécurité
-    
+    workers = config.get("workers", ["gemini-3.5-flash-lite"])
     user_prompt = history[-1].content
     formatted_history = [{"role": msg.role, "content": msg.content} for msg in history[:-1]]
 
-    # SCÉNARIO 1 : Un seul travailleur (Pas besoin de prompteur/concaténeur)
     if len(workers) == 1:
-        worker_model = workers[0]
-        client = get_client_for_model(worker_model, settings)
-        messages = formatted_history + [{"role": "user", "content": user_prompt}]
-        return await ask_agent(client, worker_model, messages, "openrouter" in worker_model.lower())
+        w_mod = workers[0]
+        return await ask_agent(get_client_for_model(w_mod, settings), w_mod, formatted_history + [{"role": "user", "content": user_prompt}], "openrouter" in w_mod.lower())
 
-    # SCÉNARIO 2 : Multi-Travailleurs (Le pipeline complet)
-    try:
-        # Étape 1 : Le Prompteur améliore la requête
-        prompter_model = config.get("prompter", "gemini-3.5-flash-lite")
-        p_client = get_client_for_model(prompter_model, settings)
-        p_messages = [{"role": "system", "content": "Tu es un expert en Prompt Engineering. Optimise la requête de l'utilisateur pour qu'elle soit claire, directive et parfaite pour des IAs de génération. Retourne UNIQUEMENT le prompt optimisé."}]
-        p_messages.append({"role": "user", "content": user_prompt})
-        
-        system_logger.info("Démarrage du Prompteur...")
-        optimized_prompt = await ask_agent(p_client, prompter_model, p_messages)
+    p_mod = config.get("prompter", "gemini-3.5-flash-lite")
+    optimized = await ask_agent(get_client_for_model(p_mod, settings), p_mod, [{"role": "system", "content": "Optimise cette requête."}, {"role": "user", "content": user_prompt}])
 
-        # Étape 2 : Les Travailleurs en parallèle (Magie de l'Asynchrone)
-        system_logger.info(f"Lancement de {len(workers)} travailleurs en parallèle...")
-        w_tasks = []
-        for w_model in workers:
-            w_client = get_client_for_model(w_model, settings)
-            w_messages = formatted_history + [{"role": "user", "content": optimized_prompt}]
-            # On stocke les tâches sans les attendre immédiatement
-            w_tasks.append(ask_agent(w_client, w_model, w_messages, "openrouter" in w_model.lower()))
-        
-        # 'gather' exécute toutes les requêtes en même temps !
-        workers_responses = await asyncio.gather(*w_tasks, return_exceptions=True)
+    w_tasks = [ask_agent(get_client_for_model(w, settings), w, formatted_history + [{"role": "user", "content": optimized}], "openrouter" in w.lower()) for w in workers]
+    responses = await asyncio.gather(*w_tasks, return_exceptions=True)
 
-        # Étape 3 : Le Concaténeur synthétise
-        concat_model = config.get("concatenator", "gemini-3.5-flash-lite")
-        c_client = get_client_for_model(concat_model, settings)
-        
-        synthesis_prompt = f"Voici la requête initiale : {user_prompt}\n\nVoici les réponses de {len(workers)} experts IA différents :\n"
-        for i, resp in enumerate(workers_responses):
-            synthesis_prompt += f"--- EXPERT {i+1} ---\n{resp if not isinstance(resp, Exception) else 'Erreur de génération'}\n\n"
-        synthesis_prompt += "Fais une synthèse finale parfaite, complète et structurée de ces réponses, en gardant le meilleur de chacune."
-
-        system_logger.info("Démarrage du Concaténeur...")
-        c_messages = [{"role": "user", "content": synthesis_prompt}]
-        return await ask_agent(c_client, concat_model, c_messages)
-
-    except Exception as e:
-        system_logger.error(f"Erreur Pipeline Multi-Agents: {e}")
-        raise HTTPException(status_code=502, detail=f"Échec de l'orchestration : {str(e)}")
+    c_mod = config.get("concatenator", "gemini-3.5-flash-lite")
+    synth = f"Requête: {user_prompt}\n\n" + "\n".join([f"--- EXPERT {i+1} ---\n{r}" for i, r in enumerate(responses)]) + "\n\nFais une synthèse finale."
+    return await ask_agent(get_client_for_model(c_mod, settings), c_mod, [{"role": "user", "content": synth}])

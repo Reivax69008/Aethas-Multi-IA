@@ -21,69 +21,12 @@
 
 <div id="app" class="flex w-full h-full relative bg-aethas-dark">
     
-    <!-- MODAL PARAMÈTRES -->
-    <div v-if="isSettingsModalOpen" class="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
-        <div class="bg-aethas-panel border border-gray-600 rounded-2xl w-full max-w-md overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.7)]">
-            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50">
-                <h2 class="text-lg font-bold text-white flex items-center gap-2"><i data-lucide="settings" class="w-5 h-5 text-aethas-cyan"></i> Paramètres</h2>
-                <button @click="closeSettings" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
-            </div>
-            <div class="p-6 space-y-4">
-                <h3 class="text-sm font-semibold text-aethas-cyan uppercase tracking-wider mb-2">Sécurité du compte</h3>
-                <div v-if="settingsMessage" :class="['p-3 rounded text-sm text-center', settingsMessage.includes('succès') ? 'bg-green-900/50 text-green-200 border border-green-500' : 'bg-red-900/50 text-red-200 border border-red-500']">{{ settingsMessage }}</div>
-                <div><label class="block text-sm text-gray-300 mb-1">Ancien mot de passe</label><input v-model="passForm.old" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none"></div>
-                <div><label class="block text-sm text-gray-300 mb-1">Nouveau mot de passe</label><input v-model="passForm.new" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none"></div>
-                <div><label class="block text-sm text-gray-300 mb-1">Confirmer le mot de passe</label><input v-model="passForm.confirm" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none"></div>
-                <button @click="changePassword" :disabled="isSavingSettings" class="w-full mt-4 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2.5 px-4 rounded-lg transition-colors border border-gray-500 disabled:opacity-50">
-                    <span v-if="isSavingSettings">Mise à jour...</span><span v-else>Modifier</span>
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODAL GESTION DES MODÈLES -->
-    <div v-if="isModelsModalOpen" class="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
-        <div class="bg-aethas-panel border border-gray-600 rounded-2xl w-full max-w-4xl max-h-[80vh] flex flex-col shadow-[0_0_30px_rgba(0,0,0,0.7)]">
-            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50">
-                <h2 class="text-lg font-bold text-white flex items-center gap-2"><i data-lucide="cpu" class="w-5 h-5 text-aethas-cyan"></i> Base de données Modèles IA</h2>
-                <button @click="isModelsModalOpen = false" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
-            </div>
-            <div class="p-4 border-b border-gray-700 flex gap-2 bg-gray-900/50">
-                <button @click="syncModels" :disabled="isSyncing" class="bg-aethas-cyan hover:bg-cyan-600 text-aethas-dark font-semibold py-2 px-4 rounded flex items-center gap-2 text-sm disabled:opacity-50">
-                    <i data-lucide="refresh-cw" :class="{'animate-spin': isSyncing}" class="w-4 h-4"></i> Synchroniser API
-                </button>
-                <a href="/api/models/export" target="_blank" class="bg-gray-700 hover:bg-gray-600 text-white border border-gray-600 font-semibold py-2 px-4 rounded flex items-center gap-2 text-sm">
-                    <i data-lucide="download" class="w-4 h-4"></i> Exporter (JSON)
-                </a>
-                <label class="bg-gray-700 hover:bg-gray-600 text-white border border-gray-600 font-semibold py-2 px-4 rounded flex items-center gap-2 text-sm cursor-pointer">
-                    <i data-lucide="upload" class="w-4 h-4"></i> Importer
-                    <input type="file" accept=".json" @change="importModels" class="hidden">
-                </label>
-            </div>
-            <div class="flex-1 overflow-y-auto p-4">
-                <p v-if="modelsList.length === 0" class="text-gray-500 text-center py-4">Aucun modèle en base. Cliquez sur Synchroniser.</p>
-                <table v-else class="w-full text-left text-sm text-gray-300">
-                    <thead class="text-xs uppercase bg-gray-800 text-gray-400 sticky top-0">
-                        <tr><th class="px-4 py-2">ID Modèle</th><th class="px-4 py-2">Fournisseur</th><th class="px-4 py-2">Contexte</th></tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="model in modelsList" :key="model.model_id" class="border-b border-gray-700 hover:bg-gray-800/50">
-                            <td class="px-4 py-2 font-mono text-xs text-aethas-cyan">{{ model.model_id }}</td>
-                            <td class="px-4 py-2 capitalize">{{ model.provider }}</td>
-                            <td class="px-4 py-2">{{ model.context_length }}</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
     <!-- BARRE LATÉRALE -->
     <div :class="['transition-all duration-300 flex-shrink-0 relative z-50', isSidebarOpen ? 'w-72' : 'w-0']">
         <aside :class="['absolute top-0 left-0 h-full w-72 bg-aethas-panel border-r border-gray-700 flex flex-col transition-transform duration-300', isSidebarOpen ? 'translate-x-0' : '-translate-x-full']">
             <div class="p-4 border-b border-gray-700 flex items-center justify-between">
                 <div class="flex items-center gap-3">
-                    <img src="/assets/logo.png" alt="Logo" class="w-10 h-10 rounded-full border border-aethas-cyan object-cover bg-gray-800 flex-shrink-0">
+                    <img src="/assets/logo.png" class="w-10 h-10 rounded-full border border-aethas-cyan object-cover bg-gray-800">
                     <span class="font-bold text-lg tracking-wider neon-text">AETHAS38</span>
                 </div>
                 <button @click="toggleSidebar" class="md:hidden text-gray-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
@@ -93,8 +36,8 @@
                 <button @click="createNewProject" :disabled="isLoading" class="w-full bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 rounded-lg py-2 px-4 flex items-center justify-center gap-2 shadow-md">
                     <i data-lucide="plus" class="w-4 h-4 text-aethas-cyan"></i> Nouveau Projet
                 </button>
-                <button @click="openModelsModal" class="w-full bg-aethas-dark hover:bg-gray-800 text-gray-300 border border-gray-700 rounded-lg py-2 px-4 flex items-center justify-center gap-2">
-                    <i data-lucide="database" class="w-4 h-4"></i> Modèles IA
+                <button v-if="user.is_admin" @click="activeView = 'models'" :class="['w-full border rounded-lg py-2 px-4 flex items-center justify-center gap-2 transition-colors', activeView === 'models' ? 'bg-aethas-cyan/10 border-aethas-cyan text-aethas-cyan' : 'bg-aethas-dark hover:bg-gray-800 text-gray-300 border-gray-700']">
+                    <i data-lucide="database" class="w-4 h-4"></i> Modèles & Finances
                 </button>
             </div>
 
@@ -102,7 +45,7 @@
                 <div v-if="pinnedProjects.length > 0">
                     <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Épinglés</h3>
                     <ul class="space-y-1">
-                        <li v-for="project in pinnedProjects" :key="project.id" @click="selectProject(project)" :class="['group flex items-center justify-between p-2 rounded cursor-pointer text-sm', activeProject && activeProject.id === project.id ? 'bg-gray-700 text-white' : 'hover:bg-gray-800 text-gray-300']">
+                        <li v-for="project in pinnedProjects" :key="project.id" @click="selectProject(project)" :class="['group flex items-center justify-between p-2 rounded cursor-pointer text-sm', activeView === 'chat' && activeProject && activeProject.id === project.id ? 'bg-gray-700 text-white' : 'hover:bg-gray-800 text-gray-300']">
                             <div class="flex items-center gap-2 truncate"><i data-lucide="pin" class="w-3 h-3 text-aethas-cyan"></i><span class="truncate">{{ project.title }}</span></div>
                             <div class="hidden group-hover:flex items-center gap-1 bg-gray-800 pl-2 rounded">
                                 <button @click.stop="togglePin(project.id)" class="text-gray-400 hover:text-white"><i data-lucide="pin-off" class="w-3.5 h-3.5"></i></button>
@@ -114,147 +57,247 @@
                 <div>
                     <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Récents</h3>
                     <ul class="space-y-1">
-                        <li v-for="project in recentProjects" :key="project.id" @click="selectProject(project)" :class="['group flex items-center justify-between p-2 rounded cursor-pointer text-sm', activeProject && activeProject.id === project.id ? 'bg-gray-700 text-white' : 'hover:bg-gray-800 text-gray-300']">
+                        <li v-for="project in recentProjects" :key="project.id" @click="selectProject(project)" :class="['group flex items-center justify-between p-2 rounded cursor-pointer text-sm', activeView === 'chat' && activeProject && activeProject.id === project.id ? 'bg-gray-700 text-white' : 'hover:bg-gray-800 text-gray-300']">
                             <div class="flex items-center gap-2 truncate"><i data-lucide="message-square" class="w-3 h-3 text-gray-500"></i><span class="truncate">{{ project.title }}</span></div>
                             <div class="hidden group-hover:flex items-center gap-1 bg-gray-800 pl-2 rounded">
-                                <button @click.stop="renameProject(project)" class="text-gray-400 hover:text-aethas-cyan p-1 rounded hover:bg-gray-700" title="Renommer"><i data-lucide="edit-2" class="w-3.5 h-3.5"></i></button>
-                                <button @click.stop="togglePin(project.id)" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700" title="Épingler"><i data-lucide="pin" class="w-3.5 h-3.5"></i></button>
-                                <button @click.stop="deleteProject(project.id)" class="text-gray-400 hover:text-red-400 p-1 rounded hover:bg-gray-700" title="Supprimer"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                                <button @click.stop="renameProject(project)" class="text-gray-400 hover:text-aethas-cyan"><i data-lucide="edit-2" class="w-3.5 h-3.5"></i></button>
+                                <button @click.stop="togglePin(project.id)" class="text-gray-400 hover:text-white"><i data-lucide="pin" class="w-3.5 h-3.5"></i></button>
+                                <button @click.stop="deleteProject(project.id)" class="text-gray-400 hover:text-red-400"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                             </div>
                         </li>
                     </ul>
                 </div>
             </div>
             
-            <div class="p-4 border-t border-gray-700 flex justify-between items-center">
+            <div class="p-4 border-t border-gray-700 flex justify-between items-center cursor-pointer hover:bg-gray-800 transition-colors" @click="activeView = 'settings'">
                 <div class="flex items-center gap-2">
-                    <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-aethas-cyan to-aethas-purple flex items-center justify-center text-sm font-bold shadow-md">{{ username.charAt(0).toUpperCase() }}</div>
-                    <span class="text-sm font-medium">{{ username }}</span>
+                    <img v-if="user.avatar_path" :src="user.avatar_path" class="w-8 h-8 rounded-full object-cover border border-gray-600 bg-gray-900">
+                    <div v-else class="w-8 h-8 rounded-full bg-gradient-to-tr from-aethas-cyan to-aethas-purple flex items-center justify-center text-sm font-bold shadow-md">{{ user.username.charAt(0).toUpperCase() }}</div>
+                    <span class="text-sm font-medium">
+                        {{ user.username }} 
+                        <span v-if="user.is_superadmin" class="text-[10px] bg-purple-900 text-purple-200 px-1.5 py-0.5 rounded ml-1">Super-Admin</span>
+                        <span v-else-if="user.is_admin" class="text-[10px] bg-red-900 text-red-200 px-1.5 py-0.5 rounded ml-1">Admin</span>
+                    </span>
                 </div>
-                <button @click="openSettings" class="text-gray-400 hover:text-white transition-colors" title="Paramètres">
-                    <i data-lucide="settings" class="w-5 h-5"></i>
-                </button>
+                <i data-lucide="settings" class="w-5 h-5 text-gray-400"></i>
             </div>
         </aside>
     </div>
 
     <!-- ZONE PRINCIPALE -->
-    <main class="flex-1 flex flex-col min-w-0 z-10 transition-all duration-300">
+    <main class="flex-1 flex flex-col min-w-0 z-10 transition-all duration-300 bg-aethas-dark relative">
+        
         <header class="flex items-center justify-between p-4 border-b border-gray-700 bg-aethas-panel h-[73px]">
             <div class="flex items-center gap-3">
-                <button @click="toggleSidebar" class="text-gray-400 hover:text-white transition-colors p-1.5 rounded hover:bg-gray-700"><i data-lucide="menu" class="w-6 h-6"></i></button>
-                <div v-show="!isSidebarOpen" class="flex items-center gap-2 transition-opacity duration-300">
-                    <img src="/assets/logo.png" alt="Logo" class="w-8 h-8 rounded-full border border-aethas-cyan object-cover bg-gray-800 flex-shrink-0">
+                <button @click="toggleSidebar" class="text-gray-400 hover:text-white p-1.5 rounded hover:bg-gray-700"><i data-lucide="menu" class="w-6 h-6"></i></button>
+                <div v-show="!isSidebarOpen" class="flex items-center gap-2">
+                    <img src="/assets/logo.png" class="w-8 h-8 rounded-full border border-aethas-cyan">
                     <span class="font-bold text-lg neon-text">AETHAS38</span>
                 </div>
             </div>
-            <div v-if="activeProject" class="text-sm font-medium text-gray-300 flex items-center gap-4">
+            <div v-if="activeView === 'chat' && activeProject" class="text-sm font-medium text-gray-300 flex items-center gap-4">
                 <span class="truncate max-w-[200px] md:max-w-md">{{ activeProject.title }}</span>
-                <button @click="renameProject(activeProject)" class="text-gray-500 hover:text-aethas-cyan" title="Renommer"><i data-lucide="edit-2" class="w-4 h-4"></i></button>
-                
-                <!-- NOUVEAU : BOUTONS D'EXPORT GLOBAL -->
                 <div class="flex items-center gap-2 border-l border-gray-600 pl-4">
-                    <button @click="exportProject('txt')" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600 px-2 py-1 rounded flex items-center gap-1 transition-colors">
-                        <i data-lucide="download" class="w-3 h-3"></i> TXT
-                    </button>
-                    <button @click="exportProject('json')" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600 px-2 py-1 rounded flex items-center gap-1 transition-colors">
-                        <i data-lucide="file-json" class="w-3 h-3"></i> JSON
-                    </button>
+                    <button @click="exportProject('txt')" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="download" class="w-3 h-3"></i> TXT</button>
+                    <button @click="exportProject('json')" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="file-json" class="w-3 h-3"></i> JSON</button>
                 </div>
             </div>
         </header>
 
-        <div v-if="!activeProject" class="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-center">
-            <img src="/assets/logo.png" alt="AETHAS38 Logo" class="w-24 h-24 mb-6 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)] object-cover bg-gray-800 flex-shrink-0">
-            <h2 class="text-2xl font-bold text-gray-200 mb-2 text-center">Comment puis-je vous aider aujourd'hui ?</h2>
-            <p class="text-gray-500 text-sm text-center">Sélectionnez ou créez un projet pour commencer.</p>
-        </div>
-
-        <div v-else class="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 flex flex-col" id="chat-container">
-            <div v-if="messages.length === 0" class="flex-1 flex items-center justify-center text-gray-500 italic">Démarrez la conversation ci-dessous.</div>
-            
-            <div v-for="msg in messages" :key="msg.id" :class="['max-w-4xl rounded-2xl p-4', msg.role === 'user' ? 'bg-gray-800 ml-auto border border-gray-700' : 'bg-aethas-panel mr-auto border border-aethas-cyan/30 flex flex-col']">
-                <div class="flex items-center gap-2 mb-2">
-                    <span class="text-xs font-semibold uppercase tracking-wider text-gray-400">{{ msg.role === 'user' ? 'Vous' : 'AETHAS38' }}</span>
-                </div>
+        <!-- VUE : CONFIGURATION (Par Niveaux) -->
+        <div v-if="activeView === 'settings'" class="flex-1 overflow-y-auto p-4 md:p-8">
+            <div class="max-w-4xl mx-auto space-y-6">
+                <h2 class="text-2xl font-bold text-white flex items-center gap-2 border-b border-gray-700 pb-4"><i data-lucide="settings-2" class="w-6 h-6 text-aethas-cyan"></i> Configuration Système</h2>
                 
-                <!-- PARSEUR DE BLOCS DE CODE ET TEXTE -->
-                <div class="text-gray-200 text-sm leading-relaxed w-full">
-                    <template v-for="(part, index) in parseMessage(msg.content)" :key="index">
-                        
-                        <!-- Texte Classique -->
-                        <div v-if="part.type === 'text'" class="whitespace-pre-wrap font-sans">{{ part.content }}</div>
-                        
-                        <!-- Bloc de Code / Fichier Téléchargeable -->
-                        <div v-if="part.type === 'code'" class="my-4 bg-gray-900 rounded-lg border border-gray-700 overflow-hidden shadow-inner">
-                            <div class="flex justify-between items-center px-4 py-2 bg-gray-800 border-b border-gray-700">
-                                <span class="text-xs text-gray-400 font-mono flex items-center gap-2">
-                                    <i data-lucide="file-code-2" class="w-4 h-4"></i> {{ part.language || 'code' }}
-                                </span>
-                                <button @click="downloadFile(part.content, part.language)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">
-                                    <i data-lucide="download" class="w-3 h-3"></i> Fichier
-                                </button>
+                <div class="flex border-b border-gray-700">
+                    <button @click="settingsTab = 'user'" :class="['py-2 px-4 text-sm font-semibold border-b-2 transition-colors', settingsTab === 'user' ? 'border-aethas-cyan text-aethas-cyan' : 'border-transparent text-gray-400 hover:text-white']">Mon Profil (Utilisateur)</button>
+                    <button v-if="user.is_admin" @click="settingsTab = 'admin'" :class="['py-2 px-4 text-sm font-semibold border-b-2 transition-colors', settingsTab === 'admin' ? 'border-red-500 text-red-400' : 'border-transparent text-gray-400 hover:text-white']">Administration</button>
+                    <button v-if="user.is_superadmin" @click="settingsTab = 'super'" :class="['py-2 px-4 text-sm font-semibold border-b-2 transition-colors', settingsTab === 'super' ? 'border-aethas-purple text-purple-400' : 'border-transparent text-gray-400 hover:text-white']">Super-Admin</button>
+                </div>
+
+                <!-- Tab: Utilisateur -->
+                <div v-if="settingsTab === 'user'" class="space-y-6">
+                    <div class="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                        <h3 class="text-lg font-semibold text-white mb-4">Personnalisation du Profil</h3>
+                        <div class="flex items-center gap-6">
+                            <img v-if="user.avatar_path" :src="user.avatar_path" class="w-20 h-20 rounded-full object-cover border-2 border-aethas-cyan bg-gray-900 shadow-lg">
+                            <div v-else class="w-20 h-20 rounded-full bg-gradient-to-tr from-aethas-cyan to-aethas-purple flex items-center justify-center text-2xl font-bold shadow-lg">{{ user.username.charAt(0).toUpperCase() }}</div>
+                            <div class="flex-1">
+                                <label class="bg-aethas-panel hover:bg-gray-700 text-white border border-gray-600 px-4 py-2 rounded-lg cursor-pointer transition-colors text-sm inline-block">
+                                    <i data-lucide="upload" class="w-4 h-4 inline mr-1"></i> Uploader un nouvel Avatar
+                                    <input type="file" accept="image/*" @change="uploadAvatar" class="hidden">
+                                </label>
+                                <p class="text-xs text-gray-500 mt-2">L'image sera automatiquement recadrée et redimensionnée à l'affichage pour s'adapter parfaitement à l'interface.</p>
                             </div>
-                            <pre class="p-4 text-xs font-mono text-gray-300 overflow-x-auto"><code>{{ part.content }}</code></pre>
                         </div>
-                    </template>
+                    </div>
+                    <div class="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                        <h3 class="text-lg font-semibold text-white mb-4">Sécurité</h3>
+                        <div v-if="settingsMessage" class="p-3 rounded text-sm mb-4 bg-gray-900 border border-aethas-cyan text-aethas-cyan">{{ settingsMessage }}</div>
+                        <div class="grid gap-4 max-w-md">
+                            <input v-model="passForm.old" type="password" placeholder="Ancien mot de passe" class="bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none">
+                            <input v-model="passForm.new" type="password" placeholder="Nouveau mot de passe" class="bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none">
+                            <input v-model="passForm.confirm" type="password" placeholder="Confirmer" class="bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none">
+                            <button @click="changePassword" :disabled="isSavingSettings" class="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg disabled:opacity-50">Modifier le mot de passe</button>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- NOUVEAU : OUTILS DE MESSAGE (Copier / Extraire unitaire) -->
-                <div v-if="msg.role !== 'user'" class="mt-3 flex items-center gap-3 border-t border-gray-700/50 pt-2 opacity-50 hover:opacity-100 transition-opacity">
-                    <button @click="copyToClipboard(msg.content)" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1">
-                        <i data-lucide="copy" class="w-3 h-3"></i> Copier
-                    </button>
-                    <button @click="downloadMessage(msg.content, msg.created_at)" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1">
-                        <i data-lucide="file-down" class="w-3 h-3"></i> Extraire
-                    </button>
+                <!-- Tab: Admin -->
+                <div v-if="settingsTab === 'admin' && user.is_admin" class="space-y-6">
+                    <div class="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                        <h3 class="text-lg font-semibold text-red-400 mb-4">Outils Administrateur</h3>
+                        <p class="text-sm text-gray-400 mb-4">Fonctionnalités réservées aux administrateurs pour la gestion des modèles et le suivi de base.</p>
+                        <div class="flex gap-4">
+                            <button @click="activeView = 'models'" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600">Ouvrir le panneau Modèles IA</button>
+                            <a href="/api/models/export" target="_blank" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600">Exporter DB Modèles (JSON)</a>
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            <div v-if="isAiThinking" class="max-w-3xl rounded-2xl p-4 bg-aethas-panel mr-auto border border-aethas-cyan/30 w-24">
-                <div class="flex space-x-1.5 h-4 items-center">
-                    <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce"></div>
-                    <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce" style="animation-delay: 0.15s"></div>
-                    <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce" style="animation-delay: 0.3s"></div>
+                <!-- Tab: Super-Admin -->
+                <div v-if="settingsTab === 'super' && user.is_superadmin" class="space-y-6">
+                    <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 border-l-4 border-l-aethas-purple">
+                        <h3 class="text-lg font-semibold text-purple-400 mb-4">Espace Réservé Super-Admin</h3>
+                        <p class="text-sm text-gray-400">La gestion complète du serveur mail, des clés API et de l'élévation des droits utilisateurs sera disponible ici lors du prochain patch de développement.</p>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- ZONE DE CONTRÔLE ORCHESTRATEUR & PROMPT -->
-        <div v-if="activeProject" class="p-4 md:p-6 w-full max-w-5xl mx-auto space-y-2">
-            <div class="bg-gray-800/80 border border-gray-700 rounded-xl p-3 flex flex-wrap gap-4 items-center text-xs">
-                <div class="flex items-center gap-2 flex-1 min-w-[200px]">
-                    <span class="text-aethas-cyan font-semibold w-20"><i data-lucide="users" class="w-3 h-3 inline"></i> Travailleurs:</span>
-                    <select multiple v-model="selectedWorkers" @change="limitWorkers" class="bg-aethas-dark border border-gray-600 rounded px-2 py-1 text-gray-200 w-full h-16 outline-none focus:border-aethas-cyan">
-                        <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Direct)</option>
-                        <option v-for="m in modelsList" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
+        <!-- VUE : MODÈLES ET FINANCES (Admin Only) -->
+        <div v-if="activeView === 'models' && user.is_admin" class="flex-1 overflow-y-auto p-4 md:p-8 space-y-6">
+            <div class="flex justify-between items-end border-b border-gray-700 pb-4">
+                <div>
+                    <h2 class="text-2xl font-bold text-white flex items-center gap-2"><i data-lucide="cpu" class="w-6 h-6 text-aethas-cyan"></i> Modèles & Finances API</h2>
+                    <p class="text-sm text-gray-400 mt-1">Dernière extraction : <span class="text-gray-200 font-mono">{{ formatDate(modelInfo.last_sync_date) }}</span> <span class="text-xs bg-gray-800 px-2 py-0.5 rounded border border-gray-600 ml-2 uppercase">{{ modelInfo.last_sync_type || 'Aucune' }}</span></p>
+                </div>
+                <div class="flex gap-2">
+                    <button @click="syncModels" :disabled="isSyncing" class="bg-aethas-cyan hover:bg-cyan-600 text-aethas-dark font-semibold py-2 px-4 rounded flex items-center gap-2 text-sm disabled:opacity-50"><i data-lucide="refresh-cw" :class="{'animate-spin': isSyncing}" class="w-4 h-4"></i> Forcer Extraction</button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div v-for="fin in modelInfo.finances" :key="fin.provider" class="bg-gray-800 border border-gray-700 rounded-xl p-4 flex flex-col justify-between">
+                    <div class="flex justify-between items-start mb-2"><span class="font-bold text-gray-200 capitalize">{{ fin.provider }}</span><i data-lucide="wallet" class="w-5 h-5 text-gray-500"></i></div>
+                    <div><div class="text-2xl font-mono text-aethas-cyan">${{ fin.balance.toFixed(4) }}</div><div class="text-xs text-gray-400 mt-1">Conso. Totale : ${{ fin.total_usage.toFixed(4) }}</div></div>
+                </div>
+            </div>
+
+            <div class="bg-aethas-panel border border-gray-700 rounded-xl overflow-hidden flex flex-col">
+                <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex flex-wrap gap-4 items-center">
+                    <input v-model="filterSearch" type="text" placeholder="Rechercher..." class="bg-gray-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 w-full md:w-64 focus:border-aethas-cyan focus:outline-none">
+                    <select v-model="filterDomain" class="bg-gray-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:outline-none">
+                        <option value="">Tous les domaines</option>
+                        <option value="Texte Polyvalent">Texte Polyvalent</option>
+                        <option value="Code & Logique">Code & Logique</option>
+                        <option value="Vision & Texte">Vision & Texte</option>
+                        <option value="Audio">Audio</option>
                     </select>
-                    <span class="text-gray-500 ml-1">{{ selectedWorkers.length }}/5</span>
+                    <select v-model="filterPricing" class="bg-gray-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:outline-none">
+                        <option value="">Tous les prix</option>
+                        <option value="free">Gratuits uniquement</option>
+                        <option value="paid">Payants</option>
+                    </select>
                 </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm text-gray-300">
+                        <thead class="text-xs uppercase bg-gray-800 text-gray-400"><tr><th class="px-4 py-3">Modèle</th><th class="px-4 py-3">Fournisseur</th><th class="px-4 py-3">Domaine</th><th class="px-4 py-3">Coût (1M Tokens)</th><th class="px-4 py-3">Contexte</th><th class="px-4 py-3 w-1/3">Description</th></tr></thead>
+                        <tbody>
+                            <tr v-for="model in filteredModels" :key="model.model_id" class="border-b border-gray-700 hover:bg-gray-800/50 transition-colors">
+                                <td class="px-4 py-3 font-mono text-xs text-aethas-cyan break-all">{{ model.model_id }}</td>
+                                <td class="px-4 py-3 capitalize">{{ model.provider }}</td>
+                                <td class="px-4 py-3"><span class="bg-gray-700 text-gray-200 px-2 py-1 rounded text-xs">{{ model.domain }}</span></td>
+                                <td class="px-4 py-3 font-mono text-xs"><span v-if="model.is_free" class="text-green-400 font-bold">GRATUIT</span><span v-else>In: ${{ model.pricing_prompt.toFixed(2) }}<br>Out:${{ model.pricing_completion.toFixed(2) }}</span></td>
+                                <td class="px-4 py-3">{{ (model.context_length / 1000).toFixed(0) }}k</td>
+                                <td class="px-4 py-3 text-xs text-gray-400 truncate max-w-[250px]" :title="model.description_fr">{{ model.description_fr }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- VUE : CHAT PAR DÉFAUT -->
+        <template v-if="activeView === 'chat'">
+            <div v-if="!activeProject" class="flex-1 overflow-y-auto p-4 flex flex-col items-center justify-center">
+                <img src="/assets/logo.png" class="w-24 h-24 mb-6 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)]">
+                <h2 class="text-2xl font-bold text-gray-200 mb-2">Comment puis-je vous aider aujourd'hui ?</h2>
+            </div>
+
+            <div v-else class="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 flex flex-col" id="chat-container">
+                <div v-if="messages.length === 0" class="flex-1 flex items-center justify-center text-gray-500 italic">Démarrez la conversation ci-dessous.</div>
                 
-                <div class="flex flex-col gap-2 flex-1 min-w-[200px]" :class="{'opacity-30 pointer-events-none': selectedWorkers.length <= 1}">
-                    <div class="flex items-center gap-2">
-                        <span class="text-gray-400 font-semibold w-24"><i data-lucide="edit-3" class="w-3 h-3 inline"></i> Prompteur:</span>
-                        <select v-model="selectedPrompter" class="bg-aethas-dark border border-gray-600 rounded px-2 py-1 text-gray-200 flex-1 outline-none truncate">
-                            <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Direct)</option>
-                            <option v-for="m in modelsList" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
-                        </select>
+                <div v-for="msg in messages" :key="msg.id" :class="['max-w-4xl rounded-2xl p-4', msg.role === 'user' ? 'bg-gray-800 ml-auto border border-gray-700' : 'bg-aethas-panel mr-auto border border-aethas-cyan/30 flex flex-col']">
+                    <div class="flex items-center gap-2 mb-2">
+                        <img v-if="msg.role === 'user' && user.avatar_path" :src="user.avatar_path" class="w-5 h-5 rounded-full object-cover">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-gray-400">{{ msg.role === 'user' ? 'Vous' : 'AETHAS38' }}</span>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-aethas-purple font-semibold w-24"><i data-lucide="git-merge" class="w-3 h-3 inline"></i> Concaténeur:</span>
-                        <select v-model="selectedConcatenator" class="bg-aethas-dark border border-gray-600 rounded px-2 py-1 text-gray-200 flex-1 outline-none truncate">
-                            <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Direct)</option>
-                            <option v-for="m in modelsList" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
-                        </select>
+                    
+                    <div class="text-gray-200 text-sm leading-relaxed w-full">
+                        <template v-for="(part, index) in parseMessage(msg.content)" :key="index">
+                            <div v-if="part.type === 'text'" class="whitespace-pre-wrap font-sans">{{ part.content }}</div>
+                            <div v-if="part.type === 'code'" class="my-4 bg-gray-900 rounded-lg border border-gray-700 overflow-hidden shadow-inner">
+                                <div class="flex justify-between items-center px-4 py-2 bg-gray-800 border-b border-gray-700">
+                                    <span class="text-xs text-gray-400 font-mono flex items-center gap-2"><i data-lucide="file-code-2" class="w-4 h-4"></i> {{ part.language || 'code' }}</span>
+                                    <button @click="downloadFile(part.content, part.language)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded"><i data-lucide="download" class="w-3 h-3"></i> Fichier</button>
+                                </div>
+                                <pre class="p-4 text-xs font-mono text-gray-300 overflow-x-auto"><code>{{ part.content }}</code></pre>
+                            </div>
+                        </template>
+                    </div>
+
+                    <div v-if="msg.role !== 'user'" class="mt-3 flex items-center gap-3 border-t border-gray-700/50 pt-2 opacity-50 hover:opacity-100 transition-opacity">
+                        <button @click="copyToClipboard(msg.content)" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1"><i data-lucide="copy" class="w-3 h-3"></i> Copier</button>
+                        <button @click="downloadMessage(msg.content, msg.created_at)" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1"><i data-lucide="file-down" class="w-3 h-3"></i> Extraire</button>
+                    </div>
+                </div>
+
+                <div v-if="isAiThinking" class="max-w-3xl rounded-2xl p-4 bg-aethas-panel mr-auto border border-aethas-cyan/30 w-24">
+                    <div class="flex space-x-1.5 h-4 items-center">
+                        <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce"></div>
+                        <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce" style="animation-delay: 0.15s"></div>
+                        <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce" style="animation-delay: 0.3s"></div>
                     </div>
                 </div>
             </div>
 
-            <div class="relative flex items-end bg-gray-800 border border-gray-600 rounded-2xl p-2 shadow-lg focus-within:border-aethas-cyan">
-                <textarea v-model="prompt" @input="autoResize" @keydown.enter.exact.prevent="sendMessage" ref="promptTextarea" :disabled="isAiThinking" rows="1" class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none disabled:opacity-50" placeholder="Posez votre question..."></textarea>
-                <button @click="sendMessage" :disabled="!prompt.trim() || isAiThinking" class="p-3 text-aethas-cyan hover:text-white disabled:opacity-50"><i data-lucide="send" class="w-5 h-5"></i></button>
+            <!-- ZONE SÉLECTION MODÈLES PAR REQUÊTE -->
+            <div v-if="activeProject" class="p-4 md:p-6 w-full max-w-5xl mx-auto space-y-2">
+                <div class="bg-gray-800/80 border border-gray-700 rounded-xl p-3 flex flex-wrap gap-4 items-center text-xs shadow-md">
+                    <div class="flex items-center gap-2 flex-1 min-w-[200px]">
+                        <span class="text-aethas-cyan font-semibold w-20"><i data-lucide="users" class="w-3 h-3 inline"></i> Travailleurs:</span>
+                        <select multiple v-model="selectedWorkers" @change="limitWorkers" class="bg-aethas-dark border border-gray-600 rounded px-2 py-1 text-gray-200 w-full h-16 outline-none focus:border-aethas-cyan custom-scrollbar">
+                            <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Direct)</option>
+                            <option v-for="m in modelInfo.models" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }} ({{ m.domain }})</option>
+                        </select>
+                        <span class="text-gray-500 ml-1">{{ selectedWorkers.length }}/5</span>
+                    </div>
+                    
+                    <div class="flex flex-col gap-2 flex-1 min-w-[200px]" :class="{'opacity-30 pointer-events-none': selectedWorkers.length <= 1}">
+                        <div class="flex items-center gap-2">
+                            <span class="text-gray-400 font-semibold w-24"><i data-lucide="edit-3" class="w-3 h-3 inline"></i> Prompteur:</span>
+                            <select v-model="selectedPrompter" class="bg-aethas-dark border border-gray-600 rounded px-2 py-1 text-gray-200 flex-1 outline-none truncate">
+                                <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Direct)</option>
+                                <option v-for="m in modelInfo.models" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
+                            </select>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-aethas-purple font-semibold w-24"><i data-lucide="git-merge" class="w-3 h-3 inline"></i> Concaténeur:</span>
+                            <select v-model="selectedConcatenator" class="bg-aethas-dark border border-gray-600 rounded px-2 py-1 text-gray-200 flex-1 outline-none truncate">
+                                <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Direct)</option>
+                                <option v-for="m in modelInfo.models" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="relative flex items-end bg-gray-800 border border-gray-600 rounded-2xl p-2 shadow-lg focus-within:border-aethas-cyan">
+                    <textarea v-model="prompt" @input="autoResize" @keydown.enter.exact.prevent="sendMessage" ref="promptTextarea" :disabled="isAiThinking" rows="1" class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none disabled:opacity-50" placeholder="Sélectionnez vos modèles ci-dessus, puis posez votre question..."></textarea>
+                    <button @click="sendMessage" :disabled="!prompt.trim() || isAiThinking" class="p-3 text-aethas-cyan hover:text-white disabled:opacity-50"><i data-lucide="send" class="w-5 h-5"></i></button>
+                </div>
             </div>
-        </div>
+        </template>
     </main>
 </div>
 
@@ -263,24 +306,30 @@
 
     createApp({
         setup() {
-            const username = ref("Admin");
+            const user = ref({ username: "Guest", is_admin: false, is_superadmin: false, avatar_path: null });
+            const activeView = ref('chat'); 
+            const settingsTab = ref('user');
             const isSidebarOpen = ref(true);
             const prompt = ref("");
             const promptTextarea = ref(null);
+            
             const projects = ref([]);
             const activeProject = ref(null);
             const messages = ref([]);
+            
             const isLoading = ref(false);
             const isAiThinking = ref(false);
-
-            const isSettingsModalOpen = ref(false);
-            const isModelsModalOpen = ref(false);
-            const isSavingSettings = ref(false);
             const isSyncing = ref(false);
+            const isSavingSettings = ref(false);
+
             const settingsMessage = ref("");
             const passForm = reactive({ old: '', new: '', confirm: '' });
             
-            const modelsList = ref([]);
+            const modelInfo = reactive({ last_sync_date: null, last_sync_type: null, models: [], finances: [] });
+            const filterSearch = ref("");
+            const filterDomain = ref("");
+            const filterPricing = ref("");
+            
             const selectedWorkers = ref(["gemini-3.5-flash-lite"]);
             const selectedPrompter = ref("gemini-3.5-flash-lite");
             const selectedConcatenator = ref("gemini-3.5-flash-lite");
@@ -288,112 +337,97 @@
             const pinnedProjects = computed(() => projects.value.filter(p => p.is_pinned));
             const recentProjects = computed(() => projects.value.filter(p => !p.is_pinned));
 
+            const filteredModels = computed(() => {
+                return modelInfo.models.filter(m => {
+                    const matchSearch = (m.model_id.toLowerCase().includes(filterSearch.value.toLowerCase()) || m.provider.toLowerCase().includes(filterSearch.value.toLowerCase()));
+                    const matchDomain = filterDomain.value === "" || m.domain === filterDomain.value;
+                    let matchPrice = true;
+                    if (filterPricing.value === 'free') matchPrice = m.is_free;
+                    if (filterPricing.value === 'paid') matchPrice = !m.is_free;
+                    return matchSearch && matchDomain && matchPrice;
+                });
+            });
+
+            const formatDate = (isoString) => {
+                if (!isoString) return "Jamais";
+                const d = new Date(isoString);
+                return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) + " à " + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+            };
+
             const toggleSidebar = () => { isSidebarOpen.value = !isSidebarOpen.value; };
             const autoResize = () => { const el = promptTextarea.value; if(el){ el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }};
             const scrollToBottom = () => { nextTick(() => { const c = document.getElementById('chat-container'); if (c) c.scrollTop = c.scrollHeight; }); };
 
-            const openSettings = () => { isSettingsModalOpen.value = true; nextTick(() => lucide.createIcons()); };
-            const closeSettings = () => { isSettingsModalOpen.value = false; };
-            const openModelsModal = () => { fetchModels(); isModelsModalOpen.value = true; nextTick(() => lucide.createIcons()); };
+            const fetchUser = async () => { try { const res = await fetch('/api/users/me'); if(res.ok) user.value = await res.json(); } catch(e){} };
+            const fetchModelsInfo = async () => { try { const res = await fetch('/api/models/info'); if(res.ok) { const data = await res.json(); modelInfo.last_sync_date = data.last_sync_date; modelInfo.last_sync_type = data.last_sync_type; modelInfo.models = data.models; modelInfo.finances = data.finances; } } catch(e){} };
+            const syncModels = async () => { isSyncing.value = true; try { const res = await fetch('/api/models/sync', { method: 'POST' }); if(res.ok) { await fetchModelsInfo(); alert("Synchronisation terminée"); } } catch(e) {} isSyncing.value = false; };
 
-            // --- NOUVEAU : FONCTIONS D'EXPORT ET TÉLÉCHARGEMENT ---
-            const exportProject = (format) => {
-                if(!activeProject.value) return;
-                window.open(`/api/projects/${activeProject.value.id}/export?format=${format}`, '_blank');
-            };
-
-            const copyToClipboard = async (text) => {
+            const uploadAvatar = async (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                const formData = new FormData(); formData.append("file", file);
                 try {
-                    await navigator.clipboard.writeText(text);
-                    alert("Texte copié dans le presse-papiers.");
-                } catch (err) { console.error('Erreur de copie', err); }
+                    const res = await fetch('/api/users/me/avatar', { method: 'POST', body: formData });
+                    const data = await res.json();
+                    if(res.ok) user.value.avatar_path = data.avatar_path;
+                    else alert(data.detail);
+                } catch(e) { alert("Erreur d'upload"); }
+                event.target.value = null;
             };
 
-            const downloadFile = (content, hint) => {
-                let filename = hint ? hint.trim() : 'fichier.txt';
-                if (!filename.includes('.')) filename += '.txt';
-                
-                const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = filename;
-                a.click();
-                URL.revokeObjectURL(url);
-            };
-
-            const downloadMessage = (content, dateString) => {
-                const safeDate = dateString.replace(/[:T.Z]/g, '-');
-                downloadFile(content, `aethas38_message_${safeDate}.txt`);
-            };
-
-            // Parseur Regex pour isoler les blocs de code / CSV
-            const parseMessage = (content) => {
-                const regex = /```([\w.-]*)\n([\s\S]*?)```/g;
-                let parts = [];
-                let lastIndex = 0;
-                let match;
-                while ((match = regex.exec(content)) !== null) {
-                    if (match.index > lastIndex) {
-                        parts.push({ type: 'text', content: content.slice(lastIndex, match.index) });
-                    }
-                    parts.push({ type: 'code', language: match[1], content: match[2] });
-                    lastIndex = match.index + match[0].length;
-                }
-                if (lastIndex < content.length) {
-                    parts.push({ type: 'text', content: content.slice(lastIndex) });
-                }
-                return parts.length > 0 ? parts : [{ type: 'text', content: content }];
-            };
-
-            const fetchModels = async () => { try { const res = await fetch('/api/models'); if(res.ok) modelsList.value = await res.json(); } catch(e) { console.error(e); } };
-            const syncModels = async () => { isSyncing.value = true; try { const res = await fetch('/api/models/sync', { method: 'POST' }); if(res.ok) { alert("Synchronisation terminée !"); await fetchModels(); } } catch(e) { console.error(e); } isSyncing.value = false; };
-            const importModels = async (event) => { const file = event.target.files[0]; if (!file) return; const formData = new FormData(); formData.append("file", file); try { const res = await fetch('/api/models/import', { method: 'POST', body: formData }); const data = await res.json(); alert(data.message || data.detail); await fetchModels(); } catch (e) { alert("Erreur d'import"); } event.target.value = null; };
-            const limitWorkers = () => { if(selectedWorkers.value.length > 5) { selectedWorkers.value.pop(); alert("Maximum 5 travailleurs autorisés en parallèle."); } };
+            const exportProject = (format) => { if(activeProject.value) window.open(`/api/projects/${activeProject.value.id}/export?format=${format}`, '_blank'); };
+            const copyToClipboard = async (text) => { try { await navigator.clipboard.writeText(text); alert("Copié !"); } catch (e) {} };
+            const downloadFile = (content, hint) => { let fname = hint ? hint.trim() : 'code.txt'; if (!fname.includes('.')) fname += '.txt'; const blob = new Blob([content], { type: 'text/plain;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = fname; a.click(); URL.revokeObjectURL(url); };
+            const downloadMessage = (content, dateString) => { downloadFile(content, `message_${dateString.replace(/[:T.Z]/g, '-')}.txt`); };
+            const parseMessage = (content) => { const regex = /```([\w.-]*)\n([\s\S]*?)```/g; let parts = [], last = 0, m; while ((m = regex.exec(content)) !== null) { if (m.index > last) parts.push({ type: 'text', content: content.slice(last, m.index) }); parts.push({ type: 'code', language: m[1], content: m[2] }); last = m.index + m[0].length; } if (last < content.length) parts.push({ type: 'text', content: content.slice(last) }); return parts.length > 0 ? parts : [{ type: 'text', content: content }]; };
 
             const fetchProjects = async () => { try { const res = await fetch('/api/projects'); if(res.ok) projects.value = await res.json(); nextTick(()=>lucide.createIcons()); } catch(e){} };
-            const selectProject = async (project) => { activeProject.value = project; messages.value = []; try { const res = await fetch(`/api/projects/${project.id}/messages`); if(res.ok) { messages.value = await res.json(); scrollToBottom(); nextTick(()=>lucide.createIcons()); } } catch(e){} };
-            const createNewProject = async () => { isLoading.value = true; try { const res = await fetch('/api/projects', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({title: "Nouvelle discussion"})}); if(res.ok){ const np = await res.json(); projects.value.unshift(np); selectProject(np); } } catch(e){} finally{isLoading.value = false;} };
+            const selectProject = async (project) => { activeView.value = 'chat'; activeProject.value = project; messages.value = []; try { const res = await fetch(`/api/projects/${project.id}/messages`); if(res.ok) { messages.value = await res.json(); scrollToBottom(); nextTick(()=>lucide.createIcons()); } } catch(e){} };
+            const createNewProject = async () => { activeView.value = 'chat'; isLoading.value = true; try { const res = await fetch('/api/projects', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({title: "Nouvelle discussion"})}); if(res.ok){ const np = await res.json(); projects.value.unshift(np); selectProject(np); } } catch(e){} finally{isLoading.value = false;} };
 
             const sendMessage = async () => {
                 if (!prompt.value.trim() || !activeProject.value || selectedWorkers.value.length === 0) return;
-                const userText = prompt.value.trim();
-                prompt.value = ""; autoResize();
-                
+                const userText = prompt.value.trim(); prompt.value = ""; autoResize();
                 messages.value.push({ id: Date.now(), role: 'user', content: userText });
                 isAiThinking.value = true; scrollToBottom();
-                
-                const payload = {
-                    role: 'user', content: userText,
-                    config: { workers: selectedWorkers.value, prompter: selectedPrompter.value, concatenator: selectedConcatenator.value }
-                };
-
+                const payload = { role: 'user', content: userText, config: { workers: selectedWorkers.value, prompter: selectedPrompter.value, concatenator: selectedConcatenator.value } };
                 try {
                     const response = await fetch(`/api/projects/${activeProject.value.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
                     if (response.ok) { const data = await response.json(); if (Array.isArray(data)) messages.value = data; } 
                     else { const err = await response.json(); alert("Erreur: " + err.detail); }
-                } catch (error) { console.error(error); } 
-                finally { isAiThinking.value = false; scrollToBottom(); nextTick(()=>lucide.createIcons()); }
+                } catch (error) {} finally { isAiThinking.value = false; scrollToBottom(); nextTick(()=>lucide.createIcons()); }
             };
 
-            const changePassword = async () => { /* Inchangé... */ };
-            const renameProject = async (project) => { /* Inchangé... */ };
-            const togglePin = async (projectId) => { /* Inchangé... */ };
-            const deleteProject = async (projectId) => { /* Inchangé... */ };
+            const changePassword = async () => {
+                settingsMessage.value = "";
+                if (passForm.new !== passForm.confirm) { settingsMessage.value = "Mots de passe différents."; return; }
+                if (passForm.new.length < 8) { settingsMessage.value = "8 caractères minimum."; return; }
+                isSavingSettings.value = true;
+                try { const res = await fetch('/api/users/me/password', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ old_password: passForm.old, new_password: passForm.new }) }); const data = await res.json(); if (res.ok) { settingsMessage.value = data.message; passForm.old=''; passForm.new=''; passForm.confirm=''; } else { settingsMessage.value = data.detail; } } catch (e) {} finally { isSavingSettings.value = false; }
+            };
 
-            onMounted(() => { lucide.createIcons(); fetchProjects(); fetchModels(); });
+            const renameProject = async (project) => { const nt = window.prompt("Nom :", project.title); if (!nt || nt.trim() === "" || nt === project.title) return; try { const res = await fetch(`/api/projects/${project.id}/rename`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: nt.trim() }) }); if (res.ok) { const up = await res.json(); const i = projects.value.findIndex(p => p.id === project.id); if (i !== -1) projects.value[i] = up; if (activeProject.value && activeProject.value.id === project.id) activeProject.value.title = up.title; } } catch (e) {} };
+            const togglePin = async (pid) => { try { const res = await fetch(`/api/projects/${pid}/pin`, { method: 'PUT' }); if (res.ok) { const up = await res.json(); const i = projects.value.findIndex(p => p.id === pid); if (i !== -1) projects.value[i] = up; } } catch (e) {} };
+            const deleteProject = async (pid) => { if (!confirm("Supprimer ce projet ?")) return; try { const res = await fetch(`/api/projects/${pid}`, { method: 'DELETE' }); if (res.ok) { projects.value = projects.value.filter(p => p.id !== pid); if (activeProject.value && activeProject.value.id === pid) activeProject.value = null; } } catch (e) {} };
+            const limitWorkers = () => { if(selectedWorkers.value.length > 5) { selectedWorkers.value.pop(); alert("Max 5 travailleurs."); } };
+
+            onMounted(() => { lucide.createIcons(); fetchUser(); fetchProjects(); fetchModelsInfo(); });
 
             return { 
-                username, isSidebarOpen, toggleSidebar, prompt, autoResize, promptTextarea, 
+                user, activeView, settingsTab, isSidebarOpen, toggleSidebar, prompt, autoResize, promptTextarea, 
                 projects, pinnedProjects, recentProjects, activeProject, messages, isAiThinking,
                 createNewProject, selectProject, renameProject, sendMessage, isLoading, togglePin, deleteProject,
-                isSettingsModalOpen, openSettings, closeSettings, passForm, settingsMessage, isSavingSettings, changePassword,
-                isModelsModalOpen, openModelsModal, modelsList, syncModels, importModels,
+                passForm, settingsMessage, isSavingSettings, changePassword, uploadAvatar,
+                modelInfo, filterSearch, filterDomain, filterPricing, filteredModels, formatDate, syncModels, isSyncing,
                 selectedWorkers, selectedPrompter, selectedConcatenator, limitWorkers,
                 exportProject, copyToClipboard, downloadFile, downloadMessage, parseMessage
             };
         }
     }).mount('#app');
 </script>
+<style>
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+</style>
 </body>
 </html>

@@ -11,6 +11,8 @@ class User(Base):
     hashed_password = Column(String)
     totp_secret = Column(String)
     is_admin = Column(Boolean, default=False)
+    is_superadmin = Column(Boolean, default=False)
+    avatar_path = Column(String, nullable=True)
     projects = relationship("Project", back_populates="owner")
 
 class Project(Base):
@@ -48,24 +50,27 @@ class SystemSettings(Base):
     cloudflare_account_id = Column(String, nullable=True)
     cloudflare_api_token = Column(String, nullable=True)
     huggingface_api_key = Column(String, nullable=True)
+    last_sync_date = Column(DateTime, nullable=True)
+    last_sync_type = Column(String, nullable=True)
 
 class AIModel(Base):
-    """Stocke la liste des modèles extraits depuis les fournisseurs."""
     __tablename__ = "ai_models"
     id = Column(Integer, primary_key=True, index=True)
     provider = Column(String, index=True)
     model_id = Column(String, unique=True, index=True)
     name = Column(String)
+    description_fr = Column(String, nullable=True)
+    domain = Column(String, default="Texte")
+    is_free = Column(Boolean, default=False)
     context_length = Column(Integer)
     pricing_prompt = Column(Float)
     pricing_completion = Column(Float)
     last_updated = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class FinancialLog(Base):
-    """Suivi financier par fournisseur."""
     __tablename__ = "financial_logs"
     id = Column(Integer, primary_key=True, index=True)
-    provider = Column(String, index=True)
-    balance = Column(Float)
-    total_usage = Column(Float)
+    provider = Column(String, unique=True, index=True)
+    balance = Column(Float, default=0.0)
+    total_usage = Column(Float, default=0.0)
     checked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
