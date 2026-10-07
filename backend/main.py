@@ -10,7 +10,8 @@ from .database import engine, Base, get_db
 from .auth import get_password_hash, generate_totp_secret, get_totp_uri, verify_password, verify_totp, create_access_token, verify_token
 from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, ProjectRename, MessageCreate, MessageResponse
 from .models import User, Project, Message, SystemSettings
-from .ai import get_ai_response
+from .orchestrator import run_orchestrator, sync_providers_models
+from .models import User, Project, Message, SystemSettings, AIModel
 
 # Création des tables dans la base de données
 Base.metadata.create_all(bind=engine)
@@ -151,7 +152,8 @@ def get_messages(project_id: int, db: Session = Depends(get_db), current_user: U
     return db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
 
 @app.post("/api/projects/{project_id}/messages", response_model=List[MessageResponse])
-def create_message(project_id: int, message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def create_message(project_id: int, message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Ajoute un message, lance l'Orchestrateur asynchrone et retourne l'historique."""
     project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not project: raise HTTPException(status_code=404, detail="Projet introuvable")
     
@@ -162,10 +164,27 @@ def create_message(project_id: int, message: MessageCreate, db: Session = Depend
     history = db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
     settings = db.query(SystemSettings).first()
 
-    ai_response_text = get_ai_response(history, settings)
+    # Configuration temporaire (sera remplacée par les choix du Frontend à la Phase 2)
+    # Ex pour tester le pipeline complet : {"workers": ["gemini-3.5-flash-lite", "google/gemini-1.5-pro"]}
+    orchestrator_config = {"workers": ["gemini-3.5-flash-lite"]} 
+    
+    ai_response_text = await run_orchestrator(history, settings, orchestrator_config)
 
     ai_message = Message(role="assistant", content=ai_response_text, project_id=project_id)
     db.add(ai_message)
     db.commit()
 
     return db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
+
+@app.post("/api/models/sync")
+async def trigger_model_sync(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Déclenche manuellement l'extraction et la mise à jour des modèles depuis les API."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs.")
+    settings = db.query(SystemSettings).first()
+    return await sync_providers_models(db, settings)
+
+@app.get("/api/models")
+def get_models(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Renvoie la liste complète des modèles stockés en base de données."""
+    return db.query(AIModel).order_by(AIModel.name.asc()).all()
