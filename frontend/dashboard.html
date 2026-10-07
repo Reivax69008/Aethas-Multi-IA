@@ -31,7 +31,7 @@
         <aside :class="['absolute top-0 left-0 h-full w-72 bg-aethas-panel border-r border-gray-700 flex flex-col transition-transform duration-300', isSidebarOpen ? 'translate-x-0' : '-translate-x-full']">
             <div class="p-4 border-b border-gray-700 flex items-center justify-between">
                 <div class="flex items-center gap-3">
-                    <img src="/static/logo.png" alt="Logo" class="w-10 h-10 rounded-full border border-aethas-cyan object-cover bg-gray-800 flex-shrink-0">
+                    <img src="/assets/logo.png" alt="Logo" class="w-10 h-10 rounded-full border border-aethas-cyan object-cover bg-gray-800 flex-shrink-0">
                     <span class="font-bold text-lg tracking-wider neon-text">AETHAS38</span>
                 </div>
                 <button @click="toggleSidebar" class="md:hidden text-gray-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
@@ -95,7 +95,7 @@
             <div class="flex items-center gap-3">
                 <button @click="toggleSidebar" class="text-gray-400 hover:text-white transition-colors p-1.5 rounded hover:bg-gray-700"><i data-lucide="menu" class="w-6 h-6"></i></button>
                 <div v-show="!isSidebarOpen" class="flex items-center gap-2 transition-opacity duration-300">
-                    <img src="/static/logo.png" alt="Logo" class="w-8 h-8 rounded-full border border-aethas-cyan object-cover bg-gray-800 flex-shrink-0">
+                    <img src="/assets/logo.png" alt="Logo" class="w-8 h-8 rounded-full border border-aethas-cyan object-cover bg-gray-800 flex-shrink-0">
                     <span class="font-bold text-lg neon-text">AETHAS38</span>
                 </div>
             </div>
@@ -107,7 +107,7 @@
 
         <!-- Affichage par défaut -->
         <div v-if="!activeProject" class="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-center">
-            <img src="/static/logo.png" alt="AETHAS38 Logo" class="w-24 h-24 mb-6 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)] object-cover bg-gray-800 flex-shrink-0">
+            <img src="/assets/logo.png" alt="AETHAS38 Logo" class="w-24 h-24 mb-6 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)] object-cover bg-gray-800 flex-shrink-0">
             <h2 class="text-2xl font-bold text-gray-200 mb-2 text-center">Comment puis-je vous aider aujourd'hui ?</h2>
             <p class="text-gray-500 text-sm text-center">Sélectionnez ou créez un projet pour commencer.</p>
         </div>

@@ -20,7 +20,9 @@ app = FastAPI(title="AETHAS38 - Orchestrateur Multi-IA")
 # Configuration des fichiers statiques (images, css locaux, etc.)
 assets_path = os.path.join(os.getcwd(), "frontend", "assets")
 os.makedirs(assets_path, exist_ok=True) # Crée le dossier s'il n'existe pas
-app.mount("/static", StaticFiles(directory=assets_path), name="static")
+app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+# Définition des routes du logo dans login
+
 
 def is_setup_required(db: Session) -> bool:
     """Vérifie si la base de données contient au moins un administrateur."""
