@@ -42,3 +42,6 @@ class MessageResponse(MessageBase):
 
     class Config:
         from_attributes = True
+
+class ProjectRename(BaseModel):
+    title: str

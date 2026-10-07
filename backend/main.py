@@ -9,7 +9,7 @@ import os
 from .database import engine, Base, get_db
 from .models import User, Project, Message
 from .auth import get_password_hash, generate_totp_secret, get_totp_uri, verify_password, verify_totp, create_access_token, verify_token
-from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, MessageCreate, MessageResponse
+from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, ProjectRename, MessageCreate, MessageResponse
 
 # Création des tables dans la base de données
 Base.metadata.create_all(bind=engine)
@@ -170,6 +170,18 @@ def create_project(project: ProjectCreate, db: Session = Depends(get_db), curren
     db.commit()
     db.refresh(new_project)
     return new_project
+
+@app.put("/api/projects/{project_id}/rename", response_model=ProjectResponse)
+def rename_project(project_id: int, project_data: ProjectRename, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Renomme un projet existant."""
+    project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Projet introuvable")
+    
+    project.title = project_data.title
+    db.commit()
+    db.refresh(project)
+    return project
 
 @app.put("/api/projects/{project_id}/pin", response_model=ProjectResponse)
 def toggle_pin_project(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
