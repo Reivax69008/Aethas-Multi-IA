@@ -23,6 +23,26 @@
 
 <div id="app" class="flex w-full h-full relative bg-aethas-dark">
     
+    <!-- MODAL PARAMÈTRES -->
+    <div v-if="isSettingsModalOpen" class="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
+        <div class="bg-aethas-panel border border-gray-600 rounded-2xl w-full max-w-md overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.7)]">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50">
+                <h2 class="text-lg font-bold text-white flex items-center gap-2"><i data-lucide="settings" class="w-5 h-5 text-aethas-cyan"></i> Paramètres</h2>
+                <button @click="closeSettings" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <h3 class="text-sm font-semibold text-aethas-cyan uppercase tracking-wider mb-2">Sécurité du compte</h3>
+                <div v-if="settingsMessage" :class="['p-3 rounded text-sm text-center', settingsMessage.includes('succès') ? 'bg-green-900/50 text-green-200 border border-green-500' : 'bg-red-900/50 text-red-200 border border-red-500']">{{ settingsMessage }}</div>
+                <div><label class="block text-sm text-gray-300 mb-1">Ancien mot de passe</label><input v-model="passForm.old" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none"></div>
+                <div><label class="block text-sm text-gray-300 mb-1">Nouveau mot de passe</label><input v-model="passForm.new" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none"></div>
+                <div><label class="block text-sm text-gray-300 mb-1">Confirmer</label><input v-model="passForm.confirm" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none"></div>
+                <button @click="changePassword" :disabled="isSavingSettings" class="w-full mt-4 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2.5 px-4 rounded-lg transition-colors border border-gray-500 disabled:opacity-50">
+                    <span v-if="isSavingSettings">Mise à jour...</span><span v-else>Modifier</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- BARRE LATÉRALE -->
     <div :class="['transition-all duration-300 flex-shrink-0 relative z-50 flex flex-col', isSidebarOpen ? 'w-72' : 'w-0']">
         <aside :class="['absolute top-0 left-0 h-full w-72 bg-aethas-panel border-r border-gray-700 flex flex-col transition-transform duration-300', isSidebarOpen ? 'translate-x-0' : '-translate-x-full']">
@@ -64,7 +84,7 @@
                             <div class="hidden group-hover:flex items-center gap-1 bg-gray-800 pl-2 rounded">
                                 <button @click.stop="renameProject(project)" class="text-gray-400 hover:text-aethas-cyan"><i data-lucide="edit-2" class="w-3.5 h-3.5"></i></button>
                                 <button @click.stop="togglePin(project.id)" class="text-gray-400 hover:text-white"><i data-lucide="pin" class="w-3.5 h-3.5"></i></button>
-                                <button @click.stop="deleteProject(project.id)" class="text-red-500 hover:text-red-400"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                                <button @click.stop="deleteProject(project.id)" class="text-gray-400 hover:text-red-400"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                             </div>
                         </li>
                     </ul>
@@ -116,7 +136,7 @@
             </div>
         </header>
 
-        <!-- VUE : CONFIGURATION (Par Niveaux) -->
+        <!-- VUE : CONFIGURATION -->
         <div v-if="activeView === 'settings'" class="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
             <div class="max-w-4xl mx-auto space-y-6">
                 <h2 class="text-2xl font-bold text-white flex items-center gap-2 border-b border-gray-700 pb-4"><i data-lucide="settings-2" class="w-6 h-6 text-aethas-cyan"></i> Configuration Système</h2>
@@ -127,7 +147,6 @@
                     <button v-if="user.is_superadmin" @click="settingsTab = 'super'" :class="['py-2 px-4 text-sm font-semibold border-b-2 transition-colors', settingsTab === 'super' ? 'border-aethas-purple text-purple-400' : 'border-transparent text-gray-400 hover:text-white']">Super-Admin</button>
                 </div>
 
-                <!-- Tab: Utilisateur -->
                 <div v-if="settingsTab === 'user'" class="space-y-6">
                     <div class="bg-gray-800 p-6 rounded-xl border border-gray-700">
                         <h3 class="text-lg font-semibold text-white mb-4">Personnalisation du Profil</h3>
@@ -139,7 +158,6 @@
                                     <i data-lucide="upload" class="w-4 h-4 inline mr-1"></i> Uploader un nouvel Avatar
                                     <input type="file" accept="image/*" @change="uploadAvatar" class="hidden">
                                 </label>
-                                <p class="text-xs text-gray-500 mt-2">L'image sera automatiquement recadrée et redimensionnée à l'affichage pour s'adapter parfaitement à l'interface.</p>
                             </div>
                         </div>
                     </div>
@@ -155,11 +173,9 @@
                     </div>
                 </div>
 
-                <!-- Tab: Admin -->
                 <div v-if="settingsTab === 'admin' && user.is_admin" class="space-y-6">
                     <div class="bg-gray-800 p-6 rounded-xl border border-gray-700">
                         <h3 class="text-lg font-semibold text-red-400 mb-4">Outils Administrateur</h3>
-                        <p class="text-sm text-gray-400 mb-4">Fonctionnalités réservées aux administrateurs pour la gestion des modèles et le suivi de base.</p>
                         <div class="flex gap-4">
                             <button @click="activeView = 'models'" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600">Ouvrir le panneau Modèles IA</button>
                             <a href="/api/models/export" target="_blank" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600">Exporter DB Modèles (JSON)</a>
@@ -167,26 +183,23 @@
                     </div>
                 </div>
 
-                <!-- Tab: Super-Admin -->
                 <div v-if="settingsTab === 'super' && user.is_superadmin" class="space-y-6">
                     <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 border-l-4 border-l-aethas-purple">
                         <h3 class="text-lg font-semibold text-purple-400 mb-4">Espace Réservé Super-Admin</h3>
-                        <p class="text-sm text-gray-400">La gestion complète du serveur mail, des clés API et de l'élévation des droits utilisateurs sera disponible ici lors du prochain patch de développement.</p>
+                        <p class="text-sm text-gray-400">Gestion globale du système.</p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- VUE : MODÈLES ET FINANCES (Admin Only) -->
+        <!-- VUE : MODÈLES ET FINANCES -->
         <div v-if="activeView === 'models' && user.is_admin" class="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 custom-scrollbar">
             <div class="flex justify-between items-end border-b border-gray-700 pb-4">
                 <div>
                     <h2 class="text-2xl font-bold text-white flex items-center gap-2"><i data-lucide="cpu" class="w-6 h-6 text-aethas-cyan"></i> Modèles & Finances API</h2>
                     <p class="text-sm text-gray-400 mt-1">Dernière extraction : <span class="text-gray-200 font-mono">{{ formatDate(modelInfo.last_sync_date) }}</span> <span class="text-xs bg-gray-800 px-2 py-0.5 rounded border border-gray-600 ml-2 uppercase">{{ modelInfo.last_sync_type || 'Aucune' }}</span></p>
                 </div>
-                <div class="flex gap-2">
-                    <button @click="syncModels" :disabled="isSyncing" class="bg-aethas-cyan hover:bg-cyan-600 text-aethas-dark font-semibold py-2 px-4 rounded flex items-center gap-2 text-sm disabled:opacity-50"><i data-lucide="refresh-cw" :class="{'animate-spin': isSyncing}" class="w-4 h-4"></i> Forcer Extraction</button>
-                </div>
+                <button @click="syncModels" :disabled="isSyncing" class="bg-aethas-cyan hover:bg-cyan-600 text-aethas-dark font-semibold py-2 px-4 rounded flex items-center gap-2 text-sm disabled:opacity-50"><i data-lucide="refresh-cw" :class="{'animate-spin': isSyncing}" class="w-4 h-4"></i> Forcer Extraction</button>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -223,7 +236,7 @@
                                 <td class="px-4 py-3 font-mono text-xs text-aethas-cyan break-all">{{ model.model_id }}</td>
                                 <td class="px-4 py-3 capitalize">{{ model.provider }}</td>
                                 <td class="px-4 py-3"><span class="bg-gray-700 text-gray-200 px-2 py-1 rounded text-xs">{{ model.domain }}</span></td>
-                                <td class="px-4 py-3 font-mono text-xs"><span v-if="model.is_free" class="text-green-400 font-bold">GRATUIT</span><span v-else>In: ${{ model.pricing_prompt.toFixed(2) }}<br>Out: ${{ model.pricing_completion.toFixed(2) }}</span></td>
+                                <td class="px-4 py-3 font-mono text-xs"><span v-if="model.is_free" class="text-green-400 font-bold">GRATUIT</span><span v-else>In: ${{ model.pricing_prompt.toFixed(2) }}<br>Out:${{ model.pricing_completion.toFixed(2) }}</span></td>
                                 <td class="px-4 py-3">{{ (model.context_length / 1000).toFixed(0) }}k</td>
                                 <td class="px-4 py-3 text-xs text-gray-400 truncate max-w-[250px]" :title="model.description_fr">{{ model.description_fr }}</td>
                             </tr>
@@ -233,7 +246,7 @@
             </div>
         </div>
 
-        <!-- VUE : CHAT (Toujours accessible et affichée par défaut) -->
+        <!-- VUE : CHAT -->
         <div v-show="activeView === 'chat'" class="flex-1 flex flex-col min-h-0">
             <div v-if="!activeProject" class="flex-1 overflow-y-auto p-4 flex flex-col items-center justify-center">
                 <img src="/assets/logo.png" class="w-24 h-24 mb-6 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)]">
@@ -279,192 +292,49 @@
                     </div>
                 </div>
 
-                <!-- ZONE SÉLECTION MODÈLES PAR REQUÊTE & PROMPT -->
-                <div class="p-4 md:p-6 w-full max-w-5xl mx-auto space-y-2 flex-shrink-0">
-                    <div class="bg-gray-800/80 border border-gray-700 rounded-xl p-3 flex flex-wrap gap-4 items-center text-xs shadow-md">
-                        <div class="flex items-center gap-2 flex-1 min-w-[200px]">
-                            <span class="text-aethas-cyan font-semibold w-20"><i data-lucide="users" class="w-3 h-3 inline"></i> Travailleurs:</span>
-                            <select multiple v-model="selectedWorkers" @change="limitWorkers" class="bg-aethas-dark border border-gray-600 rounded px-2 py-1 text-gray-200 w-full h-16 outline-none focus:border-aethas-cyan custom-scrollbar">
-                                <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Direct)</option>
-                                <option v-for="m in modelInfo.models" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }} ({{ m.domain }})</option>
-                            </select>
-                            <span class="text-gray-500 ml-1">{{ selectedWorkers.length }}/5</span>
-                        </div>
+                <!-- BARRE DE SÉLECTION DE STYLE TABULAIRE (9 COLONNES STRICTES) -->
+                <div class="p-4 md:p-6 w-full max-w-7xl mx-auto space-y-2 flex-shrink-0">
+                    <div class="grid grid-cols-9 border border-black bg-gray-900 rounded-lg overflow-hidden text-center text-xs font-bold shadow-lg">
                         
-                        <div class="flex flex-col gap-2 flex-1 min-w-[200px]" :class="{'opacity-30 pointer-events-none': selectedWorkers.length <= 1}">
-                            <div class="flex items-center gap-2">
-                                <span class="text-gray-400 font-semibold w-24"><i data-lucide="edit-3" class="w-3 h-3 inline"></i> Prompteur:</span>
-                                <select v-model="selectedPrompter" class="bg-aethas-dark border border-gray-600 rounded px-2 py-1 text-gray-200 flex-1 outline-none truncate">
-                                    <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Direct)</option>
-                                    <option v-for="m in modelInfo.models" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
-                                </select>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <span class="text-aethas-purple font-semibold w-24"><i data-lucide="git-merge" class="w-3 h-3 inline"></i> Concaténeur:</span>
-                                <select v-model="selectedConcatenator" class="bg-aethas-dark border border-gray-600 rounded px-2 py-1 text-gray-200 flex-1 outline-none truncate">
-                                    <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Direct)</option>
-                                    <option v-for="m in modelInfo.models" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
-                                </select>
-                            </div>
+                        <!-- 1. PAYANT / GRATUIT -->
+                        <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
+                            <label class="block text-[9px] text-gray-400 mb-1">PRIX</label>
+                            <select v-model="filterPricing" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none">
+                                <option value="">TOUS</option>
+                                <option value="free">GRATUIT</option>
+                                <option value="paid">PAYANT</option>
+                            </select>
                         </div>
-                    </div>
 
-                    <div class="relative flex items-end bg-gray-800 border border-gray-600 rounded-2xl p-2 shadow-lg focus-within:border-aethas-cyan">
-                        <textarea v-model="prompt" @input="autoResize" @keydown.enter.exact.prevent="sendMessage" ref="promptTextarea" :disabled="isAiThinking" rows="1" class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none disabled:opacity-50 custom-scrollbar" placeholder="Sélectionnez vos modèles ci-dessus, puis posez votre question..."></textarea>
-                        <button @click="sendMessage" :disabled="!prompt.trim() || isAiThinking" class="p-3 text-aethas-cyan hover:text-white disabled:opacity-50"><i data-lucide="send" class="w-5 h-5"></i></button>
-                    </div>
-                </div>
-            </template>
-        </div>
-    </main>
-</div>
+                        <!-- 2. TYPE (DOMAINE) -->
+                        <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
+                            <label class="block text-[9px] text-gray-400 mb-1">TYPE</label>
+                            <select v-model="filterDomain" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none">
+                                <option value="">TOUS</option>
+                                <option value="Texte Polyvalent">Texte</option>
+                                <option value="Code & Logique">Codage</option>
+                                <option value="Vision & Texte">Vision</option>
+                                <option value="Audio">Audio</option>
+                            </select>
+                        </div>
 
-<script>
-    const { createApp, ref, reactive, onMounted, nextTick, computed } = Vue;
+                        <!-- 3. TRAVAILLEUR 1 -->
+                        <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
+                            <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 1</label>
+                            <select v-model="workers[0]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
+                                <option value="">(Aucun)</option>
+                                <option v-for="m in filteredBarModels" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
+                            </select>
+                        </div>
 
-    createApp({
-        setup() {
-            const user = ref({ username: "Guest", is_admin: false, is_superadmin: false, avatar_path: null });
-            const activeView = ref('chat'); 
-            const settingsTab = ref('user');
-            const isSidebarOpen = ref(true);
-            const prompt = ref("");
-            const promptTextarea = ref(null);
-            
-            const projects = ref([]);
-            const activeProject = ref(null);
-            const messages = ref([]);
-            
-            const isLoading = ref(false);
-            const isAiThinking = ref(false);
-            const isSyncing = ref(false);
-            const isSavingSettings = ref(false);
+                        <!-- 4. TRAVAILLEUR 2 -->
+                        <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
+                            <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 2</label>
+                            <select v-model="workers[1]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
+                                <option value="">(Aucun)</option>
+                                <option v-for="m in filteredBarModels" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
+                            </select>
+                        </div>
 
-            const settingsMessage = ref("");
-            const passForm = reactive({ old: '', new: '', confirm: '' });
-            
-            const modelInfo = reactive({ last_sync_date: null, last_sync_type: null, models: [] });
-            const financesList = ref([]);
-            const filterSearch = ref("");
-            const filterDomain = ref("");
-            const filterPricing = ref("");
-            
-            const selectedWorkers = ref(["gemini-3.5-flash-lite"]);
-            const selectedPrompter = ref("gemini-3.5-flash-lite");
-            const selectedConcatenator = ref("gemini-3.5-flash-lite");
-
-            const pinnedProjects = computed(() => projects.value.filter(p => p.is_pinned));
-            const recentProjects = computed(() => projects.value.filter(p => !p.is_pinned));
-
-            const filteredModels = computed(() => {
-                return modelInfo.models.filter(m => {
-                    const matchSearch = (m.model_id.toLowerCase().includes(filterSearch.value.toLowerCase()) || m.provider.toLowerCase().includes(filterSearch.value.toLowerCase()));
-                    const matchDomain = filterDomain.value === "" || m.domain === filterDomain.value;
-                    let matchPrice = true;
-                    if (filterPricing.value === 'free') matchPrice = m.is_free;
-                    if (filterPricing.value === 'paid') matchPrice = !m.is_free;
-                    return matchSearch && matchDomain && matchPrice;
-                });
-            });
-
-            const formatDate = (isoString) => {
-                if (!isoString) return "Jamais";
-                const d = new Date(isoString);
-                return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) + " à " + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-            };
-
-            const toggleSidebar = () => { isSidebarOpen.value = !isSidebarOpen.value; };
-            const autoResize = () => { const el = promptTextarea.value; if(el){ el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }};
-            const scrollToBottom = () => { nextTick(() => { const c = document.getElementById('chat-container'); if (c) c.scrollTop = c.scrollHeight; }); };
-
-            const fetchUser = async () => { try { const res = await fetch('/api/users/me'); if(res.ok) user.value = await res.json(); } catch(e){} };
-            const fetchModelsInfo = async () => { try { const res = await fetch('/api/models/info'); if(res.ok) { const data = await res.json(); modelInfo.last_sync_date = data.last_sync_date; modelInfo.last_sync_type = data.last_sync_type; modelInfo.models = data.models; } } catch(e){} };
-            const fetchFinances = async () => { try { const res = await fetch('/api/finances'); if(res.ok) financesList.value = await res.json(); } catch(e){} };
-            
-            const syncModels = async () => { 
-                isSyncing.value = true; 
-                try { 
-                    const res = await fetch('/api/models/sync', { method: 'POST' }); 
-                    if(res.ok) { 
-                        await fetchModelsInfo(); 
-                        await fetchFinances();
-                        alert("Synchronisation réussie !"); 
-                    } else {
-                        let errText = await res.text();
-                        try { const errObj = JSON.parse(errText); errText = errObj.detail || errText; } catch(e){}
-                        alert("Erreur retournée par le serveur : " + errText);
-                    }
-                } catch(e) { alert("Erreur réseau: impossible de contacter le serveur (" + e.message + ")."); } 
-                isSyncing.value = false; 
-            };
-
-            const uploadAvatar = async (event) => {
-                const file = event.target.files[0];
-                if (!file) return;
-                const formData = new FormData(); formData.append("file", file);
-                try {
-                    const res = await fetch('/api/users/me/avatar', { method: 'POST', body: formData });
-                    const data = await res.json();
-                    if(res.ok) user.value.avatar_path = data.avatar_path;
-                    else alert(data.detail);
-                } catch(e) { alert("Erreur d'upload"); }
-                event.target.value = null;
-            };
-
-            const exportProject = (format) => { if(activeProject.value) window.open(`/api/projects/${activeProject.value.id}/export?format=${format}`, '_blank'); };
-            const copyToClipboard = async (text) => { try { await navigator.clipboard.writeText(text); alert("Copié !"); } catch (e) {} };
-            const downloadFile = (content, hint) => { let fname = hint ? hint.trim() : 'code.txt'; if (!fname.includes('.')) fname += '.txt'; const blob = new Blob([content], { type: 'text/plain;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = fname; a.click(); URL.revokeObjectURL(url); };
-            const downloadMessage = (content, dateString) => { downloadFile(content, `message_${dateString.replace(/[:T.Z]/g, '-')}.txt`); };
-            const parseMessage = (content) => { const regex = /```([\w.-]*)\n([\s\S]*?)```/g; let parts = [], last = 0, m; while ((m = regex.exec(content)) !== null) { if (m.index > last) parts.push({ type: 'text', content: content.slice(last, m.index) }); parts.push({ type: 'code', language: m[1], content: m[2] }); last = m.index + m[0].length; } if (last < content.length) parts.push({ type: 'text', content: content.slice(last) }); return parts.length > 0 ? parts : [{ type: 'text', content: content }]; };
-
-            const fetchProjects = async () => { try { const res = await fetch('/api/projects'); if(res.ok) projects.value = await res.json(); nextTick(()=>lucide.createIcons()); } catch(e){} };
-            const selectProject = async (project) => { activeView.value = 'chat'; activeProject.value = project; messages.value = []; try { const res = await fetch(`/api/projects/${project.id}/messages`); if(res.ok) { messages.value = await res.json(); scrollToBottom(); nextTick(()=>lucide.createIcons()); } } catch(e){} };
-            const createNewProject = async () => { activeView.value = 'chat'; isLoading.value = true; try { const res = await fetch('/api/projects', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({title: "Nouvelle discussion"})}); if(res.ok){ const np = await res.json(); projects.value.unshift(np); selectProject(np); } } catch(e){} finally{isLoading.value = false;} };
-
-            const sendMessage = async () => {
-                if (!prompt.value.trim() || !activeProject.value || selectedWorkers.value.length === 0) return;
-                const userText = prompt.value.trim(); prompt.value = ""; autoResize();
-                messages.value.push({ id: Date.now(), role: 'user', content: userText });
-                isAiThinking.value = true; scrollToBottom();
-                const payload = { role: 'user', content: userText, config: { workers: selectedWorkers.value, prompter: selectedPrompter.value, concatenator: selectedConcatenator.value } };
-                try {
-                    const response = await fetch(`/api/projects/${activeProject.value.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                    if (response.ok) { 
-                        const data = await response.json(); 
-                        if (Array.isArray(data)) messages.value = data; 
-                        await fetchFinances(); 
-                    } else { 
-                        const err = await response.json(); alert("Erreur API IA : " + err.detail); 
-                    }
-                } catch (error) {} finally { isAiThinking.value = false; scrollToBottom(); nextTick(()=>lucide.createIcons()); }
-            };
-
-            const changePassword = async () => {
-                settingsMessage.value = "";
-                if (passForm.new !== passForm.confirm) { settingsMessage.value = "Mots de passe différents."; return; }
-                if (passForm.new.length < 8) { settingsMessage.value = "8 caractères minimum."; return; }
-                isSavingSettings.value = true;
-                try { const res = await fetch('/api/users/me/password', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ old_password: passForm.old, new_password: passForm.new }) }); const data = await res.json(); if (res.ok) { settingsMessage.value = data.message; passForm.old=''; passForm.new=''; passForm.confirm=''; } else { settingsMessage.value = data.detail; } } catch (e) {} finally { isSavingSettings.value = false; }
-            };
-
-            const renameProject = async (project) => { const nt = window.prompt("Nom :", project.title); if (!nt || nt.trim() === "" || nt === project.title) return; try { const res = await fetch(`/api/projects/${project.id}/rename`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: nt.trim() }) }); if (res.ok) { const up = await res.json(); const i = projects.value.findIndex(p => p.id === project.id); if (i !== -1) projects.value[i] = up; if (activeProject.value && activeProject.value.id === project.id) activeProject.value.title = up.title; } } catch (e) {} };
-            const togglePin = async (pid) => { try { const res = await fetch(`/api/projects/${pid}/pin`, { method: 'PUT' }); if (res.ok) { const up = await res.json(); const i = projects.value.findIndex(p => p.id === pid); if (i !== -1) projects.value[i] = up; } } catch (e) {} };
-            const deleteProject = async (pid) => { if (!confirm("Supprimer ce projet ?")) return; try { const res = await fetch(`/api/projects/${pid}`, { method: 'DELETE' }); if (res.ok) { projects.value = projects.value.filter(p => p.id !== pid); if (activeProject.value && activeProject.value.id === pid) activeProject.value = null; } } catch (e) {} };
-            const limitWorkers = () => { if(selectedWorkers.value.length > 5) { selectedWorkers.value.pop(); alert("Max 5 travailleurs."); } };
-
-            onMounted(() => { lucide.createIcons(); fetchUser(); fetchProjects(); fetchModelsInfo(); fetchFinances(); });
-
-            return { 
-                user, activeView, settingsTab, isSidebarOpen, toggleSidebar, prompt, autoResize, promptTextarea, 
-                projects, pinnedProjects, recentProjects, activeProject, messages, isAiThinking,
-                createNewProject, selectProject, renameProject, sendMessage, isLoading, togglePin, deleteProject,
-                passForm, settingsMessage, isSavingSettings, changePassword, uploadAvatar,
-                modelInfo, financesList, filterSearch, filterDomain, filterPricing, filteredModels, formatDate, syncModels, isSyncing,
-                selectedWorkers, selectedPrompter, selectedConcatenator, limitWorkers,
-                exportProject, copyToClipboard, downloadFile, downloadMessage, parseMessage
-            };
-        }
-    }).mount('#app');
-</script>
-</body>
-</html>
+                        <!-- 5. TRAVAILLEUR 3 -->
+                        <div class="
