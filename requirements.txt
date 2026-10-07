@@ -12,3 +12,4 @@ bcrypt
 email-validator
 PyJWT
 openai
+httpx
