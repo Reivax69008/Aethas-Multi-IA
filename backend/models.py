@@ -2,6 +2,8 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, T
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from .database import Base
+from sqlalchemy import Float, DateTime
+from datetime import datetime, timezone
 
 class User(Base):
     __tablename__ = "users"
@@ -62,3 +64,26 @@ class SystemSettings(Base):
     cloudflare_account_id = Column(String, nullable=True)
     cloudflare_api_token = Column(String, nullable=True)
     huggingface_api_key = Column(String, nullable=True)
+
+    class AIModel(Base):
+    """Stocke la liste des modèles extraits depuis les fournisseurs."""
+    __tablename__ = "ai_models"
+
+    id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String, index=True) # ex: openrouter, groq
+    model_id = Column(String, unique=True, index=True) # ex: google/gemini-1.5-pro
+    name = Column(String)
+    context_length = Column(Integer)
+    pricing_prompt = Column(Float) # Coût pour 1M tokens
+    pricing_completion = Column(Float)
+    last_updated = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class FinancialLog(Base):
+    """Suivi financier par fournisseur."""
+    __tablename__ = "financial_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String, index=True)
+    balance = Column(Float) # Crédit restant
+    total_usage = Column(Float) # Consommation totale
+    checked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
