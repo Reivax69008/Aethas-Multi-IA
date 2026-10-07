@@ -26,3 +26,19 @@ class ProjectResponse(ProjectBase):
 
     class Config:
         from_attributes = True
+
+        # --- NOUVEAU : Schémas pour les Messages ---
+class MessageBase(BaseModel):
+    role: str
+    content: str
+
+class MessageCreate(MessageBase):
+    pass
+
+class MessageResponse(MessageBase):
+    id: int
+    created_at: datetime
+    project_id: int
+
+    class Config:
+        from_attributes = True

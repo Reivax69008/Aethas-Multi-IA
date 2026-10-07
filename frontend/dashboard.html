@@ -8,9 +8,7 @@
     <script>
         tailwind.config = {
             darkMode: 'class',
-            theme: {
-                extend: { colors: { aethas: { dark: '#0f172a', panel: '#1e293b', cyan: '#06b6d4', purple: '#a855f7' } } }
-            }
+            theme: { extend: { colors: { aethas: { dark: '#0f172a', panel: '#1e293b', cyan: '#06b6d4', purple: '#a855f7' } } } }
         }
     </script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
@@ -26,9 +24,9 @@
 <body class="h-screen flex overflow-hidden">
 
 <div id="app" class="flex w-full h-full relative bg-aethas-dark">
-
     <div v-if="isSidebarOpen" @click="toggleSidebar" class="md:hidden fixed inset-0 bg-black/60 z-40 transition-opacity"></div>
 
+    <!-- BARRE LATÉRALE -->
     <div :class="['transition-all duration-300 flex-shrink-0 relative z-50', isSidebarOpen ? 'w-72' : 'w-0']">
         <aside :class="['absolute top-0 left-0 h-full w-72 bg-aethas-panel border-r border-gray-700 flex flex-col transition-transform duration-300', isSidebarOpen ? 'translate-x-0' : '-translate-x-full']">
             <div class="p-4 border-b border-gray-700 flex items-center justify-between">
@@ -36,15 +34,12 @@
                     <img src="/static/logo.png" alt="Logo" class="w-10 h-10 rounded-full border border-aethas-cyan object-cover bg-gray-800 flex-shrink-0">
                     <span class="font-bold text-lg tracking-wider neon-text">AETHAS38</span>
                 </div>
-                <button @click="toggleSidebar" class="md:hidden text-gray-400 hover:text-white">
-                    <i data-lucide="x" class="w-5 h-5"></i>
-                </button>
+                <button @click="toggleSidebar" class="md:hidden text-gray-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
             
             <div class="p-4">
                 <button @click="createNewProject" :disabled="isLoading" class="w-full bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 rounded-lg py-2.5 px-4 flex items-center justify-center gap-2 transition-colors disabled:opacity-50 shadow-md">
-                    <i data-lucide="plus" class="w-5 h-5 text-aethas-cyan"></i>
-                    Nouveau Projet IA
+                    <i data-lucide="plus" class="w-5 h-5 text-aethas-cyan"></i> Nouveau Projet IA
                 </button>
             </div>
 
@@ -53,14 +48,14 @@
                 <div v-if="pinnedProjects.length > 0">
                     <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Épinglés</h3>
                     <ul class="space-y-1">
-                        <li v-for="project in pinnedProjects" :key="project.id" class="group flex items-center justify-between p-2 hover:bg-gray-800 rounded cursor-pointer text-sm text-gray-300 transition-colors">
+                        <li v-for="project in pinnedProjects" :key="project.id" @click="selectProject(project)" :class="['group flex items-center justify-between p-2 rounded cursor-pointer text-sm transition-colors', activeProject && activeProject.id === project.id ? 'bg-gray-700 text-white' : 'hover:bg-gray-800 text-gray-300']">
                             <div class="flex items-center gap-2 truncate">
                                 <i data-lucide="pin" class="w-4 h-4 text-aethas-cyan fill-aethas-cyan flex-shrink-0"></i>
                                 <span class="truncate">{{ project.title }}</span>
                             </div>
                             <div class="hidden group-hover:flex items-center gap-1 flex-shrink-0">
-                                <button @click.stop="togglePin(project.id)" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700" title="Désépingler"><i data-lucide="pin-off" class="w-3.5 h-3.5"></i></button>
-                                <button @click.stop="deleteProject(project.id)" class="text-gray-400 hover:text-red-400 p-1 rounded hover:bg-gray-700" title="Supprimer"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                                <button @click.stop="togglePin(project.id)" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700"><i data-lucide="pin-off" class="w-3.5 h-3.5"></i></button>
+                                <button @click.stop="deleteProject(project.id)" class="text-gray-400 hover:text-red-400 p-1 rounded hover:bg-gray-700"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                             </div>
                         </li>
                     </ul>
@@ -70,67 +65,76 @@
                 <div>
                     <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Récents</h3>
                     <ul class="space-y-1">
-                        <li v-if="recentProjects.length === 0 && pinnedProjects.length === 0" class="text-sm text-gray-500 italic p-2">Aucun projet pour le moment.</li>
-                        <li v-for="project in recentProjects" :key="project.id" class="group flex items-center justify-between p-2 hover:bg-gray-800 rounded cursor-pointer text-sm text-gray-300 transition-colors">
+                        <li v-if="recentProjects.length === 0 && pinnedProjects.length === 0" class="text-sm text-gray-500 italic p-2">Aucun projet.</li>
+                        <li v-for="project in recentProjects" :key="project.id" @click="selectProject(project)" :class="['group flex items-center justify-between p-2 rounded cursor-pointer text-sm transition-colors', activeProject && activeProject.id === project.id ? 'bg-gray-700 text-white' : 'hover:bg-gray-800 text-gray-300']">
                             <div class="flex items-center gap-2 truncate">
                                 <i data-lucide="message-square" class="w-4 h-4 text-gray-500 flex-shrink-0"></i>
                                 <span class="truncate">{{ project.title }}</span>
                             </div>
                             <div class="hidden group-hover:flex items-center gap-1 flex-shrink-0">
-                                <button @click.stop="togglePin(project.id)" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700" title="Épingler"><i data-lucide="pin" class="w-3.5 h-3.5"></i></button>
-                                <button @click.stop="deleteProject(project.id)" class="text-gray-400 hover:text-red-400 p-1 rounded hover:bg-gray-700" title="Supprimer"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                                <button @click.stop="togglePin(project.id)" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700"><i data-lucide="pin" class="w-3.5 h-3.5"></i></button>
+                                <button @click.stop="deleteProject(project.id)" class="text-gray-400 hover:text-red-400 p-1 rounded hover:bg-gray-700"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                             </div>
                         </li>
                     </ul>
                 </div>
             </div>
-
-            <div class="p-4 border-t border-gray-700 flex justify-between items-center">
-                <div class="flex items-center gap-2">
-                    <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-aethas-cyan to-aethas-purple flex items-center justify-center text-sm font-bold shadow-md">
-                        {{ username.charAt(0).toUpperCase() }}
-                    </div>
-                    <span class="text-sm font-medium">{{ username }}</span>
-                </div>
-                <button class="text-gray-400 hover:text-white transition-colors"><i data-lucide="settings" class="w-5 h-5"></i></button>
+            
+            <div class="p-4 border-t border-gray-700 flex items-center gap-2">
+                <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-aethas-cyan to-aethas-purple flex items-center justify-center text-sm font-bold shadow-md">{{ username.charAt(0).toUpperCase() }}</div>
+                <span class="text-sm font-medium">{{ username }}</span>
             </div>
         </aside>
     </div>
 
+    <!-- ZONE PRINCIPALE -->
     <main class="flex-1 flex flex-col min-w-0 z-10 transition-all duration-300">
         <header class="flex items-center justify-between p-4 border-b border-gray-700 bg-aethas-panel h-[73px]">
             <div class="flex items-center gap-3">
-                <button @click="toggleSidebar" class="text-gray-400 hover:text-white transition-colors p-1.5 rounded hover:bg-gray-700" title="Basculer le menu">
-                    <i data-lucide="menu" class="w-6 h-6"></i>
-                </button>
+                <button @click="toggleSidebar" class="text-gray-400 hover:text-white transition-colors p-1.5 rounded hover:bg-gray-700"><i data-lucide="menu" class="w-6 h-6"></i></button>
                 <div v-show="!isSidebarOpen" class="flex items-center gap-2 transition-opacity duration-300">
                     <img src="/static/logo.png" alt="Logo" class="w-8 h-8 rounded-full border border-aethas-cyan object-cover bg-gray-800 flex-shrink-0">
                     <span class="font-bold text-lg neon-text">AETHAS38</span>
                 </div>
             </div>
+            <div v-if="activeProject" class="text-sm font-medium text-gray-300">{{ activeProject.title }}</div>
         </header>
 
-        <div class="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-center">
+        <!-- Affichage par défaut (Aucun projet actif) -->
+        <div v-if="!activeProject" class="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-center">
             <img src="/static/logo.png" alt="AETHAS38 Logo" class="w-24 h-24 mb-6 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)] object-cover bg-gray-800 flex-shrink-0">
             <h2 class="text-2xl font-bold text-gray-200 mb-2 text-center">Comment puis-je vous aider aujourd'hui ?</h2>
-            <p class="text-gray-500 text-sm text-center">L'orchestrateur Multi-IA est prêt.</p>
+            <p class="text-gray-500 text-sm text-center">Sélectionnez ou créez un projet pour commencer.</p>
         </div>
 
+        <!-- Zone de Chat (Projet Actif) -->
+        <div v-else class="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 flex flex-col" id="chat-container">
+            <div v-if="messages.length === 0" class="flex-1 flex items-center justify-center text-gray-500 italic">Démarrez la conversation ci-dessous.</div>
+            
+            <div v-for="msg in messages" :key="msg.id" :class="['max-w-3xl rounded-2xl p-4', msg.role === 'user' ? 'bg-gray-800 ml-auto border border-gray-700' : 'bg-aethas-panel mr-auto border border-aethas-cyan/30']">
+                <div class="flex items-center gap-2 mb-2">
+                    <i v-if="msg.role === 'user'" data-lucide="user" class="w-4 h-4 text-gray-400"></i>
+                    <i v-else data-lucide="bot" class="w-4 h-4 text-aethas-cyan"></i>
+                    <span class="text-xs font-semibold uppercase tracking-wider text-gray-400">{{ msg.role === 'user' ? 'Vous' : 'AETHAS38' }}</span>
+                </div>
+                <div class="text-gray-200 whitespace-pre-wrap text-sm leading-relaxed">{{ msg.content }}</div>
+            </div>
+        </div>
+
+        <!-- Saisie du Prompt -->
         <div class="p-4 md:p-6 w-full max-w-4xl mx-auto">
             <div class="relative flex items-end bg-gray-800 border border-gray-600 rounded-2xl p-2 shadow-lg focus-within:border-aethas-cyan focus-within:ring-1 focus-within:ring-aethas-cyan transition-all">
-                <button class="p-3 text-gray-400 hover:text-aethas-cyan transition-colors flex-shrink-0" title="Joindre un fichier">
-                    <i data-lucide="paperclip" class="w-5 h-5"></i>
-                </button>
+                <button class="p-3 text-gray-400 hover:text-aethas-cyan transition-colors flex-shrink-0" :disabled="!activeProject"><i data-lucide="paperclip" class="w-5 h-5"></i></button>
                 <textarea 
                     v-model="prompt" 
                     @input="autoResize"
+                    @keydown.enter.exact.prevent="sendMessage"
                     ref="promptTextarea"
+                    :disabled="!activeProject"
                     rows="1" 
-                    class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none leading-relaxed" 
+                    class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none leading-relaxed disabled:opacity-50" 
                     placeholder="Posez votre question à l'Orchestrateur..."></textarea>
-                <button class="p-3 text-aethas-cyan hover:text-white transition-colors flex-shrink-0" title="Envoyer">
-                    <i data-lucide="send" class="w-5 h-5"></i>
-                </button>
+                <button @click="sendMessage" :disabled="!activeProject || !prompt.trim()" class="p-3 text-aethas-cyan hover:text-white transition-colors flex-shrink-0 disabled:opacity-50 disabled:text-gray-500"><i data-lucide="send" class="w-5 h-5"></i></button>
             </div>
             <p class="text-center text-xs text-gray-500 mt-3">AETHAS38 peut faire des erreurs. Vérifiez toujours les informations importantes.</p>
         </div>
@@ -138,7 +142,6 @@
 </div>
 
 <script>
-    // Import de "computed" ajouté pour filtrer les listes
     const { createApp, ref, onMounted, nextTick, computed } = Vue;
 
     createApp({
@@ -148,9 +151,10 @@
             const prompt = ref("");
             const promptTextarea = ref(null);
             const projects = ref([]);
+            const activeProject = ref(null);
+            const messages = ref([]);
             const isLoading = ref(false);
 
-            // Propriétés calculées pour séparer les projets épinglés et récents
             const pinnedProjects = computed(() => projects.value.filter(p => p.is_pinned));
             const recentProjects = computed(() => projects.value.filter(p => !p.is_pinned));
 
@@ -163,6 +167,13 @@
                 el.style.height = el.scrollHeight + 'px'; 
             };
 
+            const scrollToBottom = () => {
+                nextTick(() => {
+                    const container = document.getElementById('chat-container');
+                    if (container) container.scrollTop = container.scrollHeight;
+                });
+            };
+
             const fetchProjects = async () => {
                 try {
                     const response = await fetch('/api/projects');
@@ -171,6 +182,19 @@
                         nextTick(() => lucide.createIcons());
                     }
                 } catch (error) { console.error("Erreur", error); }
+            };
+
+            const selectProject = async (project) => {
+                activeProject.value = project;
+                messages.value = [];
+                try {
+                    const response = await fetch(`/api/projects/${project.id}/messages`);
+                    if (response.ok) {
+                        messages.value = await response.json();
+                        scrollToBottom();
+                        nextTick(() => lucide.createIcons());
+                    }
+                } catch (error) { console.error("Erreur chargement messages", error); }
             };
 
             const createNewProject = async () => {
@@ -184,13 +208,34 @@
                     if (response.ok) {
                         const newProject = await response.json();
                         projects.value.unshift(newProject);
-                        nextTick(() => lucide.createIcons());
+                        selectProject(newProject);
                     }
                 } catch (error) { console.error("Erreur", error); } 
                 finally { isLoading.value = false; }
             };
 
-            // Fonction pour basculer l'état épinglé
+            const sendMessage = async () => {
+                if (!prompt.value.trim() || !activeProject.value) return;
+                const userText = prompt.value.trim();
+                prompt.value = "";
+                autoResize();
+                
+                // Ajout optimiste à l'UI
+                messages.value.push({ id: Date.now(), role: 'user', content: userText });
+                scrollToBottom();
+                nextTick(() => lucide.createIcons());
+
+                // Sauvegarde en DB
+                try {
+                    await fetch(`/api/projects/${activeProject.value.id}/messages`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ role: 'user', content: userText })
+                    });
+                    // Bientôt : C'est ici que nous déclencherons le workflow IA !
+                } catch (error) { console.error("Erreur envoi message", error); }
+            };
+
             const togglePin = async (projectId) => {
                 try {
                     const response = await fetch(`/api/projects/${projectId}/pin`, { method: 'PUT' });
@@ -198,18 +243,17 @@
                         const updatedProject = await response.json();
                         const index = projects.value.findIndex(p => p.id === projectId);
                         if (index !== -1) projects.value[index] = updatedProject;
-                        nextTick(() => lucide.createIcons());
                     }
                 } catch (error) { console.error("Erreur d'épinglage", error); }
             };
 
-            // Fonction pour supprimer un projet
             const deleteProject = async (projectId) => {
                 if (!confirm("Voulez-vous vraiment supprimer ce projet ?")) return;
                 try {
                     const response = await fetch(`/api/projects/${projectId}`, { method: 'DELETE' });
                     if (response.ok) {
                         projects.value = projects.value.filter(p => p.id !== projectId);
+                        if (activeProject.value && activeProject.value.id === projectId) activeProject.value = null;
                     }
                 } catch (error) { console.error("Erreur de suppression", error); }
             };
@@ -221,7 +265,8 @@
 
             return { 
                 username, isSidebarOpen, toggleSidebar, prompt, autoResize, promptTextarea, 
-                projects, pinnedProjects, recentProjects, createNewProject, isLoading, togglePin, deleteProject 
+                projects, pinnedProjects, recentProjects, activeProject, messages, 
+                createNewProject, selectProject, sendMessage, isLoading, togglePin, deleteProject 
             };
         }
     }).mount('#app');

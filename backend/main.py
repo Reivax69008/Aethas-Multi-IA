@@ -2,18 +2,14 @@ from fastapi import FastAPI, Depends, HTTPException, status, Request, Response
 from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+from typing import List
 import os
 
 # Importation de nos modules locaux
 from .database import engine, Base, get_db
-from .models import User
+from .models import User, Project, Message
 from .auth import get_password_hash, generate_totp_secret, get_totp_uri, verify_password, verify_totp, create_access_token, verify_token
-from .schemas import AdminCreate, LoginRequest
-
-# MAJ BDD
-from typing import List
-from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse
-from .models import User, Project
+from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, MessageCreate, MessageResponse
 
 # Création des tables dans la base de données
 Base.metadata.create_all(bind=engine)
@@ -197,3 +193,26 @@ def delete_project(project_id: int, db: Session = Depends(get_db), current_user:
     db.delete(project)
     db.commit()
     return {"message": "Projet supprimé"}
+
+# --- GESTION DES MESSAGES ---
+
+@app.get("/api/projects/{project_id}/messages", response_model=List[MessageResponse])
+def get_messages(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Récupère tous les messages d'un projet spécifique."""
+    project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Projet introuvable")
+    return db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
+
+@app.post("/api/projects/{project_id}/messages", response_model=MessageResponse)
+def create_message(project_id: int, message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Ajoute un message à un projet."""
+    project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Projet introuvable")
+    
+    new_message = Message(role=message.role, content=message.content, project_id=project_id)
+    db.add(new_message)
+    db.commit()
+    db.refresh(new_message)
+    return new_message
