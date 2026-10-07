@@ -10,20 +10,20 @@ def get_ai_response(messages: list, settings: SystemSettings) -> str:
     formatted_messages = [{"role": msg.role, "content": msg.content} for msg in messages]
 
     try:
-        # 1. Priorité absolue : Test Gemini direct (Rapide, sans intermédiaire)
+        # 1. Priorité absolue : Test Gemini direct
         if settings.gemini_api_key:
             client = OpenAI(
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/", 
                 api_key=settings.gemini_api_key
             )
-            # Utilisation de l'identifiant standard API pour la version Flash
-            model = "gemini-1.5-flash" 
+            # Correction : Utilisation exacte du modèle 3.5 Flash-Lite
+            model = "gemini-3.5-flash-lite" 
             response = client.chat.completions.create(model=model, messages=formatted_messages)
 
         # 2. Test OpenRouter (Fallback)
         elif settings.openrouter_api_key:
             client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=settings.openrouter_api_key)
-            model = "google/gemini-1.5-pro" # Identifiant mis à jour et valide
+            model = "google/gemini-3.5-flash-lite"
             response = client.chat.completions.create(
                 model=model,
                 messages=formatted_messages,
