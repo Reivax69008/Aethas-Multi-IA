@@ -11,6 +11,8 @@ from .models import User, Project, Message
 from .auth import get_password_hash, generate_totp_secret, get_totp_uri, verify_password, verify_totp, create_access_token, verify_token
 from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, ProjectRename, MessageCreate, MessageResponse
 from .models import User, Project, Message, SystemSettings
+from .ai import get_ai_response
+from .models import User, Project, Message, SystemSettings
 
 # Création des tables dans la base de données
 Base.metadata.create_all(bind=engine)
@@ -246,3 +248,32 @@ def create_message(project_id: int, message: MessageCreate, db: Session = Depend
     db.commit()
     db.refresh(new_message)
     return new_message
+
+@app.post("/api/projects/{project_id}/messages", response_model=List[MessageResponse])
+def create_message(project_id: int, message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Ajoute un message, interroge l'IA et retourne l'historique mis à jour."""
+    project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Projet introuvable")
+    
+    # 1. Sauvegarde du message de l'utilisateur
+    user_message = Message(role=message.role, content=message.content, project_id=project_id)
+    db.add(user_message)
+    db.commit()
+
+    # 2. Récupération de l'historique complet pour le contexte
+    history = db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
+    
+    # 3. Récupération des clés API depuis la base
+    settings = db.query(SystemSettings).first()
+
+    # 4. Interrogation de l'IA via notre routeur (ai.py)
+    ai_response_text = get_ai_response(history, settings)
+
+    # 5. Sauvegarde de la réponse de l'IA
+    ai_message = Message(role="assistant", content=ai_response_text, project_id=project_id)
+    db.add(ai_message)
+    db.commit()
+
+    # On retourne le nouvel historique contenant la question ET la réponse
+    return db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()

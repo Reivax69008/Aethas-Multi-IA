@@ -264,22 +264,25 @@
                 nextTick(() => lucide.createIcons());
 
                 try {
-                    await fetch(`/api/projects/${activeProject.value.id}/messages`, {
+                    const response = await fetch(`/api/projects/${activeProject.value.id}/messages`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ role: 'user', content: userText })
                     });
                     
-                    // SIMULATION TEMPORAIRE : Attente de l'IA (2 secondes)
-                    setTimeout(() => {
-                        isAiThinking.value = false;
-                        scrollToBottom();
-                        // La prochaine étape remplacera ce setTimeout par le véritable appel au moteur IA !
-                    }, 2000);
-
+                    if (response.ok) {
+                        // L'API nous renvoie l'historique à jour avec la réponse de l'IA
+                        messages.value = await response.json();
+                    } else {
+                        const err = await response.json();
+                        alert("Erreur: " + err.detail);
+                    }
                 } catch (error) { 
                     console.error("Erreur envoi message", error); 
+                } finally {
                     isAiThinking.value = false;
+                    scrollToBottom();
+                    nextTick(() => lucide.createIcons());
                 }
             };
 
