@@ -28,7 +28,7 @@ from datetime import datetime, timedelta, timezone
 import os
 
 # Dans l'idéal, cette clé secrète sera à placer dans votre fichier .env plus tard
-SECRET_KEY = os.getenv("SECRET_KEY", "`*\$Tu*CCc5hglT$mX'HykxERDljBz")
+SECRET_KEY = os.getenv("SECRET_KEY", r"`*\$Tu*CCc5hglT$mX'HykxERDljBz")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
