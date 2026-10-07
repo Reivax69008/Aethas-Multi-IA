@@ -174,3 +174,26 @@ def create_project(project: ProjectCreate, db: Session = Depends(get_db), curren
     db.commit()
     db.refresh(new_project)
     return new_project
+
+@app.put("/api/projects/{project_id}/pin", response_model=ProjectResponse)
+def toggle_pin_project(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Bascule le statut épinglé (is_pinned) d'un projet."""
+    project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Projet introuvable")
+    
+    project.is_pinned = not project.is_pinned
+    db.commit()
+    db.refresh(project)
+    return project
+
+@app.delete("/api/projects/{project_id}")
+def delete_project(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Supprime définitivement un projet et tous ses messages associés."""
+    project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Projet introuvable")
+    
+    db.delete(project)
+    db.commit()
+    return {"message": "Projet supprimé"}

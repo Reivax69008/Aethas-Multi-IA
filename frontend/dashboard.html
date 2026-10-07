@@ -42,20 +42,44 @@
             </div>
             
             <div class="p-4">
-                <button @click="createNewProject" :disabled="isLoading" class="w-full bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 rounded-lg py-2.5 px-4 flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
+                <button @click="createNewProject" :disabled="isLoading" class="w-full bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 rounded-lg py-2.5 px-4 flex items-center justify-center gap-2 transition-colors disabled:opacity-50 shadow-md">
                     <i data-lucide="plus" class="w-5 h-5 text-aethas-cyan"></i>
                     Nouveau Projet IA
                 </button>
             </div>
 
             <div class="flex-1 overflow-y-auto p-4 space-y-6">
+                <!-- Projets Épinglés -->
+                <div v-if="pinnedProjects.length > 0">
+                    <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Épinglés</h3>
+                    <ul class="space-y-1">
+                        <li v-for="project in pinnedProjects" :key="project.id" class="group flex items-center justify-between p-2 hover:bg-gray-800 rounded cursor-pointer text-sm text-gray-300 transition-colors">
+                            <div class="flex items-center gap-2 truncate">
+                                <i data-lucide="pin" class="w-4 h-4 text-aethas-cyan fill-aethas-cyan flex-shrink-0"></i>
+                                <span class="truncate">{{ project.title }}</span>
+                            </div>
+                            <div class="hidden group-hover:flex items-center gap-1 flex-shrink-0">
+                                <button @click.stop="togglePin(project.id)" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700" title="Désépingler"><i data-lucide="pin-off" class="w-3.5 h-3.5"></i></button>
+                                <button @click.stop="deleteProject(project.id)" class="text-gray-400 hover:text-red-400 p-1 rounded hover:bg-gray-700" title="Supprimer"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Projets Récents -->
                 <div>
                     <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Récents</h3>
                     <ul class="space-y-1">
-                        <li v-if="projects.length === 0" class="text-sm text-gray-500 italic p-2">Aucun projet pour le moment.</li>
-                        <li v-for="project in projects" :key="project.id" class="p-2 hover:bg-gray-800 rounded cursor-pointer text-sm text-gray-300 truncate transition-colors flex items-center gap-2">
-                            <i data-lucide="message-square" class="w-4 h-4 text-gray-500"></i>
-                            {{ project.title }}
+                        <li v-if="recentProjects.length === 0 && pinnedProjects.length === 0" class="text-sm text-gray-500 italic p-2">Aucun projet pour le moment.</li>
+                        <li v-for="project in recentProjects" :key="project.id" class="group flex items-center justify-between p-2 hover:bg-gray-800 rounded cursor-pointer text-sm text-gray-300 transition-colors">
+                            <div class="flex items-center gap-2 truncate">
+                                <i data-lucide="message-square" class="w-4 h-4 text-gray-500 flex-shrink-0"></i>
+                                <span class="truncate">{{ project.title }}</span>
+                            </div>
+                            <div class="hidden group-hover:flex items-center gap-1 flex-shrink-0">
+                                <button @click.stop="togglePin(project.id)" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700" title="Épingler"><i data-lucide="pin" class="w-3.5 h-3.5"></i></button>
+                                <button @click.stop="deleteProject(project.id)" class="text-gray-400 hover:text-red-400 p-1 rounded hover:bg-gray-700" title="Supprimer"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                            </div>
                         </li>
                     </ul>
                 </div>
@@ -114,7 +138,8 @@
 </div>
 
 <script>
-    const { createApp, ref, onMounted, nextTick } = Vue;
+    // Import de "computed" ajouté pour filtrer les listes
+    const { createApp, ref, onMounted, nextTick, computed } = Vue;
 
     createApp({
         setup() {
@@ -124,6 +149,10 @@
             const promptTextarea = ref(null);
             const projects = ref([]);
             const isLoading = ref(false);
+
+            // Propriétés calculées pour séparer les projets épinglés et récents
+            const pinnedProjects = computed(() => projects.value.filter(p => p.is_pinned));
+            const recentProjects = computed(() => projects.value.filter(p => !p.is_pinned));
 
             const toggleSidebar = () => { isSidebarOpen.value = !isSidebarOpen.value; };
 
@@ -141,9 +170,7 @@
                         projects.value = await response.json();
                         nextTick(() => lucide.createIcons());
                     }
-                } catch (error) {
-                    console.error("Erreur lors de la récupération des projets", error);
-                }
+                } catch (error) { console.error("Erreur", error); }
             };
 
             const createNewProject = async () => {
@@ -154,17 +181,37 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ title: "Nouvelle discussion" })
                     });
-                    
                     if (response.ok) {
                         const newProject = await response.json();
-                        projects.value.unshift(newProject); // Ajoute le nouveau projet en haut de la liste
+                        projects.value.unshift(newProject);
                         nextTick(() => lucide.createIcons());
                     }
-                } catch (error) {
-                    console.error("Erreur lors de la création du projet", error);
-                } finally {
-                    isLoading.value = false;
-                }
+                } catch (error) { console.error("Erreur", error); } 
+                finally { isLoading.value = false; }
+            };
+
+            // Fonction pour basculer l'état épinglé
+            const togglePin = async (projectId) => {
+                try {
+                    const response = await fetch(`/api/projects/${projectId}/pin`, { method: 'PUT' });
+                    if (response.ok) {
+                        const updatedProject = await response.json();
+                        const index = projects.value.findIndex(p => p.id === projectId);
+                        if (index !== -1) projects.value[index] = updatedProject;
+                        nextTick(() => lucide.createIcons());
+                    }
+                } catch (error) { console.error("Erreur d'épinglage", error); }
+            };
+
+            // Fonction pour supprimer un projet
+            const deleteProject = async (projectId) => {
+                if (!confirm("Voulez-vous vraiment supprimer ce projet ?")) return;
+                try {
+                    const response = await fetch(`/api/projects/${projectId}`, { method: 'DELETE' });
+                    if (response.ok) {
+                        projects.value = projects.value.filter(p => p.id !== projectId);
+                    }
+                } catch (error) { console.error("Erreur de suppression", error); }
             };
 
             onMounted(() => {
@@ -172,7 +219,10 @@
                 fetchProjects();
             });
 
-            return { username, isSidebarOpen, toggleSidebar, prompt, autoResize, promptTextarea, projects, createNewProject, isLoading };
+            return { 
+                username, isSidebarOpen, toggleSidebar, prompt, autoResize, promptTextarea, 
+                projects, pinnedProjects, recentProjects, createNewProject, isLoading, togglePin, deleteProject 
+            };
         }
     }).mount('#app');
 </script>
