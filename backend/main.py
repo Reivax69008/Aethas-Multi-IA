@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from typing import List
 import os
 import json
+from datetime import datetime
 
 # Importation de nos modules locaux
 from .database import engine, Base, get_db
@@ -13,12 +14,12 @@ from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, 
 from .models import User, Project, Message, SystemSettings, AIModel
 from .orchestrator import run_orchestrator, sync_providers_models
 
-# Création des tables dans la base de données
+# Création des tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="AETHAS38 - Orchestrateur Multi-IA")
 
-# Configuration des fichiers statiques
+# Fichiers statiques
 assets_path = os.path.join(os.getcwd(), "frontend", "assets")
 os.makedirs(assets_path, exist_ok=True)
 app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
@@ -28,7 +29,6 @@ def is_setup_required(db: Session) -> bool:
     return admin is None
 
 def get_current_user(request: Request, db: Session = Depends(get_db)):
-    """Extrait et vérifie l'utilisateur actuel via le token de session."""
     token = request.cookies.get("session_token")
     if not token: raise HTTPException(status_code=401, detail="Non authentifié")
     payload = verify_token(token)
@@ -48,8 +48,7 @@ def setup_page(db: Session = Depends(get_db)):
     if not is_setup_required(db):
         return RedirectResponse(url="/login")
     frontend_path = os.path.join(os.getcwd(), "frontend", "index.html")
-    if not os.path.exists(frontend_path):
-        raise HTTPException(status_code=404, detail="Interface introuvable.")
+    if not os.path.exists(frontend_path): raise HTTPException(status_code=404, detail="Interface introuvable.")
     return FileResponse(frontend_path)
 
 @app.get("/login")
@@ -57,15 +56,12 @@ def login_page(db: Session = Depends(get_db)):
     if is_setup_required(db):
         return RedirectResponse(url="/setup")
     frontend_path = os.path.join(os.getcwd(), "frontend", "login.html")
-    if not os.path.exists(frontend_path):
-        raise HTTPException(status_code=404, detail="Interface de connexion introuvable.")
+    if not os.path.exists(frontend_path): raise HTTPException(status_code=404, detail="Interface de connexion introuvable.")
     return FileResponse(frontend_path)
 
 @app.post("/api/setup")
 def create_admin(admin_data: AdminCreate, db: Session = Depends(get_db)):
-    if not is_setup_required(db):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="L'installation a déjà été effectuée.")
-
+    if not is_setup_required(db): raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Déjà installé.")
     hashed_pw = get_password_hash(admin_data.password)
     totp_secret = generate_totp_secret()
     new_admin = User(email=admin_data.email, username=admin_data.username, hashed_password=hashed_pw, totp_secret=totp_secret, is_admin=True)
@@ -81,16 +77,13 @@ def create_admin(admin_data: AdminCreate, db: Session = Depends(get_db)):
     db.add(new_settings)
     db.commit()
     db.refresh(new_admin)
-
     return {"message": "Configuration terminée avec succès.", "totp_secret": totp_secret, "totp_uri": get_totp_uri(totp_secret, new_admin.username)}
 
 @app.post("/api/login")
 def login(login_data: LoginRequest, response: Response, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == login_data.username).first()
-    if not user or not verify_password(login_data.password, user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Identifiants incorrects.")
-    if not verify_totp(user.totp_secret, login_data.totp_code):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Code 2FA invalide.")
+    if not user or not verify_password(login_data.password, user.hashed_password): raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Identifiants incorrects.")
+    if not verify_totp(user.totp_secret, login_data.totp_code): raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Code 2FA invalide.")
     
     access_token = create_access_token(data={"sub": user.username})
     response.set_cookie(key="session_token", value=access_token, httponly=True, max_age=3600, samesite="lax")
@@ -99,20 +92,14 @@ def login(login_data: LoginRequest, response: Response, db: Session = Depends(ge
 @app.get("/dashboard")
 def dashboard(request: Request):
     token = request.cookies.get("session_token")
-    if not token or not verify_token(token):
-        return RedirectResponse(url="/login")
+    if not token or not verify_token(token): return RedirectResponse(url="/login")
     frontend_path = os.path.join(os.getcwd(), "frontend", "dashboard.html")
     return FileResponse(frontend_path)
 
 @app.put("/api/users/me/password")
 def change_password(passwords: PasswordChange, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Permet à l'utilisateur connecté de modifier son propre mot de passe."""
-    if not verify_password(passwords.old_password, current_user.hashed_password):
-        raise HTTPException(status_code=400, detail="L'ancien mot de passe est incorrect.")
-    
-    if len(passwords.new_password) < 8:
-        raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit contenir au moins 8 caractères.")
-        
+    if not verify_password(passwords.old_password, current_user.hashed_password): raise HTTPException(status_code=400, detail="L'ancien mot de passe est incorrect.")
+    if len(passwords.new_password) < 8: raise HTTPException(status_code=400, detail="8 caractères minimum.")
     current_user.hashed_password = get_password_hash(passwords.new_password)
     db.commit()
     return {"message": "Mot de passe mis à jour avec succès."}
@@ -156,6 +143,26 @@ def delete_project(project_id: int, db: Session = Depends(get_db), current_user:
     db.commit()
     return {"message": "Projet supprimé"}
 
+# --- NOUVEAU : EXPORT DE CONVERSATION ---
+@app.get("/api/projects/{project_id}/export")
+def export_project(project_id: int, format: str = "txt", db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Exporte l'intégralité d'une conversation au format TXT ou JSON."""
+    project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not project: raise HTTPException(status_code=404, detail="Projet introuvable")
+    
+    messages = db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
+    
+    if format == "json":
+        data = [{"role": m.role, "content": m.content, "date": m.created_at.isoformat()} for m in messages]
+        return Response(content=json.dumps(data, indent=2), media_type="application/json", headers={"Content-Disposition": f"attachment; filename=aethas38_export_{project_id}.json"})
+    else:
+        text = f"--- HISTORIQUE DU PROJET : {project.title} ---\n\n"
+        for m in messages:
+            role_name = "VOUS" if m.role == "user" else "AETHAS38"
+            date_str = m.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            text += f"[{date_str}] {role_name}:\n{m.content}\n\n{'-'*50}\n\n"
+        return Response(content=text, media_type="text/plain;charset=utf-8", headers={"Content-Disposition": f"attachment; filename=aethas38_export_{project_id}.txt"})
+
 # --- GESTION DES MESSAGES ---
 @app.get("/api/projects/{project_id}/messages", response_model=List[MessageResponse])
 def get_messages(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -176,7 +183,6 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
     settings = db.query(SystemSettings).first()
 
     orchestrator_config = message.config.dict() if message.config else {"workers": ["gemini-3.5-flash-lite"]} 
-    
     ai_response_text = await run_orchestrator(history, settings, orchestrator_config)
 
     ai_message = Message(role="assistant", content=ai_response_text, project_id=project_id)
@@ -188,8 +194,7 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
 # --- GESTION DES MODELES ---
 @app.post("/api/models/sync")
 async def trigger_model_sync(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs.")
+    if not current_user.is_admin: raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs.")
     settings = db.query(SystemSettings).first()
     return await sync_providers_models(db, settings)
 
