@@ -10,6 +10,11 @@ from .models import User
 from .auth import get_password_hash, generate_totp_secret, get_totp_uri, verify_password, verify_totp, create_access_token, verify_token
 from .schemas import AdminCreate, LoginRequest
 
+# MAJ BDD
+from typing import List
+from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse
+from .models import User, Project
+
 # Création des tables dans la base de données
 Base.metadata.create_all(bind=engine)
 
@@ -138,3 +143,34 @@ def dashboard(request: Request):
         raise HTTPException(status_code=404, detail="Interface du tableau de bord introuvable.")
         
     return FileResponse(frontend_path)
+
+# --- GESTION DES PROJETS ---
+
+def get_current_user(request: Request, db: Session = Depends(get_db)):
+    """Extrait l'utilisateur actuel à partir du cookie de session JWT."""
+    token = request.cookies.get("session_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Non authentifié")
+    
+    payload = verify_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Session expirée")
+        
+    user = db.query(User).filter(User.username == payload.get("sub")).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Utilisateur introuvable")
+    return user
+
+@app.get("/api/projects", response_model=List[ProjectResponse])
+def get_projects(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Récupère tous les projets de l'utilisateur connecté."""
+    return db.query(Project).filter(Project.user_id == current_user.id).order_by(Project.created_at.desc()).all()
+
+@app.post("/api/projects", response_model=ProjectResponse)
+def create_project(project: ProjectCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Crée un nouveau projet pour l'utilisateur connecté."""
+    new_project = Project(title=project.title, user_id=current_user.id)
+    db.add(new_project)
+    db.commit()
+    db.refresh(new_project)
+    return new_project
