@@ -10,6 +10,7 @@ from .database import engine, Base, get_db
 from .models import User, Project, Message
 from .auth import get_password_hash, generate_totp_secret, get_totp_uri, verify_password, verify_totp, create_access_token, verify_token
 from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, ProjectRename, MessageCreate, MessageResponse
+from .models import User, Project, Message, SystemSettings
 
 # Création des tables dans la base de données
 Base.metadata.create_all(bind=engine)
@@ -58,17 +59,16 @@ def login_page(db: Session = Depends(get_db)):
 
 @app.post("/api/setup")
 def create_admin(admin_data: AdminCreate, db: Session = Depends(get_db)):
-    """Reçoit les données du frontend, crée l'admin et retourne le QR Code 2FA."""
+    """Reçoit les données du frontend, crée l'admin, sauvegarde la configuration et retourne le QR Code 2FA."""
     if not is_setup_required(db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, 
             detail="L'installation a déjà été effectuée."
         )
 
-    # Sécurisation des accès
+    # Création du Super Admin
     hashed_pw = get_password_hash(admin_data.password)
     totp_secret = generate_totp_secret()
-
     new_admin = User(
         email=admin_data.email,
         username=admin_data.username,
@@ -76,16 +76,25 @@ def create_admin(admin_data: AdminCreate, db: Session = Depends(get_db)):
         totp_secret=totp_secret,
         is_admin=True
     )
-
     db.add(new_admin)
+
+    # Sauvegarde des paramètres système
+    new_settings = SystemSettings(
+        smtp_host=admin_data.smtp_host,
+        smtp_port=admin_data.smtp_port,
+        smtp_user=admin_data.smtp_user,
+        smtp_password=admin_data.smtp_password,
+        gemini_api_key=admin_data.gemini_api_key,
+        openrouter_api_key=admin_data.openrouter_api_key
+    )
+    db.add(new_settings)
+
     db.commit()
     db.refresh(new_admin)
 
-    # Génération de l'URI pour l'affichage du QR Code côté frontend
     totp_uri = get_totp_uri(totp_secret, new_admin.username)
-
     return {
-        "message": "Administrateur créé avec succès.",
+        "message": "Configuration terminée avec succès.",
         "totp_secret": totp_secret,
         "totp_uri": totp_uri
     }

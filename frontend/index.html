@@ -3,60 +3,122 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AETHAS38 - Installation</title>
+    <title>AETHAS38 - Installation Complète</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: { colors: { aethas: { dark: '#0f172a', panel: '#1e293b', cyan: '#06b6d4', purple: '#a855f7' } } }
-            }
-        }
+        tailwind.config = { darkMode: 'class', theme: { extend: { colors: { aethas: { dark: '#0f172a', panel: '#1e293b', cyan: '#06b6d4', purple: '#a855f7' } } } } }
     </script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         body { background-color: #0f172a; color: #f8fafc; font-family: 'Inter', sans-serif; }
         .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(6, 182, 212, 0.2); box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5); }
         .neon-text { background: linear-gradient(to right, #06b6d4, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
     </style>
 </head>
-<body class="flex items-center justify-center min-h-screen p-4 sm:p-8">
+<body class="flex items-center justify-center min-h-screen p-4 sm:p-8 overflow-y-auto">
 
-<div id="app" class="w-full max-w-md transition-all duration-500">
+<div id="app" class="w-full max-w-2xl transition-all duration-500 my-8">
     <div class="text-center mb-8">
-        <!-- Chemin du logo corrigé -->
         <img src="/static/logo.png" alt="AETHAS38 Logo" class="w-24 h-24 mx-auto mb-4 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)] object-cover bg-gray-800">
         <h1 class="text-3xl font-bold tracking-wider neon-text">AETHAS38</h1>
-        <p class="text-gray-400 text-sm mt-2">Configuration de l'Orchestrateur Multi-IA</p>
+        <p class="text-gray-400 text-sm mt-2">Configuration Initiale (Super Admin)</p>
     </div>
 
     <div class="glass-panel rounded-2xl p-6 sm:p-8">
-        
-        <form v-if="!setupComplete" @submit.prevent="submitSetup" class="space-y-5">
+        <form v-if="!setupComplete" @submit.prevent="submitSetup" class="space-y-8">
             <div v-if="errorMessage" class="p-3 bg-red-900/50 border border-red-500 rounded text-red-200 text-sm text-center">{{ errorMessage }}</div>
+            
+            <!-- Section 1 : Compte Admin -->
             <div>
-                <label class="block text-sm font-medium text-gray-300 mb-1">Email Administrateur</label>
-                <input v-model="form.email" type="email" required class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2.5 focus:outline-none focus:border-aethas-cyan focus:ring-1 focus:ring-aethas-cyan transition-colors" placeholder="admin@domaine.com">
+                <h2 class="text-lg font-semibold text-white border-b border-gray-700 pb-2 mb-4 flex items-center gap-2">
+                    <i data-lucide="user-plus" class="w-5 h-5 text-aethas-cyan"></i> Compte Administrateur
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm text-gray-300 mb-1">Nom d'utilisateur</label>
+                        <input v-model="form.username" type="text" required class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:ring-1 focus:ring-aethas-cyan outline-none" placeholder="Admin">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-300 mb-1">Mot de passe</label>
+                        <input v-model="form.password" type="password" required class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:ring-1 focus:ring-aethas-cyan outline-none" placeholder="••••••••">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm text-gray-300 mb-1">Email de récupération</label>
+                        <input v-model="form.email" type="email" required class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:ring-1 focus:ring-aethas-cyan outline-none" placeholder="admin@domaine.com">
+                    </div>
+                </div>
             </div>
+
+            <!-- Section 2 : Serveur Mail -->
             <div>
-                <label class="block text-sm font-medium text-gray-300 mb-1">Nom d'utilisateur</label>
-                <input v-model="form.username" type="text" required class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2.5 focus:outline-none focus:border-aethas-cyan focus:ring-1 focus:ring-aethas-cyan transition-colors" placeholder="Admin">
+                <div class="flex items-center justify-between border-b border-gray-700 pb-2 mb-4">
+                    <h2 class="text-lg font-semibold text-white flex items-center gap-2">
+                        <i data-lucide="mail" class="w-5 h-5 text-aethas-cyan"></i> Serveur Mail (Obligatoire)
+                    </h2>
+                    <button type="button" @click="showWiki = !showWiki" class="text-xs text-aethas-cyan hover:text-white underline">Aide FAI Français</button>
+                </div>
+                
+                <!-- Wiki d'aide -->
+                <div v-if="showWiki" class="mb-4 p-4 bg-gray-800 rounded-lg border border-gray-600 text-sm text-gray-300 space-y-2">
+                    <p><strong>Freebox :</strong> Hôte: smtp.free.fr | Port: 465 (SSL) ou 587 (TLS)</p>
+                    <p><strong>Orange :</strong> Hôte: smtp.orange.fr | Port: 465 (SSL)</p>
+                    <p><strong>SFR :</strong> Hôte: smtp.sfr.fr | Port: 465 (SSL)</p>
+                    <p><strong>Bouygues :</strong> Hôte: smtp.bbox.fr | Port: 587 (TLS)</p>
+                    <p><strong>Gmail :</strong> Hôte: smtp.gmail.com | Port: 465 (Nécessite un "Mot de passe d'application" Google)</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="md:col-span-3">
+                        <label class="block text-sm text-gray-300 mb-1">Hôte SMTP</label>
+                        <input v-model="form.smtp_host" type="text" required class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan outline-none" placeholder="ex: smtp.free.fr">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-300 mb-1">Port</label>
+                        <input v-model="form.smtp_port" type="number" required class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan outline-none" placeholder="465">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm text-gray-300 mb-1">Utilisateur SMTP</label>
+                        <input v-model="form.smtp_user" type="text" required class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan outline-none">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm text-gray-300 mb-1">Mot de passe SMTP</label>
+                        <input v-model="form.smtp_password" type="password" required class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan outline-none">
+                    </div>
+                </div>
             </div>
+
+            <!-- Section 3 : Clés API IA -->
             <div>
-                <label class="block text-sm font-medium text-gray-300 mb-1">Mot de passe</label>
-                <input v-model="form.password" type="password" required class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2.5 focus:outline-none focus:border-aethas-cyan focus:ring-1 focus:ring-aethas-cyan transition-colors" placeholder="••••••••">
+                <h2 class="text-lg font-semibold text-white border-b border-gray-700 pb-2 mb-4 flex items-center gap-2">
+                    <i data-lucide="cpu" class="w-5 h-5 text-aethas-cyan"></i> Moteurs IA (Optionnel)
+                </h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm text-gray-300 mb-1">Google Gemini API Key</label>
+                        <input v-model="form.gemini_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan outline-none" placeholder="AIzaSy...">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-300 mb-1">OpenRouter API Key</label>
+                        <input v-model="form.openrouter_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan outline-none" placeholder="sk-or-v1-...">
+                    </div>
+                </div>
             </div>
-            <button type="submit" :disabled="isSubmitting" class="w-full bg-gradient-to-r from-aethas-cyan to-aethas-purple hover:opacity-90 text-white font-semibold py-3 px-4 rounded-lg transition-all shadow-[0_0_10px_rgba(168,85,247,0.4)] flex justify-center items-center mt-6">
-                <span v-if="isSubmitting">Création en cours...</span>
-                <span v-else>Initialiser le système</span>
+
+            <button type="submit" :disabled="isSubmitting" class="w-full bg-gradient-to-r from-aethas-cyan to-aethas-purple hover:opacity-90 text-white font-semibold py-3 px-4 rounded-lg transition-all shadow-[0_0_10px_rgba(168,85,247,0.4)] flex justify-center items-center mt-8">
+                <span v-if="isSubmitting">Initialisation et Chiffrement...</span>
+                <span v-else>Terminer l'installation</span>
             </button>
         </form>
 
         <div v-else class="text-center space-y-6 animate-fade-in">
+            <!-- Code existant pour le succès / QR Code -->
             <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-900/50 text-green-400 mb-2">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                <i data-lucide="check" class="w-6 h-6"></i>
             </div>
-            <h2 class="text-xl font-bold text-white">Compte créé avec succès</h2>
+            <h2 class="text-xl font-bold text-white">Plateforme Opérationnelle</h2>
             
             <div class="bg-white p-4 rounded-xl inline-block mx-auto min-w-[200px] min-h-[200px] flex items-center justify-center">
                 <img v-if="qrCodeUrl" :src="qrCodeUrl" alt="QR Code 2FA" class="w-full h-full object-contain">
@@ -65,7 +127,7 @@
             
             <div class="text-sm text-gray-300 space-y-2">
                 <p>Scannez ce QR Code avec votre application 2FA (Keepassium, Google Authenticator...).</p>
-                <p class="text-xs text-gray-500 break-all bg-aethas-dark p-2 rounded">Secret manuel : {{ totpSecret }}</p>
+                <p class="text-xs text-gray-500 break-all bg-aethas-dark p-2 rounded border border-gray-600">Secret manuel : {{ totpSecret }}</p>
             </div>
 
             <a href="/login" class="block w-full border border-aethas-cyan text-aethas-cyan hover:bg-aethas-cyan hover:text-aethas-dark font-semibold py-3 px-4 rounded-lg transition-colors mt-6">
@@ -76,48 +138,49 @@
 </div>
 
 <script>
-    const { createApp, ref, reactive } = Vue;
+    const { createApp, ref, reactive, onMounted } = Vue;
 
     createApp({
         setup() {
-            const form = reactive({ email: '', username: '', password: '' });
+            const form = reactive({ 
+                email: '', username: '', password: '',
+                smtp_host: '', smtp_port: 465, smtp_user: '', smtp_password: '',
+                gemini_api_key: '', openrouter_api_key: ''
+            });
             const isSubmitting = ref(false);
             const setupComplete = ref(false);
             const errorMessage = ref('');
             const totpSecret = ref('');
             const qrCodeUrl = ref('');
+            const showWiki = ref(false);
+
+            onMounted(() => { lucide.createIcons(); });
 
             const submitSetup = async () => {
                 isSubmitting.value = true;
                 errorMessage.value = '';
-
+                
                 try {
                     const response = await fetch('/api/setup', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(form)
                     });
-
                     const data = await response.json();
-
-                    if (!response.ok) {
-                        throw new Error(data.detail || "Erreur lors de l'installation");
-                    }
-
+                    if (!response.ok) throw new Error(data.detail || "Erreur lors de l'installation");
+                    
                     totpSecret.value = data.totp_secret;
                     setupComplete.value = true;
-
-                    // CORRECTION ICI : Génération par API externe ultra fiable (plus besoin de librairie)
                     qrCodeUrl.value = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(data.totp_uri)}&color=0f172a&bgcolor=ffffff`;
-
+                    
+                    setTimeout(() => lucide.createIcons(), 100);
                 } catch (error) {
                     errorMessage.value = error.message;
                 } finally {
                     isSubmitting.value = false;
                 }
             };
-
-            return { form, isSubmitting, setupComplete, errorMessage, totpSecret, qrCodeUrl, submitSetup };
+            return { form, isSubmitting, setupComplete, errorMessage, totpSecret, qrCodeUrl, showWiki, submitSetup };
         }
     }).mount('#app');
 </script>

@@ -6,6 +6,14 @@ class AdminCreate(BaseModel):
     email: EmailStr
     username: str
     password: str
+    # Serveur Mail (Obligatoire)
+    smtp_host: str
+    smtp_port: int
+    smtp_user: str
+    smtp_password: str
+    # Clés API (Optionnelles)
+    gemini_api_key: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
 
 class LoginRequest(BaseModel):
     username: str
@@ -24,10 +32,10 @@ class ProjectResponse(ProjectBase):
     created_at: datetime
     is_pinned: bool
 
-    class Config:
+class Config:
         from_attributes = True
 
-        # --- NOUVEAU : Schémas pour les Messages ---
+# --- NOUVEAU : Schémas pour les Messages ---
 class MessageBase(BaseModel):
     role: str
     content: str
@@ -39,9 +47,6 @@ class MessageResponse(MessageBase):
     id: int
     created_at: datetime
     project_id: int
-
-    class Config:
-        from_attributes = True
 
 class ProjectRename(BaseModel):
     title: str

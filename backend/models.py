@@ -42,3 +42,16 @@ class Message(Base):
     
     # Relation
     project = relationship("Project", back_populates="messages")
+
+class SystemSettings(Base):
+    __tablename__ = "system_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Serveur Mail (Obligatoire)
+    smtp_host = Column(String, nullable=False)
+    smtp_port = Column(Integer, nullable=False)
+    smtp_user = Column(String, nullable=False)
+    smtp_password = Column(String, nullable=False)
+    # Clés API (Optionnelles)
+    gemini_api_key = Column(String, nullable=True)
+    openrouter_api_key = Column(String, nullable=True)
