@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 class AdminCreate(BaseModel):
     email: EmailStr
@@ -27,7 +27,7 @@ class LoginRequest(BaseModel):
     password: str
     totp_code: str
 
-# --- NOUVEAU : Schémas pour les Projets ---
+# --- GESTION DES PROJETS ---
 class ProjectBase(BaseModel):
     title: str
 
@@ -39,25 +39,34 @@ class ProjectResponse(ProjectBase):
     created_at: datetime
     is_pinned: bool
 
-class Config:
+    class Config:
         from_attributes = True
 
-# --- NOUVEAU : Schémas pour les Messages ---
+class ProjectRename(BaseModel):
+    title: str
+
+# --- GESTION DES MESSAGES ET ORCHESTRATION ---
+class OrchestratorConfig(BaseModel):
+    workers: List[str]
+    prompter: Optional[str] = "gemini-3.5-flash-lite"
+    concatenator: Optional[str] = "gemini-3.5-flash-lite"
+
 class MessageBase(BaseModel):
     role: str
     content: str
 
 class MessageCreate(MessageBase):
-    pass
+    config: Optional[OrchestratorConfig] = None
 
 class MessageResponse(MessageBase):
     id: int
     created_at: datetime
     project_id: int
 
-class ProjectRename(BaseModel):
-    title: str
+    class Config:
+        from_attributes = True
 
+# --- UTILISATEUR ---
 class PasswordChange(BaseModel):
     old_password: str
     new_password: str

@@ -1,18 +1,17 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Request, Response
+from fastapi import FastAPI, Depends, HTTPException, status, Request, Response, UploadFile, File
 from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from typing import List
 import os
+import json
 
 # Importation de nos modules locaux
 from .database import engine, Base, get_db
 from .auth import get_password_hash, generate_totp_secret, get_totp_uri, verify_password, verify_totp, create_access_token, verify_token
-from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, ProjectRename, MessageCreate, MessageResponse
-from .models import User, Project, Message, SystemSettings
-from .orchestrator import run_orchestrator, sync_providers_models
+from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, ProjectRename, MessageCreate, MessageResponse, PasswordChange
 from .models import User, Project, Message, SystemSettings, AIModel
-from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, ProjectRename, MessageCreate, MessageResponse, PasswordChangeS
+from .orchestrator import run_orchestrator, sync_providers_models
 
 # Création des tables dans la base de données
 Base.metadata.create_all(bind=engine)
@@ -108,8 +107,6 @@ def change_password(passwords: PasswordChange, db: Session = Depends(get_db), cu
     db.commit()
     return {"message": "Mot de passe mis à jour avec succès."}
 
-# --- GESTION DES PROJETS ---
-
 def get_current_user(request: Request, db: Session = Depends(get_db)):
     token = request.cookies.get("session_token")
     if not token: raise HTTPException(status_code=401, detail="Non authentifié")
@@ -119,6 +116,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
     if not user: raise HTTPException(status_code=401, detail="Utilisateur introuvable")
     return user
 
+# --- GESTION DES PROJETS ---
 @app.get("/api/projects", response_model=List[ProjectResponse])
 def get_projects(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return db.query(Project).filter(Project.user_id == current_user.id).order_by(Project.created_at.desc()).all()
@@ -158,7 +156,6 @@ def delete_project(project_id: int, db: Session = Depends(get_db), current_user:
     return {"message": "Projet supprimé"}
 
 # --- GESTION DES MESSAGES ---
-
 @app.get("/api/projects/{project_id}/messages", response_model=List[MessageResponse])
 def get_messages(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
@@ -167,7 +164,6 @@ def get_messages(project_id: int, db: Session = Depends(get_db), current_user: U
 
 @app.post("/api/projects/{project_id}/messages", response_model=List[MessageResponse])
 async def create_message(project_id: int, message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Ajoute un message, lance l'Orchestrateur asynchrone et retourne l'historique."""
     project = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not project: raise HTTPException(status_code=404, detail="Projet introuvable")
     
@@ -178,9 +174,7 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
     history = db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
     settings = db.query(SystemSettings).first()
 
-    # Configuration temporaire (sera remplacée par les choix du Frontend à la Phase 2)
-    # Ex pour tester le pipeline complet : {"workers": ["gemini-3.5-flash-lite", "google/gemini-1.5-pro"]}
-    orchestrator_config = {"workers": ["gemini-3.5-flash-lite"]} 
+    orchestrator_config = message.config.dict() if message.config else {"workers": ["gemini-3.5-flash-lite"]} 
     
     ai_response_text = await run_orchestrator(history, settings, orchestrator_config)
 
@@ -190,9 +184,9 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
 
     return db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
 
+# --- GESTION DES MODELES ---
 @app.post("/api/models/sync")
 async def trigger_model_sync(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Déclenche manuellement l'extraction et la mise à jour des modèles depuis les API."""
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Accès réservé aux administrateurs.")
     settings = db.query(SystemSettings).first()
@@ -200,5 +194,28 @@ async def trigger_model_sync(db: Session = Depends(get_db), current_user: User =
 
 @app.get("/api/models")
 def get_models(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Renvoie la liste complète des modèles stockés en base de données."""
     return db.query(AIModel).order_by(AIModel.name.asc()).all()
+
+@app.get("/api/models/export")
+def export_models(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not current_user.is_admin: raise HTTPException(status_code=403, detail="Accès admin requis.")
+    models = db.query(AIModel).all()
+    models_data = [{"provider": m.provider, "model_id": m.model_id, "name": m.name, "context_length": m.context_length, "pricing_prompt": m.pricing_prompt, "pricing_completion": m.pricing_completion} for m in models]
+    return Response(content=json.dumps(models_data), media_type="application/json", headers={"Content-Disposition": "attachment; filename=aethas38_models.json"})
+
+@app.post("/api/models/import")
+async def import_models(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not current_user.is_admin: raise HTTPException(status_code=403, detail="Accès admin requis.")
+    content = await file.read()
+    try:
+        data = json.loads(content)
+        imported_count = 0
+        for item in data:
+            existing = db.query(AIModel).filter(AIModel.model_id == item["model_id"]).first()
+            if not existing:
+                db.add(AIModel(**item))
+                imported_count += 1
+        db.commit()
+        return {"message": f"Import réussi. {imported_count} nouveaux modèles ajoutés."}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Fichier JSON invalide ou mal formaté.")

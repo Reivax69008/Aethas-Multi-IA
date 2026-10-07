@@ -6,10 +6,7 @@
     <title>AETHAS38 - Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: { extend: { colors: { aethas: { dark: '#0f172a', panel: '#1e293b', cyan: '#06b6d4', purple: '#a855f7' } } } }
-        }
+        tailwind.config = { darkMode: 'class', theme: { extend: { colors: { aethas: { dark: '#0f172a', panel: '#1e293b', cyan: '#06b6d4', purple: '#a855f7' } } } } }
     </script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -17,7 +14,6 @@
         body { background-color: #0f172a; color: #f8fafc; font-family: 'Inter', sans-serif; }
         .neon-text { background: linear-gradient(to right, #06b6d4, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
     </style>
 </head>
@@ -35,30 +31,63 @@
             <div class="p-6 space-y-4">
                 <h3 class="text-sm font-semibold text-aethas-cyan uppercase tracking-wider mb-2">Sécurité du compte</h3>
                 <div v-if="settingsMessage" :class="['p-3 rounded text-sm text-center', settingsMessage.includes('succès') ? 'bg-green-900/50 text-green-200 border border-green-500' : 'bg-red-900/50 text-red-200 border border-red-500']">{{ settingsMessage }}</div>
-                
                 <div>
                     <label class="block text-sm text-gray-300 mb-1">Ancien mot de passe</label>
-                    <input v-model="passForm.old" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none" placeholder="••••••••">
+                    <input v-model="passForm.old" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none">
                 </div>
                 <div>
                     <label class="block text-sm text-gray-300 mb-1">Nouveau mot de passe</label>
-                    <input v-model="passForm.new" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none" placeholder="8 caractères minimum">
+                    <input v-model="passForm.new" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none">
                 </div>
                 <div>
                     <label class="block text-sm text-gray-300 mb-1">Confirmer le mot de passe</label>
-                    <input v-model="passForm.confirm" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none" placeholder="••••••••">
+                    <input v-model="passForm.confirm" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none">
                 </div>
-                
                 <button @click="changePassword" :disabled="isSavingSettings" class="w-full mt-4 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2.5 px-4 rounded-lg transition-colors border border-gray-500 disabled:opacity-50">
-                    <span v-if="isSavingSettings">Mise à jour...</span>
-                    <span v-else>Modifier le mot de passe</span>
+                    <span v-if="isSavingSettings">Mise à jour...</span><span v-else>Modifier</span>
                 </button>
             </div>
         </div>
     </div>
 
-    <div v-if="isSidebarOpen" @click="toggleSidebar" class="md:hidden fixed inset-0 bg-black/60 z-40 transition-opacity"></div>
+    <!-- MODAL GESTION DES MODÈLES -->
+    <div v-if="isModelsModalOpen" class="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
+        <div class="bg-aethas-panel border border-gray-600 rounded-2xl w-full max-w-4xl max-h-[80vh] flex flex-col shadow-[0_0_30px_rgba(0,0,0,0.7)]">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50">
+                <h2 class="text-lg font-bold text-white flex items-center gap-2"><i data-lucide="cpu" class="w-5 h-5 text-aethas-cyan"></i> Base de données Modèles IA</h2>
+                <button @click="isModelsModalOpen = false" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-4 border-b border-gray-700 flex gap-2 bg-gray-900/50">
+                <button @click="syncModels" :disabled="isSyncing" class="bg-aethas-cyan hover:bg-cyan-600 text-aethas-dark font-semibold py-2 px-4 rounded flex items-center gap-2 text-sm disabled:opacity-50">
+                    <i data-lucide="refresh-cw" :class="{'animate-spin': isSyncing}" class="w-4 h-4"></i> Synchroniser API
+                </button>
+                <a href="/api/models/export" target="_blank" class="bg-gray-700 hover:bg-gray-600 text-white border border-gray-600 font-semibold py-2 px-4 rounded flex items-center gap-2 text-sm">
+                    <i data-lucide="download" class="w-4 h-4"></i> Exporter (JSON)
+                </a>
+                <label class="bg-gray-700 hover:bg-gray-600 text-white border border-gray-600 font-semibold py-2 px-4 rounded flex items-center gap-2 text-sm cursor-pointer">
+                    <i data-lucide="upload" class="w-4 h-4"></i> Importer
+                    <input type="file" accept=".json" @change="importModels" class="hidden">
+                </label>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4">
+                <p v-if="modelsList.length === 0" class="text-gray-500 text-center py-4">Aucun modèle en base. Cliquez sur Synchroniser.</p>
+                <table v-else class="w-full text-left text-sm text-gray-300">
+                    <thead class="text-xs uppercase bg-gray-800 text-gray-400 sticky top-0">
+                        <tr><th class="px-4 py-2">ID Modèle</th><th class="px-4 py-2">Fournisseur</th><th class="px-4 py-2">Contexte</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="model in modelsList" :key="model.model_id" class="border-b border-gray-700 hover:bg-gray-800/50">
+                            <td class="px-4 py-2 font-mono text-xs text-aethas-cyan">{{ model.model_id }}</td>
+                            <td class="px-4 py-2 capitalize">{{ model.provider }}</td>
+                            <td class="px-4 py-2">{{ model.context_length }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 
+    <!-- BARRE LATÉRALE -->
     <div :class="['transition-all duration-300 flex-shrink-0 relative z-50', isSidebarOpen ? 'w-72' : 'w-0']">
         <aside :class="['absolute top-0 left-0 h-full w-72 bg-aethas-panel border-r border-gray-700 flex flex-col transition-transform duration-300', isSidebarOpen ? 'translate-x-0' : '-translate-x-full']">
             <div class="p-4 border-b border-gray-700 flex items-center justify-between">
@@ -69,40 +98,34 @@
                 <button @click="toggleSidebar" class="md:hidden text-gray-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
             
-            <div class="p-4">
-                <button @click="createNewProject" :disabled="isLoading" class="w-full bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 rounded-lg py-2.5 px-4 flex items-center justify-center gap-2 transition-colors disabled:opacity-50 shadow-md">
-                    <i data-lucide="plus" class="w-5 h-5 text-aethas-cyan"></i> Nouveau Projet IA
+            <div class="p-4 space-y-2">
+                <button @click="createNewProject" :disabled="isLoading" class="w-full bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 rounded-lg py-2 px-4 flex items-center justify-center gap-2 shadow-md">
+                    <i data-lucide="plus" class="w-4 h-4 text-aethas-cyan"></i> Nouveau Projet
+                </button>
+                <button @click="openModelsModal" class="w-full bg-aethas-dark hover:bg-gray-800 text-gray-300 border border-gray-700 rounded-lg py-2 px-4 flex items-center justify-center gap-2">
+                    <i data-lucide="database" class="w-4 h-4"></i> Modèles IA
                 </button>
             </div>
 
             <div class="flex-1 overflow-y-auto p-4 space-y-6">
                 <div v-if="pinnedProjects.length > 0">
-                    <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Épinglés</h3>
+                    <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Épinglés</h3>
                     <ul class="space-y-1">
-                        <li v-for="project in pinnedProjects" :key="project.id" @click="selectProject(project)" :class="['group flex items-center justify-between p-2 rounded cursor-pointer text-sm transition-colors', activeProject && activeProject.id === project.id ? 'bg-gray-700 text-white' : 'hover:bg-gray-800 text-gray-300']">
-                            <div class="flex items-center gap-2 truncate">
-                                <i data-lucide="pin" class="w-4 h-4 text-aethas-cyan fill-aethas-cyan flex-shrink-0"></i>
-                                <span class="truncate">{{ project.title }}</span>
-                            </div>
-                            <div class="hidden group-hover:flex items-center gap-1 flex-shrink-0 bg-gray-800 pl-2 rounded">
-                                <button @click.stop="renameProject(project)" class="text-gray-400 hover:text-aethas-cyan p-1 rounded hover:bg-gray-700" title="Renommer"><i data-lucide="edit-2" class="w-3.5 h-3.5"></i></button>
-                                <button @click.stop="togglePin(project.id)" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700" title="Désépingler"><i data-lucide="pin-off" class="w-3.5 h-3.5"></i></button>
-                                <button @click.stop="deleteProject(project.id)" class="text-gray-400 hover:text-red-400 p-1 rounded hover:bg-gray-700" title="Supprimer"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                        <li v-for="project in pinnedProjects" :key="project.id" @click="selectProject(project)" :class="['group flex items-center justify-between p-2 rounded cursor-pointer text-sm', activeProject && activeProject.id === project.id ? 'bg-gray-700 text-white' : 'hover:bg-gray-800 text-gray-300']">
+                            <div class="flex items-center gap-2 truncate"><i data-lucide="pin" class="w-3 h-3 text-aethas-cyan"></i><span class="truncate">{{ project.title }}</span></div>
+                            <div class="hidden group-hover:flex items-center gap-1 bg-gray-800 pl-2 rounded">
+                                <button @click.stop="togglePin(project.id)" class="text-gray-400 hover:text-white"><i data-lucide="pin-off" class="w-3.5 h-3.5"></i></button>
+                                <button @click.stop="deleteProject(project.id)" class="text-red-500 hover:text-red-400"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                             </div>
                         </li>
                     </ul>
                 </div>
-
                 <div>
-                    <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Récents</h3>
+                    <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Récents</h3>
                     <ul class="space-y-1">
-                        <li v-if="recentProjects.length === 0 && pinnedProjects.length === 0" class="text-sm text-gray-500 italic p-2">Aucun projet.</li>
-                        <li v-for="project in recentProjects" :key="project.id" @click="selectProject(project)" :class="['group flex items-center justify-between p-2 rounded cursor-pointer text-sm transition-colors', activeProject && activeProject.id === project.id ? 'bg-gray-700 text-white' : 'hover:bg-gray-800 text-gray-300']">
-                            <div class="flex items-center gap-2 truncate">
-                                <i data-lucide="message-square" class="w-4 h-4 text-gray-500 flex-shrink-0"></i>
-                                <span class="truncate">{{ project.title }}</span>
-                            </div>
-                            <div class="hidden group-hover:flex items-center gap-1 flex-shrink-0 bg-gray-800 pl-2 rounded">
+                        <li v-for="project in recentProjects" :key="project.id" @click="selectProject(project)" :class="['group flex items-center justify-between p-2 rounded cursor-pointer text-sm', activeProject && activeProject.id === project.id ? 'bg-gray-700 text-white' : 'hover:bg-gray-800 text-gray-300']">
+                            <div class="flex items-center gap-2 truncate"><i data-lucide="message-square" class="w-3 h-3 text-gray-500"></i><span class="truncate">{{ project.title }}</span></div>
+                            <div class="hidden group-hover:flex items-center gap-1 bg-gray-800 pl-2 rounded">
                                 <button @click.stop="renameProject(project)" class="text-gray-400 hover:text-aethas-cyan p-1 rounded hover:bg-gray-700" title="Renommer"><i data-lucide="edit-2" class="w-3.5 h-3.5"></i></button>
                                 <button @click.stop="togglePin(project.id)" class="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700" title="Épingler"><i data-lucide="pin" class="w-3.5 h-3.5"></i></button>
                                 <button @click.stop="deleteProject(project.id)" class="text-gray-400 hover:text-red-400 p-1 rounded hover:bg-gray-700" title="Supprimer"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
@@ -124,12 +147,13 @@
         </aside>
     </div>
 
+    <!-- ZONE PRINCIPALE -->
     <main class="flex-1 flex flex-col min-w-0 z-10 transition-all duration-300">
         <header class="flex items-center justify-between p-4 border-b border-gray-700 bg-aethas-panel h-[73px]">
             <div class="flex items-center gap-3">
-                <button @click="toggleSidebar" class="text-gray-400 hover:text-white transition-colors p-1.5 rounded hover:bg-gray-700"><i data-lucide="menu" class="w-6 h-6"></i></button>
-                <div v-show="!isSidebarOpen" class="flex items-center gap-2 transition-opacity duration-300">
-                    <img src="/assets/logo.png" alt="Logo" class="w-8 h-8 rounded-full border border-aethas-cyan object-cover bg-gray-800 flex-shrink-0">
+                <button @click="toggleSidebar" class="text-gray-400 hover:text-white p-1.5 rounded hover:bg-gray-700"><i data-lucide="menu" class="w-6 h-6"></i></button>
+                <div v-show="!isSidebarOpen" class="flex items-center gap-2">
+                    <img src="/assets/logo.png" class="w-8 h-8 rounded-full border border-aethas-cyan">
                     <span class="font-bold text-lg neon-text">AETHAS38</span>
                 </div>
             </div>
@@ -139,29 +163,19 @@
             </div>
         </header>
 
-        <div v-if="!activeProject" class="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-center">
-            <img src="/assets/logo.png" alt="AETHAS38 Logo" class="w-24 h-24 mb-6 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)] object-cover bg-gray-800 flex-shrink-0">
-            <h2 class="text-2xl font-bold text-gray-200 mb-2 text-center">Comment puis-je vous aider aujourd'hui ?</h2>
-            <p class="text-gray-500 text-sm text-center">Sélectionnez ou créez un projet pour commencer.</p>
+        <div v-if="!activeProject" class="flex-1 overflow-y-auto p-4 flex flex-col items-center justify-center">
+            <img src="/assets/logo.png" class="w-24 h-24 mb-6 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)]">
+            <h2 class="text-2xl font-bold text-gray-200 mb-2">Comment puis-je vous aider aujourd'hui ?</h2>
         </div>
 
         <div v-else class="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 flex flex-col" id="chat-container">
-            <div v-if="messages.length === 0" class="flex-1 flex items-center justify-center text-gray-500 italic">Démarrez la conversation ci-dessous.</div>
-            
-            <div v-for="msg in messages" :key="msg.id" :class="['max-w-3xl rounded-2xl p-4', msg.role === 'user' ? 'bg-gray-800 ml-auto border border-gray-700' : 'bg-aethas-panel mr-auto border border-aethas-cyan/30']">
+            <div v-for="msg in messages" :key="msg.id" :class="['max-w-4xl rounded-2xl p-4', msg.role === 'user' ? 'bg-gray-800 ml-auto border border-gray-700' : 'bg-aethas-panel mr-auto border border-aethas-cyan/30']">
                 <div class="flex items-center gap-2 mb-2">
-                    <i v-if="msg.role === 'user'" data-lucide="user" class="w-4 h-4 text-gray-400"></i>
-                    <i v-else data-lucide="bot" class="w-4 h-4 text-aethas-cyan"></i>
                     <span class="text-xs font-semibold uppercase tracking-wider text-gray-400">{{ msg.role === 'user' ? 'Vous' : 'AETHAS38' }}</span>
                 </div>
                 <div class="text-gray-200 whitespace-pre-wrap text-sm leading-relaxed">{{ msg.content }}</div>
             </div>
-
             <div v-if="isAiThinking" class="max-w-3xl rounded-2xl p-4 bg-aethas-panel mr-auto border border-aethas-cyan/30 w-24">
-                <div class="flex items-center gap-2 mb-2">
-                    <i data-lucide="bot" class="w-4 h-4 text-aethas-cyan"></i>
-                    <span class="text-xs font-semibold uppercase tracking-wider text-gray-400">AETHAS38</span>
-                </div>
                 <div class="flex space-x-1.5 h-4 items-center">
                     <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce"></div>
                     <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce" style="animation-delay: 0.15s"></div>
@@ -170,21 +184,40 @@
             </div>
         </div>
 
-        <div class="p-4 md:p-6 w-full max-w-4xl mx-auto">
-            <div class="relative flex items-end bg-gray-800 border border-gray-600 rounded-2xl p-2 shadow-lg focus-within:border-aethas-cyan focus-within:ring-1 focus-within:ring-aethas-cyan transition-all">
-                <button class="p-3 text-gray-400 hover:text-aethas-cyan transition-colors flex-shrink-0" :disabled="!activeProject || isAiThinking"><i data-lucide="paperclip" class="w-5 h-5"></i></button>
-                <textarea 
-                    v-model="prompt" 
-                    @input="autoResize"
-                    @keydown.enter.exact.prevent="sendMessage"
-                    ref="promptTextarea"
-                    :disabled="!activeProject || isAiThinking"
-                    rows="1" 
-                    class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none leading-relaxed disabled:opacity-50" 
-                    placeholder="Posez votre question à l'Orchestrateur..."></textarea>
-                <button @click="sendMessage" :disabled="!activeProject || !prompt.trim() || isAiThinking" class="p-3 text-aethas-cyan hover:text-white transition-colors flex-shrink-0 disabled:opacity-50 disabled:text-gray-500"><i data-lucide="send" class="w-5 h-5"></i></button>
+        <!-- ZONE DE CONTRÔLE ORCHESTRATEUR & PROMPT -->
+        <div v-if="activeProject" class="p-4 md:p-6 w-full max-w-5xl mx-auto space-y-2">
+            <div class="bg-gray-800/80 border border-gray-700 rounded-xl p-3 flex flex-wrap gap-4 items-center text-xs">
+                <div class="flex items-center gap-2 flex-1 min-w-[200px]">
+                    <span class="text-aethas-cyan font-semibold w-20"><i data-lucide="users" class="w-3 h-3 inline"></i> Travailleurs:</span>
+                    <select multiple v-model="selectedWorkers" @change="limitWorkers" class="bg-aethas-dark border border-gray-600 rounded px-2 py-1 text-gray-200 w-full h-16 outline-none focus:border-aethas-cyan">
+                        <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Direct)</option>
+                        <option v-for="m in modelsList" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
+                    </select>
+                    <span class="text-gray-500 ml-1">{{ selectedWorkers.length }}/5</span>
+                </div>
+                
+                <div class="flex flex-col gap-2 flex-1 min-w-[200px]" :class="{'opacity-30 pointer-events-none': selectedWorkers.length <= 1}">
+                    <div class="flex items-center gap-2">
+                        <span class="text-gray-400 font-semibold w-24"><i data-lucide="edit-3" class="w-3 h-3 inline"></i> Prompteur:</span>
+                        <select v-model="selectedPrompter" class="bg-aethas-dark border border-gray-600 rounded px-2 py-1 text-gray-200 flex-1 outline-none truncate">
+                            <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Direct)</option>
+                            <option v-for="m in modelsList" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-aethas-purple font-semibold w-24"><i data-lucide="git-merge" class="w-3 h-3 inline"></i> Concaténeur:</span>
+                        <select v-model="selectedConcatenator" class="bg-aethas-dark border border-gray-600 rounded px-2 py-1 text-gray-200 flex-1 outline-none truncate">
+                            <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite (Direct)</option>
+                            <option v-for="m in modelsList" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
+                        </select>
+                    </div>
+                </div>
             </div>
-            <p class="text-center text-xs text-gray-500 mt-3">AETHAS38 peut faire des erreurs. Vérifiez toujours les informations importantes.</p>
+
+            <div class="relative flex items-end bg-gray-800 border border-gray-600 rounded-2xl p-2 shadow-lg focus-within:border-aethas-cyan">
+                <textarea v-model="prompt" @input="autoResize" @keydown.enter.exact.prevent="sendMessage" ref="promptTextarea" :disabled="isAiThinking" rows="1" class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none disabled:opacity-50" placeholder="Posez votre question..."></textarea>
+                <button @click="sendMessage" :disabled="!prompt.trim() || isAiThinking" class="p-3 text-aethas-cyan hover:text-white disabled:opacity-50"><i data-lucide="send" class="w-5 h-5"></i></button>
+            </div>
         </div>
     </main>
 </div>
@@ -205,203 +238,150 @@
             const isAiThinking = ref(false);
 
             const isSettingsModalOpen = ref(false);
+            const isModelsModalOpen = ref(false);
             const isSavingSettings = ref(false);
+            const isSyncing = ref(false);
             const settingsMessage = ref("");
             const passForm = reactive({ old: '', new: '', confirm: '' });
+            
+            const modelsList = ref([]);
+            const selectedWorkers = ref(["gemini-3.5-flash-lite"]);
+            const selectedPrompter = ref("gemini-3.5-flash-lite");
+            const selectedConcatenator = ref("gemini-3.5-flash-lite");
 
             const pinnedProjects = computed(() => projects.value.filter(p => p.is_pinned));
             const recentProjects = computed(() => projects.value.filter(p => !p.is_pinned));
 
             const toggleSidebar = () => { isSidebarOpen.value = !isSidebarOpen.value; };
-            const autoResize = () => {
-                const el = promptTextarea.value;
-                if (!el) return;
-                el.style.height = 'auto'; 
-                el.style.height = el.scrollHeight + 'px'; 
-            };
-            const scrollToBottom = () => {
-                nextTick(() => {
-                    const container = document.getElementById('chat-container');
-                    if (container) container.scrollTop = container.scrollHeight;
-                });
-            };
+            const autoResize = () => { const el = promptTextarea.value; if(el){ el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }};
+            const scrollToBottom = () => { nextTick(() => { const c = document.getElementById('chat-container'); if (c) c.scrollTop = c.scrollHeight; }); };
 
-            const openSettings = () => {
-                isSettingsModalOpen.value = true;
-                settingsMessage.value = "";
-                passForm.old = ''; passForm.new = ''; passForm.confirm = '';
-                nextTick(() => lucide.createIcons());
-            };
+            const openSettings = () => { isSettingsModalOpen.value = true; nextTick(() => lucide.createIcons()); };
+            const closeSettings = () => { isSettingsModalOpen.value = false; };
             
-            const closeSettings = () => {
-                isSettingsModalOpen.value = false;
+            const openModelsModal = () => { fetchModels(); isModelsModalOpen.value = true; nextTick(() => lucide.createIcons()); };
+
+            const fetchModels = async () => {
+                try {
+                    const res = await fetch('/api/models');
+                    if(res.ok) modelsList.value = await res.json();
+                } catch(e) { console.error(e); }
             };
 
-            const changePassword = async () => {
-                settingsMessage.value = "";
-                if (passForm.new !== passForm.confirm) {
-                    settingsMessage.value = "Les nouveaux mots de passe ne correspondent pas.";
-                    return;
+            const syncModels = async () => {
+                isSyncing.value = true;
+                try {
+                    const res = await fetch('/api/models/sync', { method: 'POST' });
+                    if(res.ok) { alert("Synchronisation terminée !"); await fetchModels(); }
+                } catch(e) { console.error(e); }
+                isSyncing.value = false;
+            };
+
+            const importModels = async (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                const formData = new FormData();
+                formData.append("file", file);
+                try {
+                    const res = await fetch('/api/models/import', { method: 'POST', body: formData });
+                    const data = await res.json();
+                    alert(data.message || data.detail);
+                    await fetchModels();
+                } catch (e) { alert("Erreur d'import"); }
+                event.target.value = null;
+            };
+
+            const limitWorkers = () => {
+                if(selectedWorkers.value.length > 5) {
+                    selectedWorkers.value.pop();
+                    alert("Maximum 5 travailleurs autorisés en parallèle.");
                 }
-                if (passForm.new.length < 8) {
-                    settingsMessage.value = "Le mot de passe doit faire au moins 8 caractères.";
-                    return;
-                }
-
-                isSavingSettings.value = true;
-                try {
-                    const response = await fetch('/api/users/me/password', {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ old_password: passForm.old, new_password: passForm.new })
-                    });
-                    const data = await response.json();
-                    
-                    if (response.ok) {
-                        settingsMessage.value = data.message;
-                        passForm.old = ''; passForm.new = ''; passForm.confirm = '';
-                        setTimeout(() => closeSettings(), 2000);
-                    } else {
-                        settingsMessage.value = data.detail;
-                    }
-                } catch (error) {
-                    settingsMessage.value = "Erreur de connexion au serveur.";
-                } finally {
-                    isSavingSettings.value = false;
-                }
             };
 
-            const fetchProjects = async () => {
-                try {
-                    const response = await fetch('/api/projects');
-                    if (response.ok) {
-                        projects.value = await response.json();
-                        nextTick(() => lucide.createIcons());
-                    }
-                } catch (error) { console.error(error); }
-            };
-
-            const selectProject = async (project) => {
-                activeProject.value = project;
-                messages.value = [];
-                try {
-                    const response = await fetch(`/api/projects/${project.id}/messages`);
-                    if (response.ok) {
-                        messages.value = await response.json();
-                        scrollToBottom();
-                        nextTick(() => lucide.createIcons());
-                    }
-                } catch (error) { console.error(error); }
-            };
-
-            const createNewProject = async () => {
-                isLoading.value = true;
-                try {
-                    const response = await fetch('/api/projects', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ title: "Nouvelle discussion" })
-                    });
-                    if (response.ok) {
-                        const newProject = await response.json();
-                        projects.value.unshift(newProject);
-                        selectProject(newProject);
-                    }
-                } catch (error) { console.error(error); } 
-                finally { isLoading.value = false; }
-            };
-
-            const renameProject = async (project) => {
-                const newTitle = window.prompt("Nouveau nom du projet :", project.title);
-                if (!newTitle || newTitle.trim() === "" || newTitle === project.title) return;
-                
-                try {
-                    const response = await fetch(`/api/projects/${project.id}/rename`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ title: newTitle.trim() })
-                    });
-                    if (response.ok) {
-                        const updatedProject = await response.json();
-                        const index = projects.value.findIndex(p => p.id === project.id);
-                        if (index !== -1) projects.value[index] = updatedProject;
-                        if (activeProject.value && activeProject.value.id === project.id) {
-                            activeProject.value.title = updatedProject.title;
-                        }
-                    }
-                } catch (error) { console.error("Erreur de renommage", error); }
-            };
+            const fetchProjects = async () => { try { const res = await fetch('/api/projects'); if(res.ok) projects.value = await res.json(); nextTick(()=>lucide.createIcons()); } catch(e){} };
+            const selectProject = async (project) => { activeProject.value = project; messages.value = []; try { const res = await fetch(`/api/projects/${project.id}/messages`); if(res.ok) { messages.value = await res.json(); scrollToBottom(); nextTick(()=>lucide.createIcons()); } } catch(e){} };
+            const createNewProject = async () => { isLoading.value = true; try { const res = await fetch('/api/projects', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({title: "Nouvelle discussion"})}); if(res.ok){ const np = await res.json(); projects.value.unshift(np); selectProject(np); } } catch(e){} finally{isLoading.value = false;} };
 
             const sendMessage = async () => {
-                if (!prompt.value.trim() || !activeProject.value) return;
+                if (!prompt.value.trim() || !activeProject.value || selectedWorkers.value.length === 0) return;
                 const userText = prompt.value.trim();
-                prompt.value = "";
-                autoResize();
+                prompt.value = ""; autoResize();
                 
                 messages.value.push({ id: Date.now(), role: 'user', content: userText });
-                isAiThinking.value = true;
-                scrollToBottom();
-                nextTick(() => lucide.createIcons());
+                isAiThinking.value = true; scrollToBottom();
+                
+                const payload = {
+                    role: 'user', 
+                    content: userText,
+                    config: {
+                        workers: selectedWorkers.value,
+                        prompter: selectedPrompter.value,
+                        concatenator: selectedConcatenator.value
+                    }
+                };
 
                 try {
                     const response = await fetch(`/api/projects/${activeProject.value.id}/messages`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ role: 'user', content: userText })
+                        body: JSON.stringify(payload)
                     });
                     
                     if (response.ok) {
                         const data = await response.json();
-                        if (Array.isArray(data)) {
-                            messages.value = data;
-                        } else {
-                            selectProject(activeProject.value);
-                        }
+                        if (Array.isArray(data)) messages.value = data;
                     } else {
                         const err = await response.json();
-                        alert("Erreur de l'IA: " + err.detail);
+                        alert("Erreur: " + err.detail);
                     }
-                } catch (error) { 
-                    console.error("Erreur envoi message", error); 
-                } finally {
-                    isAiThinking.value = false;
-                    scrollToBottom();
-                    nextTick(() => lucide.createIcons());
-                }
+                } catch (error) { console.error(error); } 
+                finally { isAiThinking.value = false; scrollToBottom(); nextTick(()=>lucide.createIcons()); }
             };
 
-            const togglePin = async (projectId) => {
+            const changePassword = async () => {
+                settingsMessage.value = "";
+                if (passForm.new !== passForm.confirm) { settingsMessage.value = "Les nouveaux mots de passe ne correspondent pas."; return; }
+                if (passForm.new.length < 8) { settingsMessage.value = "Le mot de passe doit faire au moins 8 caractères."; return; }
+
+                isSavingSettings.value = true;
                 try {
-                    const response = await fetch(`/api/projects/${projectId}/pin`, { method: 'PUT' });
+                    const response = await fetch('/api/users/me/password', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ old_password: passForm.old, new_password: passForm.new }) });
+                    const data = await response.json();
+                    if (response.ok) {
+                        settingsMessage.value = data.message;
+                        passForm.old = ''; passForm.new = ''; passForm.confirm = '';
+                        setTimeout(() => closeSettings(), 2000);
+                    } else { settingsMessage.value = data.detail; }
+                } catch (error) { settingsMessage.value = "Erreur de connexion au serveur."; } 
+                finally { isSavingSettings.value = false; }
+            };
+
+            const renameProject = async (project) => {
+                const newTitle = window.prompt("Nouveau nom du projet :", project.title);
+                if (!newTitle || newTitle.trim() === "" || newTitle === project.title) return;
+                try {
+                    const response = await fetch(`/api/projects/${project.id}/rename`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: newTitle.trim() }) });
                     if (response.ok) {
                         const updatedProject = await response.json();
-                        const index = projects.value.findIndex(p => p.id === projectId);
+                        const index = projects.value.findIndex(p => p.id === project.id);
                         if (index !== -1) projects.value[index] = updatedProject;
+                        if (activeProject.value && activeProject.value.id === project.id) activeProject.value.title = updatedProject.title;
                     }
                 } catch (error) { console.error(error); }
             };
 
-            const deleteProject = async (projectId) => {
-                if (!confirm("Voulez-vous vraiment supprimer ce projet ?")) return;
-                try {
-                    const response = await fetch(`/api/projects/${projectId}`, { method: 'DELETE' });
-                    if (response.ok) {
-                        projects.value = projects.value.filter(p => p.id !== projectId);
-                        if (activeProject.value && activeProject.value.id === projectId) activeProject.value = null;
-                    }
-                } catch (error) { console.error(error); }
-            };
+            const togglePin = async (projectId) => { try { const response = await fetch(`/api/projects/${projectId}/pin`, { method: 'PUT' }); if (response.ok) { const updatedProject = await response.json(); const index = projects.value.findIndex(p => p.id === projectId); if (index !== -1) projects.value[index] = updatedProject; } } catch (error) { console.error(error); } };
+            const deleteProject = async (projectId) => { if (!confirm("Voulez-vous vraiment supprimer ce projet ?")) return; try { const response = await fetch(`/api/projects/${projectId}`, { method: 'DELETE' }); if (response.ok) { projects.value = projects.value.filter(p => p.id !== projectId); if (activeProject.value && activeProject.value.id === projectId) activeProject.value = null; } } catch (error) { console.error(error); } };
 
-            onMounted(() => {
-                lucide.createIcons();
-                fetchProjects();
-            });
+            onMounted(() => { lucide.createIcons(); fetchProjects(); fetchModels(); });
 
             return { 
                 username, isSidebarOpen, toggleSidebar, prompt, autoResize, promptTextarea, 
                 projects, pinnedProjects, recentProjects, activeProject, messages, isAiThinking,
                 createNewProject, selectProject, renameProject, sendMessage, isLoading, togglePin, deleteProject,
-                isSettingsModalOpen, openSettings, closeSettings, passForm, settingsMessage, isSavingSettings, changePassword
+                isSettingsModalOpen, openSettings, closeSettings, passForm, settingsMessage, isSavingSettings, changePassword,
+                isModelsModalOpen, openModelsModal, modelsList, syncModels, importModels,
+                selectedWorkers, selectedPrompter, selectedConcatenator, limitWorkers
             };
         }
     }).mount('#app');
