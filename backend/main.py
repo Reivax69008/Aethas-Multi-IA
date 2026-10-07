@@ -12,6 +12,7 @@ from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, 
 from .models import User, Project, Message, SystemSettings
 from .orchestrator import run_orchestrator, sync_providers_models
 from .models import User, Project, Message, SystemSettings, AIModel
+from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, ProjectRename, MessageCreate, MessageResponse, PasswordChangeS
 
 # Création des tables dans la base de données
 Base.metadata.create_all(bind=engine)
@@ -93,6 +94,19 @@ def dashboard(request: Request):
         return RedirectResponse(url="/login")
     frontend_path = os.path.join(os.getcwd(), "frontend", "dashboard.html")
     return FileResponse(frontend_path)
+
+@app.put("/api/users/me/password")
+def change_password(passwords: PasswordChange, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Permet à l'utilisateur connecté de modifier son propre mot de passe."""
+    if not verify_password(passwords.old_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="L'ancien mot de passe est incorrect.")
+    
+    if len(passwords.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit contenir au moins 8 caractères.")
+        
+    current_user.hashed_password = get_password_hash(passwords.new_password)
+    db.commit()
+    return {"message": "Mot de passe mis à jour avec succès."}
 
 # --- GESTION DES PROJETS ---
 

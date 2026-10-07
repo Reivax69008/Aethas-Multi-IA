@@ -57,3 +57,7 @@ class MessageResponse(MessageBase):
 
 class ProjectRename(BaseModel):
     title: str
+
+class PasswordChange(BaseModel):
+    old_password: str
+    new_password: str
