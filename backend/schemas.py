@@ -12,8 +12,15 @@ class AdminCreate(BaseModel):
     smtp_user: str
     smtp_password: str
     # Clés API (Optionnelles)
-    gemini_api_key: Optional[str] = None
     openrouter_api_key: Optional[str] = None
+    openrouter_management_key: Optional[str] = None
+    groq_api_key: Optional[str] = None
+    gemini_api_key: Optional[str] = None
+    deepseek_api_key: Optional[str] = None
+    mistral_api_key: Optional[str] = None
+    cloudflare_account_id: Optional[str] = None
+    cloudflare_api_token: Optional[str] = None
+    huggingface_api_key: Optional[str] = None
 
 class LoginRequest(BaseModel):
     username: str

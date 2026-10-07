@@ -20,7 +20,7 @@
 </head>
 <body class="flex items-center justify-center min-h-screen p-4 sm:p-8 overflow-y-auto">
 
-<div id="app" class="w-full max-w-2xl transition-all duration-500 my-8">
+<div id="app" class="w-full max-w-3xl transition-all duration-500 my-8">
     <div class="text-center mb-8">
         <img src="/static/logo.png" alt="AETHAS38 Logo" class="w-24 h-24 mx-auto mb-4 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)] object-cover bg-gray-800">
         <h1 class="text-3xl font-bold tracking-wider neon-text">AETHAS38</h1>
@@ -61,7 +61,6 @@
                     <button type="button" @click="showWiki = !showWiki" class="text-xs text-aethas-cyan hover:text-white underline">Aide FAI Français</button>
                 </div>
                 
-                <!-- Wiki d'aide -->
                 <div v-if="showWiki" class="mb-4 p-4 bg-gray-800 rounded-lg border border-gray-600 text-sm text-gray-300 space-y-2">
                     <p><strong>Freebox :</strong> Hôte: smtp.free.fr | Port: 465 (SSL) ou 587 (TLS)</p>
                     <p><strong>Orange :</strong> Hôte: smtp.orange.fr | Port: 465 (SSL)</p>
@@ -93,17 +92,63 @@
             <!-- Section 3 : Clés API IA -->
             <div>
                 <h2 class="text-lg font-semibold text-white border-b border-gray-700 pb-2 mb-4 flex items-center gap-2">
-                    <i data-lucide="cpu" class="w-5 h-5 text-aethas-cyan"></i> Moteurs IA (Optionnel)
+                    <i data-lucide="cpu" class="w-5 h-5 text-aethas-cyan"></i> Moteurs IA (Optionnel - modifiable plus tard)
                 </h2>
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-sm text-gray-300 mb-1">Google Gemini API Key</label>
-                        <input v-model="form.gemini_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan outline-none" placeholder="AIzaSy...">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    <!-- OpenRouter -->
+                    <div class="space-y-2 bg-gray-800/50 p-3 rounded-lg border border-gray-700">
+                        <h3 class="text-sm font-bold text-white flex items-center justify-between">OpenRouter <a href="https://openrouter.ai/keys" target="_blank" class="text-aethas-cyan hover:underline text-xs"><i data-lucide="external-link" class="w-3 h-3 inline"></i> Récupérer</a></h3>
+                        <p class="text-xs text-gray-400">Générez une clé standard pour les requêtes, et une "Management Key" pour la récupération des crédits.</p>
+                        <input v-model="form.openrouter_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:border-aethas-cyan outline-none" placeholder="API Key (sk-or-v1-...)">
+                        <input v-model="form.openrouter_management_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:border-aethas-cyan outline-none" placeholder="Management Key">
                     </div>
-                    <div>
-                        <label class="block text-sm text-gray-300 mb-1">OpenRouter API Key</label>
-                        <input v-model="form.openrouter_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan outline-none" placeholder="sk-or-v1-...">
+
+                    <!-- Gemini -->
+                    <div class="space-y-2 bg-gray-800/50 p-3 rounded-lg border border-gray-700">
+                        <h3 class="text-sm font-bold text-white flex items-center justify-between">Google Gemini <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-aethas-cyan hover:underline text-xs"><i data-lucide="external-link" class="w-3 h-3 inline"></i> Récupérer</a></h3>
+                        <p class="text-xs text-gray-400">Créez une API Key depuis Google AI Studio (Associez un projet Google Cloud pour lever les quotas gratuits limités).</p>
+                        <input v-model="form.gemini_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:border-aethas-cyan outline-none" placeholder="AIzaSy...">
                     </div>
+
+                    <!-- Groq -->
+                    <div class="space-y-2 bg-gray-800/50 p-3 rounded-lg border border-gray-700">
+                        <h3 class="text-sm font-bold text-white flex items-center justify-between">Groq <a href="https://console.groq.com/keys" target="_blank" class="text-aethas-cyan hover:underline text-xs"><i data-lucide="external-link" class="w-3 h-3 inline"></i> Récupérer</a></h3>
+                        <p class="text-xs text-gray-400">Créez une clé d'API. L'accès aux modèles Llama est gratuit avec quotas.</p>
+                        <input v-model="form.groq_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:border-aethas-cyan outline-none" placeholder="gsk_...">
+                    </div>
+
+                    <!-- DeepSeek -->
+                    <div class="space-y-2 bg-gray-800/50 p-3 rounded-lg border border-gray-700">
+                        <h3 class="text-sm font-bold text-white flex items-center justify-between">DeepSeek <a href="https://platform.deepseek.com/api_keys" target="_blank" class="text-aethas-cyan hover:underline text-xs"><i data-lucide="external-link" class="w-3 h-3 inline"></i> Récupérer</a></h3>
+                        <p class="text-xs text-gray-400">Créez une clé d'API. Parfait pour le traitement du code de AETHAS38.</p>
+                        <input v-model="form.deepseek_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:border-aethas-cyan outline-none" placeholder="sk-...">
+                    </div>
+
+                    <!-- Mistral -->
+                    <div class="space-y-2 bg-gray-800/50 p-3 rounded-lg border border-gray-700">
+                        <h3 class="text-sm font-bold text-white flex items-center justify-between">Mistral AI <a href="https://console.mistral.ai/api-keys/" target="_blank" class="text-aethas-cyan hover:underline text-xs"><i data-lucide="external-link" class="w-3 h-3 inline"></i> Récupérer</a></h3>
+                        <p class="text-xs text-gray-400">Assurez-vous d'avoir enregistré une méthode de facturation pour lever la période d'essai.</p>
+                        <input v-model="form.mistral_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:border-aethas-cyan outline-none" placeholder="Clé API Mistral">
+                    </div>
+
+                    <!-- HuggingFace -->
+                    <div class="space-y-2 bg-gray-800/50 p-3 rounded-lg border border-gray-700">
+                        <h3 class="text-sm font-bold text-white flex items-center justify-between">HuggingFace <a href="https://huggingface.co/settings/tokens" target="_blank" class="text-aethas-cyan hover:underline text-xs"><i data-lucide="external-link" class="w-3 h-3 inline"></i> Récupérer</a></h3>
+                        <p class="text-xs text-gray-400">Générez un Access Token (Fine-grained) avec les droits de lecture et génération (Inference).</p>
+                        <input v-model="form.huggingface_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:border-aethas-cyan outline-none" placeholder="hf_...">
+                    </div>
+
+                    <!-- Cloudflare -->
+                    <div class="space-y-2 bg-gray-800/50 p-3 rounded-lg border border-gray-700 md:col-span-2">
+                        <h3 class="text-sm font-bold text-white flex items-center justify-between">Cloudflare Workers AI <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" class="text-aethas-cyan hover:underline text-xs"><i data-lucide="external-link" class="w-3 h-3 inline"></i> Récupérer</a></h3>
+                        <p class="text-xs text-gray-400">Créez un "Custom Token" avec l'autorisation "Workers AI : Read/Write". Votre ID de compte se trouve sur la page d'accueil Workers.</p>
+                        <div class="flex gap-2">
+                            <input v-model="form.cloudflare_account_id" type="text" class="w-1/3 bg-aethas-dark border border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:border-aethas-cyan outline-none" placeholder="Account ID">
+                            <input v-model="form.cloudflare_api_token" type="password" class="w-2/3 bg-aethas-dark border border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:border-aethas-cyan outline-none" placeholder="API Token">
+                        </div>
+                    </div>
+
                 </div>
             </div>
 
@@ -114,7 +159,6 @@
         </form>
 
         <div v-else class="text-center space-y-6 animate-fade-in">
-            <!-- Code existant pour le succès / QR Code -->
             <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-900/50 text-green-400 mb-2">
                 <i data-lucide="check" class="w-6 h-6"></i>
             </div>
@@ -145,7 +189,9 @@
             const form = reactive({ 
                 email: '', username: '', password: '',
                 smtp_host: '', smtp_port: 465, smtp_user: '', smtp_password: '',
-                gemini_api_key: '', openrouter_api_key: ''
+                openrouter_api_key: '', openrouter_management_key: '',
+                groq_api_key: '', gemini_api_key: '', deepseek_api_key: '', mistral_api_key: '',
+                cloudflare_account_id: '', cloudflare_api_token: '', huggingface_api_key: ''
             });
             const isSubmitting = ref(false);
             const setupComplete = ref(false);

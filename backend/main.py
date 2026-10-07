@@ -84,8 +84,15 @@ def create_admin(admin_data: AdminCreate, db: Session = Depends(get_db)):
         smtp_port=admin_data.smtp_port,
         smtp_user=admin_data.smtp_user,
         smtp_password=admin_data.smtp_password,
+        openrouter_api_key=admin_data.openrouter_api_key,
+        openrouter_management_key=admin_data.openrouter_management_key,
+        groq_api_key=admin_data.groq_api_key,
         gemini_api_key=admin_data.gemini_api_key,
-        openrouter_api_key=admin_data.openrouter_api_key
+        deepseek_api_key=admin_data.deepseek_api_key,
+        mistral_api_key=admin_data.mistral_api_key,
+        cloudflare_account_id=admin_data.cloudflare_account_id,
+        cloudflare_api_token=admin_data.cloudflare_api_token,
+        huggingface_api_key=admin_data.huggingface_api_key
     )
     db.add(new_settings)
 
