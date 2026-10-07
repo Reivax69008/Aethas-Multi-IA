@@ -26,7 +26,6 @@
 <div id="app" class="flex w-full h-full relative bg-aethas-dark">
     <div v-if="isSidebarOpen" @click="toggleSidebar" class="md:hidden fixed inset-0 bg-black/60 z-40 transition-opacity"></div>
 
-    <!-- BARRE LATÉRALE -->
     <div :class="['transition-all duration-300 flex-shrink-0 relative z-50', isSidebarOpen ? 'w-72' : 'w-0']">
         <aside :class="['absolute top-0 left-0 h-full w-72 bg-aethas-panel border-r border-gray-700 flex flex-col transition-transform duration-300', isSidebarOpen ? 'translate-x-0' : '-translate-x-full']">
             <div class="p-4 border-b border-gray-700 flex items-center justify-between">
@@ -44,7 +43,6 @@
             </div>
 
             <div class="flex-1 overflow-y-auto p-4 space-y-6">
-                <!-- Projets Épinglés -->
                 <div v-if="pinnedProjects.length > 0">
                     <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Épinglés</h3>
                     <ul class="space-y-1">
@@ -62,7 +60,6 @@
                     </ul>
                 </div>
 
-                <!-- Projets Récents -->
                 <div>
                     <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Récents</h3>
                     <ul class="space-y-1">
@@ -82,14 +79,18 @@
                 </div>
             </div>
             
-            <div class="p-4 border-t border-gray-700 flex items-center gap-2">
-                <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-aethas-cyan to-aethas-purple flex items-center justify-center text-sm font-bold shadow-md">{{ username.charAt(0).toUpperCase() }}</div>
-                <span class="text-sm font-medium">{{ username }}</span>
+            <div class="p-4 border-t border-gray-700 flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-aethas-cyan to-aethas-purple flex items-center justify-center text-sm font-bold shadow-md">{{ username.charAt(0).toUpperCase() }}</div>
+                    <span class="text-sm font-medium">{{ username }}</span>
+                </div>
+                <button class="text-gray-400 hover:text-white transition-colors" title="Paramètres">
+                    <i data-lucide="settings" class="w-5 h-5"></i>
+                </button>
             </div>
         </aside>
     </div>
 
-    <!-- ZONE PRINCIPALE -->
     <main class="flex-1 flex flex-col min-w-0 z-10 transition-all duration-300">
         <header class="flex items-center justify-between p-4 border-b border-gray-700 bg-aethas-panel h-[73px]">
             <div class="flex items-center gap-3">
@@ -105,14 +106,12 @@
             </div>
         </header>
 
-        <!-- Affichage par défaut -->
         <div v-if="!activeProject" class="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-center">
             <img src="/assets/logo.png" alt="AETHAS38 Logo" class="w-24 h-24 mb-6 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)] object-cover bg-gray-800 flex-shrink-0">
             <h2 class="text-2xl font-bold text-gray-200 mb-2 text-center">Comment puis-je vous aider aujourd'hui ?</h2>
             <p class="text-gray-500 text-sm text-center">Sélectionnez ou créez un projet pour commencer.</p>
         </div>
 
-        <!-- Zone de Chat -->
         <div v-else class="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 flex flex-col" id="chat-container">
             <div v-if="messages.length === 0" class="flex-1 flex items-center justify-center text-gray-500 italic">Démarrez la conversation ci-dessous.</div>
             
@@ -125,7 +124,6 @@
                 <div class="text-gray-200 whitespace-pre-wrap text-sm leading-relaxed">{{ msg.content }}</div>
             </div>
 
-            <!-- Indicateur de chargement IA -->
             <div v-if="isAiThinking" class="max-w-3xl rounded-2xl p-4 bg-aethas-panel mr-auto border border-aethas-cyan/30 w-24">
                 <div class="flex items-center gap-2 mb-2">
                     <i data-lucide="bot" class="w-4 h-4 text-aethas-cyan"></i>
@@ -139,7 +137,6 @@
             </div>
         </div>
 
-        <!-- Saisie du Prompt -->
         <div class="p-4 md:p-6 w-full max-w-4xl mx-auto">
             <div class="relative flex items-end bg-gray-800 border border-gray-600 rounded-2xl p-2 shadow-lg focus-within:border-aethas-cyan focus-within:ring-1 focus-within:ring-aethas-cyan transition-all">
                 <button class="p-3 text-gray-400 hover:text-aethas-cyan transition-colors flex-shrink-0" :disabled="!activeProject || isAiThinking"><i data-lucide="paperclip" class="w-5 h-5"></i></button>
@@ -271,11 +268,15 @@
                     });
                     
                     if (response.ok) {
-                        // L'API nous renvoie l'historique à jour avec la réponse de l'IA
-                        messages.value = await response.json();
+                        const data = await response.json();
+                        if (Array.isArray(data)) {
+                            messages.value = data;
+                        } else {
+                            selectProject(activeProject.value);
+                        }
                     } else {
                         const err = await response.json();
-                        alert("Erreur: " + err.detail);
+                        alert("Erreur de l'IA: " + err.detail);
                     }
                 } catch (error) { 
                     console.error("Erreur envoi message", error); 
@@ -286,7 +287,7 @@
                 }
             };
 
-            const togglePin = async (projectId) => { /* ... code existant identique ... */
+            const togglePin = async (projectId) => {
                 try {
                     const response = await fetch(`/api/projects/${projectId}/pin`, { method: 'PUT' });
                     if (response.ok) {
@@ -297,7 +298,7 @@
                 } catch (error) { console.error(error); }
             };
 
-            const deleteProject = async (projectId) => { /* ... code existant identique ... */
+            const deleteProject = async (projectId) => {
                 if (!confirm("Voulez-vous vraiment supprimer ce projet ?")) return;
                 try {
                     const response = await fetch(`/api/projects/${projectId}`, { method: 'DELETE' });
