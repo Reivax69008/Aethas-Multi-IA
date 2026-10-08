@@ -3,7 +3,7 @@ from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from typing import List
-import os, json, asyncio, shutil
+import os, json, asyncio, shutil, base64, io
 from datetime import datetime
 import pytz
 
@@ -147,7 +147,59 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
     if message.files:
         files_text = ""
         for f in message.files:
-            files_text += f"\n\n[Fichier attaché : {f.name}]\n```\n{f.content}\n```"
+            content = f.content
+            if content.startswith("data:"):
+                try:
+                    header, b64data = content.split(",", 1)
+                    file_bytes = base64.b64decode(b64data)
+                    ext = f.name.split('.')[-1].lower()
+                    extracted_text = ""
+
+                    if ext == 'pdf':
+                        try:
+                            import PyPDF2
+                            reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+                            extracted_text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+                        except ImportError:
+                            extracted_text = "[Erreur: L'administrateur doit exécuter 'pip install PyPDF2' sur le serveur pour lire les PDF.]"
+                    
+                    elif ext in ['xls', 'xlsx', 'xlsm', 'xlsb']:
+                        try:
+                            import openpyxl
+                            wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=False)
+                            for sheet_name in wb.sheetnames:
+                                sheet = wb[sheet_name]
+                                extracted_text += f"\n--- Feuille : {sheet_name} ---\n"
+                                for row in sheet.iter_rows(values_only=True):
+                                    row_vals = [str(cell) if cell is not None else "" for cell in row]
+                                    if any(row_vals):
+                                        extracted_text += "\t".join(row_vals) + "\n"
+                            
+                            # Extraction des Macros VBA
+                            if ext in ['xlsm', 'xlsb', 'xls']:
+                                try:
+                                    from oletools.olevba import VBA_Parser
+                                    vbaparser = VBA_Parser("filename", data=file_bytes)
+                                    if vbaparser.detect_vba_macros():
+                                        extracted_text += "\n\n--- MACROS VBA DETECTEES ---\n"
+                                        for (filename, stream_path, vba_filename, vba_code) in vbaparser.extract_macros():
+                                            extracted_text += f"\n// Module: {vba_filename}\n{vba_code}\n"
+                                except ImportError:
+                                    extracted_text += "\n[Extraction VBA impossible: L'administrateur doit exécuter 'pip install oletools' sur le serveur.]\n"
+                                except Exception as e:
+                                    extracted_text += f"\n[Erreur de lecture VBA interne: {str(e)}]\n"
+
+                        except ImportError:
+                            extracted_text = "[Erreur: L'administrateur doit exécuter 'pip install openpyxl' sur le serveur pour lire Excel.]"
+                    else:
+                        extracted_text = f"[Fichier binaire non supporté textuellement : {f.name}]"
+                    
+                    files_text += f"\n\n[Fichier attaché : {f.name}]\n```text\n{extracted_text}\n```"
+                except Exception as e:
+                    files_text += f"\n\n[Fichier attaché : {f.name} - ERREUR DE DECODAGE: {str(e)}]"
+            else:
+                files_text += f"\n\n[Fichier attaché : {f.name}]\n```\n{content}\n```"
+        
         final_content = message.content + files_text
 
     db.add(Message(role=message.role, content=final_content, project_id=project_id))

@@ -15,3 +15,6 @@ openai
 httpx
 python-multipart
 pytz
+PyPDF2
+openpyxl
+oletools

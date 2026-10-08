@@ -369,7 +369,7 @@
                         <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-gray-400 mb-1">PROMPTEUR</label>
                             <select v-model="selectedPrompter" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
-                                <option value="gemini-3.5-flash-lite">Gemini Flash</option>
+                                <option value="">(Par défaut)</option>
                                 <option v-for="m in getFilteredModelsForCol(colPricing, colDomain, selectedPrompter)" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
                             </select>
                         </div>
@@ -377,7 +377,7 @@
                         <div class="p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-aethas-purple mb-1">CONCATENEUR</label>
                             <select v-model="selectedConcatenator" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
-                                <option value="gemini-3.5-flash-lite">Gemini Flash</option>
+                                <option value="">(Par défaut)</option>
                                 <option v-for="m in getFilteredModelsForCol(colPricing, colDomain, selectedConcatenator)" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
                             </select>
                         </div>
@@ -444,9 +444,9 @@
             const colPricing = ref("");
             const colDomain = ref("");
 
-            const workers = ref(["gemini-3.5-flash-lite", "", "", "", ""]);
-            const selectedPrompter = ref("gemini-3.5-flash-lite");
-            const selectedConcatenator = ref("gemini-3.5-flash-lite");
+            const workers = ref(["", "", "", "", ""]);
+            const selectedPrompter = ref("");
+            const selectedConcatenator = ref("");
 
             const attachedFiles = ref([]); 
 
@@ -473,8 +473,7 @@
                     return matchDomain && matchPrice;
                 });
                 
-                // Injection dynamique pour empêcher les cases vides si le modèle n'est pas dans les filtres
-                if (currentSelectedId && currentSelectedId.trim() !== "" && currentSelectedId !== "gemini-3.5-flash-lite") {
+                if (currentSelectedId && currentSelectedId.trim() !== "") {
                     const exists = filtered.find(m => m.model_id === currentSelectedId);
                     if (!exists) {
                         const original = modelInfo.models.find(m => m.model_id === currentSelectedId);
@@ -546,7 +545,7 @@
             };
 
             const downloadTemplate = () => {
-                const templateContent = `# AETHAS38 - Configuration Multi-Agents\n\n**Rappel important :**\n- **Prompteur :** Le système de l'orchestrateur utilisera ce modèle pour traduire et optimiser votre requête initiale en ANGLAIS (langue native des IA).\n- **Concaténeur :** Le système utilisera ce modèle pour regrouper les réponses des travailleurs et traduire la synthèse finale en FRANÇAIS (en préservant le code brut).\n\n## Sélection des Modèles\nRenseignez l'ID exact du modèle (ex: gemini-3.5-flash-lite, mistralai/mistral-large-4-0). Laissez vide si inutilisé.\n\n- Prompteur : gemini-3.5-flash-lite\n- Travailleur 1 : \n- Travailleur 2 : \n- Travailleur 3 : \n- Travailleur 4 : \n- Travailleur 5 : \n- Concaténeur : gemini-3.5-flash-lite\n`;
+                const templateContent = `# AETHAS38 - Configuration Multi-Agents\n\n**Rappel important :**\n- **Prompteur :** Le système de l'orchestrateur utilisera ce modèle pour traduire et optimiser votre requête initiale en ANGLAIS (langue native des IA).\n- **Concaténeur :** Le système utilisera ce modèle pour regrouper les réponses des travailleurs et traduire la synthèse finale en FRANÇAIS (en préservant le code brut).\n\n## Sélection des Modèles\nRenseignez l'ID exact du modèle (ex: gemini-3.5-flash-lite, mistralai/mistral-large-4-0). Laissez vide si inutilisé.\n\n- Prompteur : \n- Travailleur 1 : \n- Travailleur 2 : \n- Travailleur 3 : \n- Travailleur 4 : \n- Travailleur 5 : \n- Concaténeur : \n`;
                 downloadFile(templateContent, 'aethas38-config-agents.md');
             };
 
@@ -557,7 +556,6 @@
                 reader.onload = (e) => {
                     const content = e.target.result;
                     
-                    // Regex hyper souple pour ignorer la casse, les espaces bizarres et les accents
                     const extractModel = (key) => {
                         const safeKey = key.replace(/[éèe]/gi, '[éèe]');
                         const regex = new RegExp(`-\\s*${safeKey}\\s*:\\s*([^\\r\\n]*)`, 'i');
@@ -571,14 +569,9 @@
                     const w4 = extractModel('Travailleur 4');
                     const w5 = extractModel('Travailleur 5');
 
-                    // Réassignation complète du tableau pour garantir la réactivité Vue.js
                     workers.value = [w1, w2, w3, w4, w5];
-
-                    const p = extractModel('Prompteur');
-                    selectedPrompter.value = p !== "" ? p : 'gemini-3.5-flash-lite';
-
-                    const c = extractModel('Concateneur');
-                    selectedConcatenator.value = c !== "" ? c : 'gemini-3.5-flash-lite';
+                    selectedPrompter.value = extractModel('Prompteur');
+                    selectedConcatenator.value = extractModel('Concateneur');
 
                     alert("Configuration IA importée et appliquée avec succès !");
                 };
@@ -631,10 +624,19 @@
 
             const processFile = (file) => {
                 const reader = new FileReader();
+                const textExts = ['.txt', '.md', '.csv', '.json', '.py', '.js', '.html', '.css', '.xml', '.yml', '.yaml', '.sh', '.bat', '.ps1', '.ini', '.cfg', '.conf', '.log'];
+                const isText = textExts.some(ext => file.name.toLowerCase().endsWith(ext)) || file.type.startsWith('text/');
+                
                 reader.onload = (e) => {
                     attachedFiles.value.push({ name: file.name, content: e.target.result });
                 };
-                reader.readAsText(file);
+
+                // Les fichiers binaires (PDF, Excel, etc.) sont lus en Base64 pour que Python s'en charge.
+                if (isText) {
+                    reader.readAsText(file);
+                } else {
+                    reader.readAsDataURL(file);
+                }
             };
 
             const removeFile = (index) => { attachedFiles.value.splice(index, 1); };
@@ -688,7 +690,13 @@
                     } else { 
                         const err = await response.json(); alert("Erreur API IA : " + err.detail); 
                     }
-                } catch (error) {} finally { isAiThinking.value = false; scrollToBottom(); nextTick(()=>lucide.createIcons()); }
+                } catch (error) {
+                    alert("Erreur locale lors de l'envoi : " + error.message);
+                } finally { 
+                    isAiThinking.value = false; 
+                    scrollToBottom(); 
+                    nextTick(()=>lucide.createIcons()); 
+                }
             };
 
             const changePassword = async () => {

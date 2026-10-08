@@ -16,10 +16,9 @@ def determine_domain(model_id: str) -> str:
     return "Texte Polyvalent"
 
 async def translate_en_to_fr(client: httpx.AsyncClient, text: str) -> str:
-    """Traduit automatiquement l'anglais vers le français via l'API publique Google Translate."""
     if not text: return "Aucune description fournie."
     try:
-        short_text = text[:300].strip() # Limite stricte pour l'API gratuite
+        short_text = text[:300].strip()
         url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=fr&dt=t&q={urllib.parse.quote(short_text)}"
         resp = await client.get(url, timeout=4.0)
         if resp.status_code == 200:
@@ -205,7 +204,10 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
 
     final_response = ""
     try:
-        p_mod = config.get("prompter", "gemini-3.5-flash-lite")
+        # Fallback sécurisé en cas de champ vide
+        p_mod = config.get("prompter")
+        if not p_mod: p_mod = "gemini-3.5-flash-lite"
+        
         p_client, p_prov = get_client_for_model(db, p_mod, settings)
         prompt_system = "You are an expert prompt engineer. Translate and optimize the user request into clear, precise English tailored for AI execution."
         optimized = await ask_agent(p_client, p_mod, [{"role": "system", "content": prompt_system}, {"role": "user", "content": user_prompt}], p_prov)
@@ -222,7 +224,9 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                 w_tasks.append(ask_agent(w_client, w, formatted_history + [{"role": "user", "content": optimized}], w_prov))
             responses = await asyncio.gather(*w_tasks, return_exceptions=True)
 
-        c_mod = config.get("concatenator", "gemini-3.5-flash-lite")
+        c_mod = config.get("concatenator")
+        if not c_mod: c_mod = "gemini-3.5-flash-lite"
+        
         c_client, c_prov = get_client_for_model(db, c_mod, settings)
         
         concat_system = (
@@ -233,7 +237,7 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
             "You may translate code comments into French if appropriate, but leave code syntax strictly intact."
         )
         
-        synth = f"User Request: {user_prompt}\n\n" + "\n".join([f"--- EXPERT {i+1} ---\n{r}" for i, r in enumerate(responses)])
+        synth = f"User Request: {user_prompt}\n\n" + "\n".join([f"--- EXPERT {i+1} ---\n{str(r)}" for i, r in enumerate(responses)])
         final_response = await ask_agent(c_client, c_mod, [{"role": "system", "content": concat_system}, {"role": "user", "content": synth}], c_prov)
 
     except Exception as e:
