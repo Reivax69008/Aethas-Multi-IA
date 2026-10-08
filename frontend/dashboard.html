@@ -293,7 +293,6 @@
                 </div>
 
                 <div class="p-4 md:px-6 md:pt-6 pb-2 w-full max-w-7xl mx-auto flex-shrink-0">
-                    <!-- EN-TÊTE CONFIGURATION IA (AVEC BOUTONS IMPORT/EXPORT) -->
                     <div class="flex justify-between items-center mb-2">
                         <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Configuration des IA</span>
                         <div class="flex gap-2">
@@ -305,10 +304,8 @@
                         </div>
                     </div>
 
-                    <!-- BARRE DE SÉLECTION DE STYLE TABULAIRE (9 COLONNES STRICTES) -->
+                    <!-- BARRE DE SÉLECTION -->
                     <div class="grid grid-cols-9 border border-black bg-gray-900 rounded-lg overflow-hidden text-center text-xs font-bold shadow-lg mb-4">
-                        
-                        <!-- 1. PAYANT / GRATUIT -->
                         <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-gray-400 mb-1">PRIX</label>
                             <select v-model="colPricing" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none">
@@ -318,7 +315,6 @@
                             </select>
                         </div>
 
-                        <!-- 2. TYPE (DOMAINE) -->
                         <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-gray-400 mb-1">TYPE</label>
                             <select v-model="colDomain" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none">
@@ -330,7 +326,6 @@
                             </select>
                         </div>
 
-                        <!-- 3. TRAVAILLEUR 1 -->
                         <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 1</label>
                             <select v-model="workers[0]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
@@ -339,7 +334,6 @@
                             </select>
                         </div>
 
-                        <!-- 4. TRAVAILLEUR 2 -->
                         <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 2</label>
                             <select v-model="workers[1]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
@@ -348,7 +342,6 @@
                             </select>
                         </div>
 
-                        <!-- 5. TRAVAILLEUR 3 -->
                         <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 3</label>
                             <select v-model="workers[2]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
@@ -357,7 +350,6 @@
                             </select>
                         </div>
 
-                        <!-- 6. TRAVAILLEUR 4 -->
                         <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 4</label>
                             <select v-model="workers[3]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
@@ -366,7 +358,6 @@
                             </select>
                         </div>
 
-                        <!-- 7. TRAVAILLEUR 5 -->
                         <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 5</label>
                             <select v-model="workers[4]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
@@ -375,7 +366,6 @@
                             </select>
                         </div>
 
-                        <!-- 8. PROMPTEUR -->
                         <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-gray-400 mb-1">PROMPTEUR</label>
                             <select v-model="selectedPrompter" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
@@ -384,7 +374,6 @@
                             </select>
                         </div>
 
-                        <!-- 9. CONCATENEUR -->
                         <div class="p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-aethas-purple mb-1">CONCATENEUR</label>
                             <select v-model="selectedConcatenator" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
@@ -394,10 +383,8 @@
                         </div>
                     </div>
 
-                    <!-- Champ de texte et boutons d'envoi / multi-fichiers -->
+                    <!-- CHAT INPUT -->
                     <div class="relative flex items-end bg-gray-800 border border-gray-600 rounded-2xl p-2 shadow-lg focus-within:border-aethas-cyan flex-col gap-2">
-                        
-                        <!-- Liste des fichiers attachés -->
                         <div v-if="attachedFiles.length > 0" class="w-full flex flex-wrap gap-2 px-2 pt-2">
                             <div v-for="(file, index) in attachedFiles" :key="index" class="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 flex items-center gap-2">
                                 <i data-lucide="file" class="w-3.5 h-3.5 text-aethas-cyan"></i>
@@ -478,14 +465,27 @@
             });
 
             const getFilteredModelsForCol = (pricingFilter, domainFilter, currentSelectedId) => {
-                return modelInfo.models.filter(m => {
-                    if (m.model_id === currentSelectedId) return true;
+                let filtered = modelInfo.models.filter(m => {
                     const matchDomain = domainFilter === "" || m.domain === domainFilter;
                     let matchPrice = true;
                     if (pricingFilter === 'free') matchPrice = m.is_free;
                     if (pricingFilter === 'paid') matchPrice = !m.is_free;
                     return matchDomain && matchPrice;
                 });
+                
+                // Injection dynamique pour empêcher les cases vides si le modèle n'est pas dans les filtres
+                if (currentSelectedId && currentSelectedId.trim() !== "" && currentSelectedId !== "gemini-3.5-flash-lite") {
+                    const exists = filtered.find(m => m.model_id === currentSelectedId);
+                    if (!exists) {
+                        const original = modelInfo.models.find(m => m.model_id === currentSelectedId);
+                        if (original) {
+                            filtered.unshift(original);
+                        } else {
+                            filtered.unshift({ model_id: currentSelectedId, name: currentSelectedId, domain: "Importé", pricing_prompt: 0, pricing_completion: 0 });
+                        }
+                    }
+                }
+                return filtered;
             };
 
             const formatDate = (isoString) => {
@@ -556,21 +556,29 @@
                 const reader = new FileReader();
                 reader.onload = (e) => {
                     const content = e.target.result;
+                    
+                    // Regex hyper souple pour ignorer la casse, les espaces bizarres et les accents
                     const extractModel = (key) => {
-                        const regex = new RegExp(`- ${key} : (.*)`, 'i');
+                        const safeKey = key.replace(/[éèe]/gi, '[éèe]');
+                        const regex = new RegExp(`-\\s*${safeKey}\\s*:\\s*([^\\r\\n]*)`, 'i');
                         const match = content.match(regex);
                         return match && match[1] ? match[1].trim() : "";
                     };
 
-                    const checkAndSet = (val, defaultVal) => val !== "" ? val : defaultVal;
+                    const w1 = extractModel('Travailleur 1');
+                    const w2 = extractModel('Travailleur 2');
+                    const w3 = extractModel('Travailleur 3');
+                    const w4 = extractModel('Travailleur 4');
+                    const w5 = extractModel('Travailleur 5');
 
-                    selectedPrompter.value = checkAndSet(extractModel('Prompteur'), 'gemini-3.5-flash-lite');
-                    workers.value[0] = extractModel('Travailleur 1');
-                    workers.value[1] = extractModel('Travailleur 2');
-                    workers.value[2] = extractModel('Travailleur 3');
-                    workers.value[3] = extractModel('Travailleur 4');
-                    workers.value[4] = extractModel('Travailleur 5');
-                    selectedConcatenator.value = checkAndSet(extractModel('Concaténeur'), 'gemini-3.5-flash-lite');
+                    // Réassignation complète du tableau pour garantir la réactivité Vue.js
+                    workers.value = [w1, w2, w3, w4, w5];
+
+                    const p = extractModel('Prompteur');
+                    selectedPrompter.value = p !== "" ? p : 'gemini-3.5-flash-lite';
+
+                    const c = extractModel('Concateneur');
+                    selectedConcatenator.value = c !== "" ? c : 'gemini-3.5-flash-lite';
 
                     alert("Configuration IA importée et appliquée avec succès !");
                 };
