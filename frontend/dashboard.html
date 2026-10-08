@@ -22,26 +22,6 @@
 <body class="h-screen flex overflow-hidden">
 
 <div id="app" class="flex w-full h-full relative bg-aethas-dark">
-    
-    <!-- MODAL PARAMÈTRES -->
-    <div v-if="isSettingsModalOpen" class="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
-        <div class="bg-aethas-panel border border-gray-600 rounded-2xl w-full max-w-md overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.7)]">
-            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50">
-                <h2 class="text-lg font-bold text-white flex items-center gap-2"><i data-lucide="settings" class="w-5 h-5 text-aethas-cyan"></i> Paramètres</h2>
-                <button @click="closeSettings" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
-            </div>
-            <div class="p-6 space-y-4">
-                <h3 class="text-sm font-semibold text-aethas-cyan uppercase tracking-wider mb-2">Sécurité du compte</h3>
-                <div v-if="settingsMessage" :class="['p-3 rounded text-sm text-center', settingsMessage.includes('succès') ? 'bg-green-900/50 text-green-200 border border-green-500' : 'bg-red-900/50 text-red-200 border border-red-500']">{{ settingsMessage }}</div>
-                <div><label class="block text-sm text-gray-300 mb-1">Ancien mot de passe</label><input v-model="passForm.old" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none"></div>
-                <div><label class="block text-sm text-gray-300 mb-1">Nouveau mot de passe</label><input v-model="passForm.new" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none"></div>
-                <div><label class="block text-sm text-gray-300 mb-1">Confirmer</label><input v-model="passForm.confirm" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none"></div>
-                <button @click="changePassword" :disabled="isSavingSettings" class="w-full mt-4 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2.5 px-4 rounded-lg transition-colors border border-gray-500 disabled:opacity-50">
-                    <span v-if="isSavingSettings">Mise à jour...</span><span v-else>Modifier</span>
-                </button>
-            </div>
-        </div>
-    </div>
 
     <!-- BARRE LATÉRALE -->
     <div :class="['transition-all duration-300 flex-shrink-0 relative z-50 flex flex-col', isSidebarOpen ? 'w-72' : 'w-0']">
@@ -244,7 +224,7 @@
                         <option value="paid">Payants</option>
                     </select>
                     
-                    <!-- NOUVEAU BOUTON D'EXPORT CSV -->
+                    <!-- BOUTON D'EXPORT CSV -->
                     <button @click="exportCSV" class="bg-aethas-panel border border-gray-600 hover:border-aethas-cyan text-gray-300 hover:text-white px-3 py-1.5 rounded flex items-center gap-2 text-sm transition-colors md:ml-auto">
                         <i data-lucide="download" class="w-4 h-4 text-green-500"></i> Export CSV
                     </button>
@@ -453,9 +433,8 @@
             const isSyncing = ref(false);
             const isSavingSettings = ref(false);
 
-            const isSettingsModalOpen = ref(false);
-            const settingsMessage = ref("");
             const passForm = reactive({ old: '', new: '', confirm: '' });
+            const settingsMessage = ref("");
             
             const modelInfo = reactive({ last_sync_date: null, last_sync_type: null, models: [] });
             const financesList = ref([]);
@@ -528,8 +507,11 @@
             const autoResize = () => { const el = promptTextarea.value; if(el){ el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }};
             const scrollToBottom = () => { nextTick(() => { const c = document.getElementById('chat-container'); if (c) c.scrollTop = c.scrollHeight; }); };
 
-            const openSettings = () => { isSettingsModalOpen.value = true; nextTick(() => lucide.createIcons()); };
-            const closeSettings = () => { isSettingsModalOpen.value = false; };
+            const openSettings = () => { 
+                activeView.value = 'settings'; 
+                if(window.innerWidth < 768) isSidebarOpen.value = false;
+                nextTick(() => lucide.createIcons()); 
+            };
             
             const logToTerminal = async (msg) => {
                 try { await fetch('/api/logs', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ message: msg }) }); } catch(e){}
@@ -893,7 +875,7 @@
                 user, activeView, settingsTab, isSidebarOpen, toggleSidebar, prompt, autoResize, promptTextarea, 
                 projects, pinnedProjects, recentProjects, activeProject, messages, isAiThinking,
                 createNewProject, selectProject, renameProject, sendMessage, isLoading, togglePin, deleteProject,
-                isSettingsModalOpen, openSettings, closeSettings, passForm, settingsMessage, isSavingSettings, changePassword, uploadAvatar,
+                openSettings, passForm, settingsMessage, isSavingSettings, changePassword, uploadAvatar,
                 modelInfo, financesList, filterSearch, filterDomain, filterPricing, filterProvider, uniqueProviders, filteredModels, getFilteredModelsForCol, formatDate, syncModels, isSyncing,
                 workers, selectedPrompter, selectedConcatenator, colPricing, colDomain, downloadTemplate, exportCSV, handleConfigImport,
                 attachedFiles, handleFileUpload, handlePaste, removeFile,
