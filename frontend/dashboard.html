@@ -243,6 +243,11 @@
                         <option value="free">Gratuits uniquement</option>
                         <option value="paid">Payants</option>
                     </select>
+                    
+                    <!-- NOUVEAU BOUTON D'EXPORT CSV -->
+                    <button @click="exportCSV" class="bg-aethas-panel border border-gray-600 hover:border-aethas-cyan text-gray-300 hover:text-white px-3 py-1.5 rounded flex items-center gap-2 text-sm transition-colors md:ml-auto">
+                        <i data-lucide="download" class="w-4 h-4 text-green-500"></i> Export CSV
+                    </button>
                 </div>
                 <div class="overflow-x-auto max-h-[500px] custom-scrollbar">
                     <table class="w-full text-left text-sm text-gray-300">
@@ -293,7 +298,7 @@
                             </template>
                         </div>
 
-                        <!-- Boutons présents sur toutes les bulles (utilisateur et IA) -->
+                        <!-- Boutons de copie et téléchargement individuel -->
                         <div class="mt-3 flex items-center gap-3 border-t border-gray-700/50 pt-2 opacity-50 hover:opacity-100 transition-opacity">
                             <button @click="copyToClipboard(msg.content)" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1"><i data-lucide="copy" class="w-3 h-3"></i> Copier</button>
                             <button @click="downloadMessage(msg.content, msg.created_at || new Date().toISOString())" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1"><i data-lucide="file-down" class="w-3 h-3"></i> Extraire</button>
@@ -625,6 +630,35 @@
                 downloadFile(templateContent, 'aethas38-config-agents.md');
             };
 
+            const exportCSV = () => {
+                logToTerminal("Génération de l'extraction CSV (vue filtrée)...");
+                let csvContent = "\uFEFF"; 
+                csvContent += "Fournisseur,Modèle,Nom,Domaine,Gratuit,Contexte,Prix_In,Prix_Out,Description\n";
+                
+                filteredModels.value.forEach(m => {
+                    const escapeCSV = (str) => {
+                        if (str === null || str === undefined) return '""';
+                        return `"${String(str).replace(/"/g, '""')}"`;
+                    };
+                    const row = [
+                        escapeCSV(m.provider),
+                        escapeCSV(m.model_id),
+                        escapeCSV(m.name),
+                        escapeCSV(m.domain),
+                        m.is_free ? "Oui" : "Non",
+                        m.context_length,
+                        m.pricing_prompt,
+                        m.pricing_completion,
+                        escapeCSV(m.description_fr)
+                    ];
+                    csvContent += row.join(",") + "\n";
+                });
+                
+                const d = new Date();
+                const dateStr = d.getFullYear() + String(d.getMonth()+1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+                downloadFile(csvContent, `${dateStr}-extraction-modeles.csv`, 'text/csv;charset=utf-8');
+            };
+
             const handleConfigImport = (event) => {
                 const file = event.target.files[0];
                 if (!file) return;
@@ -721,7 +755,19 @@
 
             const exportProject = (format) => { if(activeProject.value) window.open(`/api/projects/${activeProject.value.id}/export?format=${format}`, '_blank'); };
             const copyToClipboard = async (text) => { try { await navigator.clipboard.writeText(text); alert("Copié !"); } catch (e) {} };
-            const downloadFile = (content, hint) => { let fname = hint ? hint.trim() : 'code.txt'; if (!fname.includes('.')) fname += '.txt'; const blob = new Blob([content], { type: 'text/plain;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = fname; a.click(); URL.revokeObjectURL(url); };
+            
+            const downloadFile = (content, hint, mimeType = 'text/plain;charset=utf-8') => { 
+                let fname = hint ? hint.trim() : 'code.txt'; 
+                if (!fname.includes('.')) fname += '.txt'; 
+                const blob = new Blob([content], { type: mimeType }); 
+                const url = URL.createObjectURL(blob); 
+                const a = document.createElement('a'); 
+                a.href = url; 
+                a.download = fname; 
+                a.click(); 
+                URL.revokeObjectURL(url); 
+            };
+            
             const downloadMessage = (content, dateString) => { downloadFile(content, `message_${dateString.replace(/[:T.Z]/g, '-')}.txt`); };
             const parseMessage = (content) => { const regex = /```([\w.-]*)\n([\s\S]*?)```/g; let parts = [], last = 0, m; while ((m = regex.exec(content)) !== null) { if (m.index > last) parts.push({ type: 'text', content: content.slice(last, m.index) }); parts.push({ type: 'code', language: m[1], content: m[2] }); last = m.index + m[0].length; } if (last < content.length) parts.push({ type: 'text', content: content.slice(last) }); return parts.length > 0 ? parts : [{ type: 'text', content: content }]; };
 
@@ -837,7 +883,6 @@
                 fetchUser(); 
                 fetchProjects(); 
                 fetchModelsInfo().then(() => {
-                    // Force la validation de la première vue si nécessaire
                     if(activeProject.value) validateConfigAndReplace();
                 }); 
                 fetchFinances(); 
@@ -850,7 +895,7 @@
                 createNewProject, selectProject, renameProject, sendMessage, isLoading, togglePin, deleteProject,
                 isSettingsModalOpen, openSettings, closeSettings, passForm, settingsMessage, isSavingSettings, changePassword, uploadAvatar,
                 modelInfo, financesList, filterSearch, filterDomain, filterPricing, filterProvider, uniqueProviders, filteredModels, getFilteredModelsForCol, formatDate, syncModels, isSyncing,
-                workers, selectedPrompter, selectedConcatenator, colPricing, colDomain, downloadTemplate, handleConfigImport,
+                workers, selectedPrompter, selectedConcatenator, colPricing, colDomain, downloadTemplate, exportCSV, handleConfigImport,
                 attachedFiles, handleFileUpload, handlePaste, removeFile,
                 exportProject, copyToClipboard, downloadFile, downloadMessage, parseMessage, systemLogs
             };
