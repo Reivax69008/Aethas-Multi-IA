@@ -73,7 +73,8 @@ def login(login_data: LoginRequest, response: Response, db: Session = Depends(ge
     user = db.query(User).filter(User.username == login_data.username).first()
     if not user or not verify_password(login_data.password, user.hashed_password): raise HTTPException(status_code=401, detail="Identifiants incorrects.")
     if not verify_totp(user.totp_secret, login_data.totp_code): raise HTTPException(status_code=401, detail="2FA invalide.")
-    response.set_cookie(key="session_token", value=create_access_token(data={"sub": user.username}), httponly=True, max_age=3600, samesite="lax")
+    # Correction : Extension de la durée de session à 7 jours (604800 secondes) pour éviter les erreurs 401 intempestives
+    response.set_cookie(key="session_token", value=create_access_token(data={"sub": user.username}), httponly=True, max_age=604800, samesite="lax")
     return {"message": "Connexion réussie"}
 
 @app.get("/dashboard")
@@ -143,10 +144,12 @@ def get_messages(project_id: int, db: Session = Depends(get_db), current_user: U
 
 @app.post("/api/projects/{project_id}/messages", response_model=List[MessageResponse])
 async def create_message(project_id: int, message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    final_content = message.content
+    extracted_files_data = []
+    files_names = []
+    
     if message.files:
-        files_text = ""
         for f in message.files:
+            files_names.append(f.name)
             content = f.content
             if content.startswith("data:"):
                 try:
@@ -175,7 +178,6 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
                                     if any(row_vals):
                                         extracted_text += "\t".join(row_vals) + "\n"
                             
-                            # Extraction des Macros VBA
                             if ext in ['xlsm', 'xlsb', 'xls']:
                                 try:
                                     from oletools.olevba import VBA_Parser
@@ -192,24 +194,28 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
                         except ImportError:
                             extracted_text = "[Erreur: L'administrateur doit exécuter 'pip install openpyxl' sur le serveur pour lire Excel.]"
                     else:
-                        extracted_text = f"[Fichier binaire non supporté textuellement : {f.name}]"
+                        extracted_text = file_bytes.decode('utf-8', errors='replace')
                     
-                    files_text += f"\n\n[Fichier attaché : {f.name}]\n```text\n{extracted_text}\n```"
+                    extracted_files_data.append({"name": f.name, "content": extracted_text})
                 except Exception as e:
-                    files_text += f"\n\n[Fichier attaché : {f.name} - ERREUR DE DECODAGE: {str(e)}]"
+                    extracted_files_data.append({"name": f.name, "content": f"[ERREUR DE DECODAGE: {str(e)}]"})
             else:
-                files_text += f"\n\n[Fichier attaché : {f.name}]\n```\n{content}\n```"
-        
-        final_content = message.content + files_text
+                extracted_files_data.append({"name": f.name, "content": content})
 
-    db.add(Message(role=message.role, content=final_content, project_id=project_id))
+    # On ne stocke plus le contenu brut des fichiers en DB pour éviter d'exploser le contexte des requêtes suivantes
+    db_content = message.content
+    if files_names:
+        db_content += f"\n\n[Fichiers joints pour analyse : {', '.join(files_names)}]"
+
+    db.add(Message(role=message.role, content=db_content, project_id=project_id))
     db.commit()
     
     history = db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
     settings = db.query(SystemSettings).first()
     conf = message.config.dict() if message.config else {"workers": ["gemini-3.5-flash-lite"]} 
     
-    ai_resp = await run_orchestrator(db, history, settings, conf)
+    # Transmission des données de fichiers en mémoire vive à l'orchestrateur (Map-Reduce)
+    ai_resp = await run_orchestrator(db, history, settings, conf, extracted_files_data)
     
     db.add(Message(role="assistant", content=ai_resp, project_id=project_id))
     db.commit()

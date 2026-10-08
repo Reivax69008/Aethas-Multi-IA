@@ -197,19 +197,39 @@ async def ask_agent(client, model_id, messages, provider="openrouter"):
     resp = await client.chat.completions.create(**kwargs)
     return resp.choices[0].message.content
 
-async def run_orchestrator(db: Session, history: list, settings: SystemSettings, config: dict) -> str:
+async def run_orchestrator(db: Session, history: list, settings: SystemSettings, config: dict, extracted_files: list = None) -> str:
     workers = config.get("workers", ["gemini-3.5-flash-lite"])
     user_prompt = history[-1].content
+    original_user_text = user_prompt.split("\n\n[Fichiers joints")[0] if "[Fichiers joints" in user_prompt else user_prompt
     formatted_history = [{"role": msg.role, "content": msg.content} for msg in history[:-1]]
 
     final_response = ""
     try:
-        # Fallback sécurisé en cas de champ vide
         p_mod = config.get("prompter")
         if not p_mod: p_mod = "gemini-3.5-flash-lite"
         
         p_client, p_prov = get_client_for_model(db, p_mod, settings)
-        prompt_system = "You are an expert prompt engineer. Translate and optimize the user request into clear, precise English tailored for AI execution."
+
+        # --- WORKFLOW MAP-REDUCE : PRÉ-TRAITEMENT PARALLÈLE DES FICHIERS ---
+        files_context = ""
+        if extracted_files:
+            async def process_single_file(f):
+                file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nAnalysez le fichier ci-dessous. Extrayez, résumez et conservez méticuleusement tout le code, les macros VBA, les requêtes SQL, ou les données métier pertinentes pour répondre à la demande.\n\nFichier : {f['name']}\nContenu :\n```\n{f['content']}\n```"
+                file_sys = "You are an expert data analyst and senior developer. Extract the most important technical information from the file without losing critical code syntax."
+                try:
+                    analysis = await ask_agent(p_client, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}], p_prov)
+                    return f"\n\n--- Extraction du fichier {f['name']} ---\n{analysis}"
+                except Exception as e:
+                    return f"\n\n--- Erreur sur {f['name']} ---\n{str(e)}"
+
+            file_tasks = [process_single_file(f) for f in extracted_files]
+            file_analyses = await asyncio.gather(*file_tasks)
+            files_context = "".join(file_analyses)
+            
+            user_prompt = f"{original_user_text}\n\nVoici les données pré-traitées des fichiers joints :\n{files_context}"
+
+        # --- OPTIMISATION & TRADUCTION ---
+        prompt_system = "You are an expert prompt engineer. Translate and optimize the user request and any file context into clear, precise English tailored for AI execution. Keep all code blocks intact."
         optimized = await ask_agent(p_client, p_mod, [{"role": "system", "content": prompt_system}, {"role": "user", "content": user_prompt}], p_prov)
 
         if len(workers) == 1:
@@ -237,7 +257,7 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
             "You may translate code comments into French if appropriate, but leave code syntax strictly intact."
         )
         
-        synth = f"User Request: {user_prompt}\n\n" + "\n".join([f"--- EXPERT {i+1} ---\n{str(r)}" for i, r in enumerate(responses)])
+        synth = f"User Request: {original_user_text}\n\n" + "\n".join([f"--- EXPERT {i+1} ---\n{str(r)}" for i, r in enumerate(responses)])
         final_response = await ask_agent(c_client, c_mod, [{"role": "system", "content": concat_system}, {"role": "user", "content": synth}], c_prov)
 
     except Exception as e:

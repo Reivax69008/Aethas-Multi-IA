@@ -631,7 +631,7 @@
                     attachedFiles.value.push({ name: file.name, content: e.target.result });
                 };
 
-                // Les fichiers binaires (PDF, Excel, etc.) sont lus en Base64 pour que Python s'en charge.
+                // Les fichiers binaires sont lus en Base64.
                 if (isText) {
                     reader.readAsText(file);
                 } else {
@@ -687,6 +687,10 @@
                         const data = await response.json(); 
                         if (Array.isArray(data)) messages.value = data; 
                         await fetchFinances(); 
+                    } else if (response.status === 401) {
+                        alert("Votre session a expiré. Veuillez vous reconnecter.");
+                        window.location.href = '/login';
+                        return;
                     } else { 
                         const err = await response.json(); alert("Erreur API IA : " + err.detail); 
                     }
