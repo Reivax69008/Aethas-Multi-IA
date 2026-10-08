@@ -8,6 +8,16 @@ from sqlalchemy.exc import IntegrityError
 from .models import SystemSettings, AIModel, FinancialLog
 from datetime import datetime, timezone
 
+# --- LOGGER GLOBAL POUR LE TERMINAL ---
+activity_logs = []
+
+def log_activity(msg: str):
+    ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
+    activity_logs.append(f"[{ts}] {msg}")
+    if len(activity_logs) > 100:
+        activity_logs.pop(0)
+# --------------------------------------
+
 def determine_domain(model_id: str) -> str:
     mid = model_id.lower()
     if "vision" in mid or "vl" in mid or "omni" in mid: return "Vision & Texte"
@@ -74,6 +84,7 @@ def update_finance_db(db, provider, balance, usage):
     except Exception as e: print(f"Finance DB Error: {e}")
 
 async def sync_providers_models(db: Session, settings: SystemSettings, sync_type: str = "Automatique"):
+    log_activity(f"Lancement de la synchronisation des modèles ({sync_type})...")
     added = 0
     models_to_process = {}
     async with httpx.AsyncClient(timeout=90.0) as client:
@@ -171,6 +182,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
         db.rollback()
         
     await sync_finances(db, settings)
+    log_activity(f"Synchronisation terminée : {added} modèles analysés.")
     return {"status": "success", "models_processed": added}
 
 def get_client_for_model(db: Session, model_id: str, settings: SystemSettings):
@@ -194,7 +206,6 @@ async def ask_agent(client, model_id, messages, provider="openrouter"):
     kwargs = {"model": model_id, "messages": messages}
     if provider == "openrouter": 
         kwargs["extra_headers"] = {"HTTP-Referer": "https://aethas38.duckdns.org", "X-Title": "AETHAS38 Orchestrator"}
-        # Activation du plugin natif de compression d'OpenRouter pour éviter le dépassement de contexte
         kwargs["extra_body"] = {"plugins": [{"id": "context-compression"}]}
         
     resp = await client.chat.completions.create(**kwargs)
@@ -211,70 +222,80 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
         p_mod = config.get("prompter")
         if not p_mod: p_mod = "gemini-3.5-flash-lite"
         
+        log_activity(f"Démarrage de l'orchestration. Modèle Prompteur: {p_mod}")
         p_client, p_prov = get_client_for_model(db, p_mod, settings)
 
         # --- WORKFLOW MAP-REDUCE : PRÉ-TRAITEMENT SÉQUENTIEL & CHUNKING ---
         files_context = ""
         if extracted_files:
+            log_activity(f"Traitement Map-Reduce de {len(extracted_files)} fichier(s) joint(s).")
             async def process_single_file(f):
                 file_sys = "You are an expert data analyst and senior developer. Extract the most important technical information from the file without losing critical code syntax."
                 content = f['content']
-                chunk_size = 150000  # Environ 35k à 40k tokens par morceau pour rester très large par rapport aux limites
+                chunk_size = 150000 
                 
-                # CHUNKING : Découpage intelligent si le fichier est massif
                 if len(content) > chunk_size:
                     chunks = [content[i:i+chunk_size] for i in range(0, len(content), chunk_size)]
                     chunk_analyses = []
+                    log_activity(f"Fichier lourd ({f['name']}): Chunking en {len(chunks)} morceaux.")
                     for idx, chunk in enumerate(chunks):
                         file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nPartie {idx+1}/{len(chunks)} du fichier '{f['name']}'. Analysez, extrayez et résumez le code, VBA, SQL ou les données pertinentes.\n\nContenu :\n```\n{chunk}\n```"
                         try:
                             analysis = await ask_agent(p_client, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}], p_prov)
                             chunk_analyses.append(analysis)
+                            log_activity(f"Analyse chunk {idx+1}/{len(chunks)} pour {f['name']} réussie.")
                         except Exception as e:
                             chunk_analyses.append(f"[Erreur sur la partie {idx+1}: {str(e)}]")
+                            log_activity(f"Erreur chunk {idx+1}/{len(chunks)} pour {f['name']}: {str(e)}")
                         
-                        await asyncio.sleep(1.5) # Pause anti-spam (429) entre les morceaux
+                        await asyncio.sleep(1.5) 
                     
                     return f"\n\n--- Extraction du fichier {f['name']} (en {len(chunks)} parties) ---\n" + "\n".join(chunk_analyses)
                 else:
                     file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nAnalysez le fichier ci-dessous. Extrayez, résumez et conservez méticuleusement tout le code, les macros VBA, les requêtes SQL, ou les données métier pertinentes pour répondre à la demande.\n\nFichier : {f['name']}\nContenu :\n```\n{content}\n```"
                     try:
                         analysis = await ask_agent(p_client, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}], p_prov)
+                        log_activity(f"Analyse intégrale de {f['name']} réussie.")
                         return f"\n\n--- Extraction du fichier {f['name']} ---\n{analysis}"
                     except Exception as e:
+                        log_activity(f"Erreur d'analyse sur {f['name']}: {str(e)}")
                         return f"\n\n--- Erreur sur {f['name']} ---\n{str(e)}"
 
             file_analyses = []
             for f in extracted_files:
                 analysis = await process_single_file(f)
                 file_analyses.append(analysis)
-                # SÉQUENÇAGE : Pause de 1.5 seconde entre les fichiers pour éviter l'erreur 429
                 await asyncio.sleep(1.5)
             
             files_context = "".join(file_analyses)
             user_prompt = f"{original_user_text}\n\nVoici les données pré-traitées des fichiers joints :\n{files_context}"
 
         # --- OPTIMISATION & TRADUCTION ---
+        log_activity(f"Optimisation/Traduction de la requête via Prompteur...")
         prompt_system = "You are an expert prompt engineer. Translate and optimize the user request and any file context into clear, precise English tailored for AI execution. Keep all code blocks intact."
         optimized = await ask_agent(p_client, p_mod, [{"role": "system", "content": prompt_system}, {"role": "user", "content": user_prompt}], p_prov)
 
+        log_activity(f"Lancement de {len(workers)} travailleur(s) en parallèle...")
         if len(workers) == 1:
             w_mod = workers[0]
             client, provider = get_client_for_model(db, w_mod, settings)
             worker_response = await ask_agent(client, w_mod, formatted_history + [{"role": "user", "content": optimized}], provider)
             responses = [worker_response]
+            log_activity(f"Travailleur 1 ({w_mod}) a terminé.")
         else:
             w_tasks = []
             for w in workers:
                 w_client, w_prov = get_client_for_model(db, w, settings)
                 w_tasks.append(ask_agent(w_client, w, formatted_history + [{"role": "user", "content": optimized}], w_prov))
             responses = await asyncio.gather(*w_tasks, return_exceptions=True)
+            log_activity("Tous les travailleurs ont terminé leur analyse.")
 
         c_mod = config.get("concatenator")
         if not c_mod: c_mod = "gemini-3.5-flash-lite"
         
         c_client, c_prov = get_client_for_model(db, c_mod, settings)
         
+        log_activity(f"Synthèse et traduction finale via Concaténeur ({c_mod})...")
         concat_system = (
             "You are a master lead developer and technical synthesizer. "
             "Synthesize the provided expert responses into a single cohesive response. "
@@ -285,9 +306,12 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
         
         synth = f"User Request: {original_user_text}\n\n" + "\n".join([f"--- EXPERT {i+1} ---\n{str(r)}" for i, r in enumerate(responses)])
         final_response = await ask_agent(c_client, c_mod, [{"role": "system", "content": concat_system}, {"role": "user", "content": synth}], c_prov)
+        
+        log_activity("Orchestration terminée avec succès.")
 
     except Exception as e:
         final_response = f"L'IA a rencontré une erreur critique: {str(e)}"
+        log_activity(f"ERREUR CRITIQUE: {str(e)}")
     
     await sync_finances(db, settings)
     return final_response

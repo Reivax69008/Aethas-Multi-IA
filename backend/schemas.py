@@ -65,3 +65,9 @@ class MessageResponse(MessageBase):
 class PasswordChange(BaseModel):
     old_password: str
     new_password: str
+
+class ModelReplacementRequest(BaseModel):
+    missing_model: str
+
+class LogRequest(BaseModel):
+    message: str

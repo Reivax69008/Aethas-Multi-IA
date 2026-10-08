@@ -3,15 +3,15 @@ from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from typing import List
-import os, json, asyncio, shutil, base64, io
+import os, json, asyncio, shutil, base64, io, csv, zipfile
 from datetime import datetime
 import pytz
 
 from .database import engine, Base, get_db, SessionLocal
 from .auth import get_password_hash, generate_totp_secret, get_totp_uri, verify_password, verify_totp, create_access_token, verify_token
-from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, ProjectRename, MessageCreate, MessageResponse, PasswordChange
+from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, ProjectRename, MessageCreate, MessageResponse, PasswordChange, ModelReplacementRequest, LogRequest
 from .models import User, Project, Message, SystemSettings, AIModel, FinancialLog
-from .orchestrator import run_orchestrator, sync_providers_models, sync_finances
+from .orchestrator import run_orchestrator, sync_providers_models, sync_finances, activity_logs, log_activity
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI(title="AETHAS38")
@@ -73,7 +73,6 @@ def login(login_data: LoginRequest, response: Response, db: Session = Depends(ge
     user = db.query(User).filter(User.username == login_data.username).first()
     if not user or not verify_password(login_data.password, user.hashed_password): raise HTTPException(status_code=401, detail="Identifiants incorrects.")
     if not verify_totp(user.totp_secret, login_data.totp_code): raise HTTPException(status_code=401, detail="2FA invalide.")
-    # Correction : Extension de la durée de session à 7 jours (604800 secondes) pour éviter les erreurs 401 intempestives
     response.set_cookie(key="session_token", value=create_access_token(data={"sub": user.username}), httponly=True, max_age=604800, samesite="lax")
     return {"message": "Connexion réussie"}
 
@@ -82,6 +81,52 @@ def dashboard(request: Request):
     token = request.cookies.get("session_token")
     if not token or not verify_token(token): return RedirectResponse(url="/login")
     return FileResponse(os.path.join(os.getcwd(), "frontend", "dashboard.html"))
+
+@app.get("/api/logs")
+def get_logs():
+    return {"logs": activity_logs}
+
+@app.post("/api/logs")
+def add_frontend_log(req: LogRequest):
+    log_activity(f"[Système UI] {req.message}")
+    return {"status": "ok"}
+
+@app.post("/api/models/suggest_replacement")
+async def suggest_replacement(req: ModelReplacementRequest, db: Session = Depends(get_db)):
+    log_activity(f"⚠️ Modèle indisponible: {req.missing_model}. Demande de suggestion à Gemini...")
+    settings = db.query(SystemSettings).first()
+    if not settings or not settings.gemini_api_key:
+        log_activity("Clé Gemini non trouvée. Fallback forcé sur gemini-3.5-flash-lite.")
+        return {"suggestion": "gemini-3.5-flash-lite", "reason": "Clé API Gemini non configurée dans le système."}
+
+    models = db.query(AIModel).all()
+    available = [m.model_id for m in models]
+    
+    prompt = f"Le modèle IA '{req.missing_model}' n'est plus disponible. Voici les modèles disponibles : {', '.join(available)}. Trouve le modèle le plus proche techniquement. Réponds UNIQUEMENT avec ce format strict : ID_DU_MODELE | Brève explication en français de 10 mots max. Si aucun ne correspond, renvoie gemini-3.5-flash-lite | Par défaut."
+    
+    try:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(base_url="https://generativelanguage.googleapis.com/v1beta/openai/", api_key=settings.gemini_api_key)
+        resp = await client.chat.completions.create(model="gemini-3.5-flash-lite", messages=[{"role": "user", "content": prompt}], max_tokens=50)
+        res = resp.choices[0].message.content.strip()
+        
+        if "|" in res:
+            parts = res.split("|")
+            sugg = parts[0].strip()
+            reason = parts[1].strip()
+        else:
+            sugg = res.strip()
+            reason = "Sélectionné par Gemini."
+            
+        if sugg not in available and sugg != "gemini-3.5-flash-lite":
+            sugg = "gemini-3.5-flash-lite"
+            reason = "Gemini a suggéré un modèle invalide. Fallback par défaut."
+
+        log_activity(f"✅ Remplacement trouvé : {req.missing_model} -> {sugg}")
+        return {"suggestion": sugg, "reason": reason}
+    except Exception as e:
+        log_activity(f"Erreur d'interrogation Gemini: {str(e)}. Fallback par défaut.")
+        return {"suggestion": "gemini-3.5-flash-lite", "reason": f"Erreur API."}
 
 @app.get("/api/users/me")
 def get_me(current_user: User = Depends(get_current_user)):
@@ -202,7 +247,6 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
             else:
                 extracted_files_data.append({"name": f.name, "content": content})
 
-    # On ne stocke plus le contenu brut des fichiers en DB pour éviter d'exploser le contexte des requêtes suivantes
     db_content = message.content
     if files_names:
         db_content += f"\n\n[Fichiers joints pour analyse : {', '.join(files_names)}]"
@@ -214,7 +258,6 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
     settings = db.query(SystemSettings).first()
     conf = message.config.dict() if message.config else {"workers": ["gemini-3.5-flash-lite"]} 
     
-    # Transmission des données de fichiers en mémoire vive à l'orchestrateur (Map-Reduce)
     ai_resp = await run_orchestrator(db, history, settings, conf, extracted_files_data)
     
     db.add(Message(role="assistant", content=ai_resp, project_id=project_id))
@@ -245,6 +288,37 @@ async def trigger_model_sync(db: Session = Depends(get_db), current_user: User =
 @app.get("/api/models/export")
 def export_models(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not current_user.is_admin: raise HTTPException(status_code=403, detail="Accès admin requis.")
-    models = db.query(AIModel).all()
-    data = [{"provider": m.provider, "model_id": m.model_id, "name": m.name, "description_fr": m.description_fr, "domain": m.domain, "is_free": m.is_free, "context_length": m.context_length, "pricing_prompt": m.pricing_prompt, "pricing_completion": m.pricing_completion} for m in models]
-    return Response(content=json.dumps(data), media_type="application/json", headers={"Content-Disposition": "attachment; filename=aethas38_models.json"})
+    models = db.query(AIModel).order_by(AIModel.provider.asc(), AIModel.name.asc()).all()
+
+    csv_io = io.StringIO()
+    writer = csv.writer(csv_io, delimiter=',')
+    writer.writerow(["Provider", "Model ID", "Name", "Domain", "Is Free", "Context Length", "Pricing Prompt", "Pricing Completion", "Description"])
+    for m in models:
+        writer.writerow([m.provider, m.model_id, m.name, m.domain, m.is_free, m.context_length, m.pricing_prompt, m.pricing_completion, m.description_fr])
+    
+    md_content = f"# Extraction des Modèles IA - AETHAS38\n\n**Date d'extraction :** {datetime.now().strftime('%d/%m/%Y à %H:%M:%S')}\n\n"
+    providers = sorted(list(set(m.provider for m in models)))
+    for prov in providers:
+        md_content += f"## Fournisseur : {prov.upper()}\n\n"
+        prov_models = [m for m in models if m.provider == prov]
+        for m in prov_models:
+            price_info = "**GRATUIT**" if m.is_free else f"In: ${m.pricing_prompt:.2f} / Out: ${m.pricing_completion:.2f}"
+            ctx_info = f"{int(m.context_length/1000)}k"
+            desc = m.description_fr.replace('\n', ' ') if m.description_fr else ""
+            md_content += f"- **{m.name or m.model_id}** (`{m.model_id}`)\n"
+            md_content += f"  - *Domaine :* {m.domain}\n"
+            md_content += f"  - *Prix (1M tokens) :* {price_info}\n"
+            md_content += f"  - *Contexte :* {ctx_info}\n"
+            md_content += f"  - *Description :* {desc}\n\n"
+
+    zip_io = io.BytesIO()
+    with zipfile.ZipFile(zip_io, mode='w', compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("models_export.csv", csv_io.getvalue().encode('utf-8'))
+        zf.writestr(f"{datetime.now().strftime('%Y%m%d')}-extraction-modeles.md", md_content.encode('utf-8'))
+
+    zip_io.seek(0)
+    return Response(
+        content=zip_io.getvalue(), 
+        media_type="application/zip", 
+        headers={"Content-Disposition": f"attachment; filename=aethas38_models_{datetime.now().strftime('%Y%m%d')}.zip"}
+    )

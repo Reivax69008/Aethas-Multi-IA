@@ -91,8 +91,20 @@
                 </div>
             </div>
 
+            <!-- TERMINAL SYSTEME -->
+            <div class="h-40 border-t border-gray-700 bg-black flex flex-col font-mono text-[9px] flex-shrink-0 shadow-inner">
+                <div class="p-1.5 bg-gray-900 border-b border-gray-700 text-aethas-cyan font-bold flex items-center justify-between">
+                    <div class="flex items-center gap-1"><i data-lucide="terminal" class="w-3 h-3"></i> SYSTEM LOGS</div>
+                    <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                </div>
+                <div class="flex-1 overflow-y-auto p-2 custom-scrollbar text-green-400 space-y-1" id="terminal-logs">
+                    <div v-for="(log, i) in systemLogs" :key="i" class="break-words">{{ log }}</div>
+                    <div v-if="systemLogs.length === 0" class="text-gray-600">En attente d'activité serveur...</div>
+                </div>
+            </div>
+
             <!-- ENCART FINANCIER -->
-            <div class="px-4 pb-2 border-b border-gray-700">
+            <div class="px-4 pb-2 pt-2 border-t border-gray-700 bg-aethas-panel flex-shrink-0">
                 <div v-if="financesList.length > 0" class="flex flex-col gap-1.5 mb-2">
                     <div v-for="fin in financesList" :key="fin.provider" class="text-[10px] bg-gray-800/80 border border-gray-600/50 px-2 py-1.5 rounded flex justify-between items-center shadow-inner">
                         <span class="text-gray-400 capitalize">{{ fin.provider }}</span>
@@ -101,7 +113,7 @@
                 </div>
             </div>
             
-            <div class="p-4 flex justify-between items-center cursor-pointer hover:bg-gray-800 transition-colors" @click="openSettings">
+            <div class="p-4 flex justify-between items-center cursor-pointer hover:bg-gray-800 transition-colors border-t border-gray-700 flex-shrink-0" @click="openSettings">
                 <div class="flex items-center gap-2">
                     <img v-if="user.avatar_path" :src="user.avatar_path" class="w-8 h-8 rounded-full object-cover border border-gray-600 bg-gray-900">
                     <div v-else class="w-8 h-8 rounded-full bg-gradient-to-tr from-aethas-cyan to-aethas-purple flex items-center justify-center text-sm font-bold shadow-md">{{ user.username.charAt(0).toUpperCase() }}</div>
@@ -178,7 +190,7 @@
                         <h3 class="text-lg font-semibold text-red-400 mb-4">Outils Administrateur</h3>
                         <div class="flex gap-4">
                             <button @click="activeView = 'models'" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600">Ouvrir le panneau Modèles IA</button>
-                            <a href="/api/models/export" target="_blank" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600">Exporter DB Modèles (JSON)</a>
+                            <a href="/api/models/export" target="_blank" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600">Exporter DB Modèles (ZIP CSV/MD)</a>
                         </div>
                     </div>
                 </div>
@@ -215,6 +227,10 @@
             <div class="bg-aethas-panel border border-gray-700 rounded-xl overflow-hidden flex flex-col">
                 <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex flex-wrap gap-4 items-center">
                     <input v-model="filterSearch" type="text" placeholder="Rechercher..." class="bg-gray-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 w-full md:w-64 focus:border-aethas-cyan focus:outline-none">
+                    <select v-model="filterProvider" class="bg-gray-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:outline-none">
+                        <option value="">Tous les fournisseurs</option>
+                        <option v-for="p in uniqueProviders" :key="p" :value="p">{{ p.toUpperCase() }}</option>
+                    </select>
                     <select v-model="filterDomain" class="bg-gray-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:outline-none">
                         <option value="">Tous les domaines</option>
                         <option value="Texte Polyvalent">Texte Polyvalent</option>
@@ -277,9 +293,10 @@
                             </template>
                         </div>
 
-                        <div v-if="msg.role !== 'user'" class="mt-3 flex items-center gap-3 border-t border-gray-700/50 pt-2 opacity-50 hover:opacity-100 transition-opacity">
+                        <!-- Boutons présents sur toutes les bulles (utilisateur et IA) -->
+                        <div class="mt-3 flex items-center gap-3 border-t border-gray-700/50 pt-2 opacity-50 hover:opacity-100 transition-opacity">
                             <button @click="copyToClipboard(msg.content)" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1"><i data-lucide="copy" class="w-3 h-3"></i> Copier</button>
-                            <button @click="downloadMessage(msg.content, msg.created_at)" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1"><i data-lucide="file-down" class="w-3 h-3"></i> Extraire</button>
+                            <button @click="downloadMessage(msg.content, msg.created_at || new Date().toISOString())" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1"><i data-lucide="file-down" class="w-3 h-3"></i> Extraire</button>
                         </div>
                     </div>
 
@@ -411,7 +428,7 @@
 </div>
 
 <script>
-    const { createApp, ref, reactive, onMounted, nextTick, computed } = Vue;
+    const { createApp, ref, reactive, onMounted, nextTick, computed, watch } = Vue;
 
     createApp({
         setup() {
@@ -440,6 +457,7 @@
             const filterSearch = ref("");
             const filterDomain = ref("");
             const filterPricing = ref("");
+            const filterProvider = ref("");
             
             const colPricing = ref("");
             const colDomain = ref("");
@@ -449,18 +467,26 @@
             const selectedConcatenator = ref("");
 
             const attachedFiles = ref([]); 
+            
+            const systemLogs = ref([]);
+            let logInterval = null;
 
             const pinnedProjects = computed(() => projects.value.filter(p => p.is_pinned));
             const recentProjects = computed(() => projects.value.filter(p => !p.is_pinned));
+            
+            const uniqueProviders = computed(() => {
+                return [...new Set(modelInfo.models.map(m => m.provider))].sort();
+            });
 
             const filteredModels = computed(() => {
                 return modelInfo.models.filter(m => {
                     const matchSearch = (m.model_id.toLowerCase().includes(filterSearch.value.toLowerCase()) || m.provider.toLowerCase().includes(filterSearch.value.toLowerCase()));
                     const matchDomain = filterDomain.value === "" || m.domain === filterDomain.value;
+                    const matchProvider = filterProvider.value === "" || m.provider === filterProvider.value;
                     let matchPrice = true;
                     if (filterPricing.value === 'free') matchPrice = m.is_free;
                     if (filterPricing.value === 'paid') matchPrice = !m.is_free;
-                    return matchSearch && matchDomain && matchPrice;
+                    return matchSearch && matchDomain && matchProvider && matchPrice;
                 });
             });
 
@@ -499,6 +525,75 @@
 
             const openSettings = () => { isSettingsModalOpen.value = true; nextTick(() => lucide.createIcons()); };
             const closeSettings = () => { isSettingsModalOpen.value = false; };
+            
+            const logToTerminal = async (msg) => {
+                try { await fetch('/api/logs', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ message: msg }) }); } catch(e){}
+            };
+
+            const fetchLogs = async () => {
+                try {
+                    const res = await fetch('/api/logs');
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (systemLogs.value.length !== data.logs.length || data.logs[data.logs.length-1] !== systemLogs.value[systemLogs.value.length-1]) {
+                            systemLogs.value = data.logs;
+                            nextTick(() => {
+                                const el = document.getElementById('terminal-logs');
+                                if (el) el.scrollTop = el.scrollHeight;
+                            });
+                        }
+                    }
+                } catch(e){}
+            };
+
+            const validateConfigAndReplace = async () => {
+                if (!modelInfo.models || modelInfo.models.length === 0) return;
+                const availableModels = modelInfo.models.map(m => m.model_id);
+                const replacements = [];
+                
+                const checkAndReplace = async (val, setterCallback, roleName) => {
+                    if (val && val.trim() !== "" && !availableModels.includes(val)) {
+                        logToTerminal(`Le modèle ${val} n'est plus reconnu. Recherche Gemini...`);
+                        try {
+                            const res = await fetch('/api/models/suggest_replacement', {
+                                method: 'POST', headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({ missing_model: val })
+                            });
+                            if (res.ok) {
+                                const data = await res.json();
+                                setterCallback(data.suggestion);
+                                replacements.push(`- ${roleName} : ${val} a été remplacé par ${data.suggestion}\n  Raison: ${data.reason}`);
+                            } else {
+                                setterCallback("gemini-3.5-flash-lite");
+                                replacements.push(`- ${roleName} : ${val} remplacé par gemini-3.5-flash-lite (Erreur API)`);
+                            }
+                        } catch(e) {
+                            setterCallback("gemini-3.5-flash-lite");
+                        }
+                    }
+                };
+
+                await checkAndReplace(selectedPrompter.value, (n) => selectedPrompter.value = n, "Prompteur");
+                await checkAndReplace(selectedConcatenator.value, (n) => selectedConcatenator.value = n, "Concaténeur");
+                for(let i=0; i<5; i++) {
+                    await checkAndReplace(workers.value[i], (n) => workers.value[i] = n, `Travailleur ${i+1}`);
+                }
+
+                if (replacements.length > 0) {
+                    alert("⚠️ Mise à jour de la conversation\n\nCertains modèles ne sont plus disponibles. L'IA a trouvé des alternatives :\n\n" + replacements.join("\n\n"));
+                }
+            };
+
+            watch([workers, selectedPrompter, selectedConcatenator], () => {
+                if (activeProject.value) {
+                    const config = {
+                        workers: workers.value,
+                        prompter: selectedPrompter.value,
+                        concatenator: selectedConcatenator.value
+                    };
+                    localStorage.setItem('aethas_config_' + activeProject.value.id, JSON.stringify(config));
+                }
+            }, { deep: true });
 
             const fetchUser = async () => { try { const res = await fetch('/api/users/me'); if(res.ok) user.value = await res.json(); } catch(e){} };
             const fetchModelsInfo = async () => { try { const res = await fetch('/api/models/info'); if(res.ok) { const data = await res.json(); modelInfo.last_sync_date = data.last_sync_date; modelInfo.last_sync_type = data.last_sync_type; modelInfo.models = data.models; } } catch(e){} };
@@ -506,35 +601,15 @@
             
             const syncModels = async () => { 
                 isSyncing.value = true; 
+                logToTerminal("Déclenchement manuel de l'extraction des modèles...");
                 try { 
                     const res = await fetch('/api/models/sync', { method: 'POST' }); 
                     if(res.ok) { 
                         await fetchModelsInfo(); 
                         await fetchFinances();
-                        
-                        let mdContent = `# Extraction des Modèles IA - AETHAS38\n\n`;
-                        const d = new Date();
-                        const dateStr = d.getFullYear() + String(d.getMonth()+1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
-                        mdContent += `**Date d'extraction :** ${d.toLocaleDateString('fr-FR')} à ${d.toLocaleTimeString('fr-FR')}\n\n`;
-                        
-                        const providers = [...new Set(modelInfo.models.map(m => m.provider))];
-                        providers.forEach(prov => {
-                            mdContent += `## Fournisseur : ${prov.toUpperCase()}\n\n`;
-                            const provModels = modelInfo.models.filter(m => m.provider === prov);
-                            provModels.forEach(m => {
-                                const priceInfo = m.is_free ? "**GRATUIT**" : `In: $${m.pricing_prompt.toFixed(2)} / Out: $${m.pricing_completion.toFixed(2)}`;
-                                const ctxInfo = `${(m.context_length / 1000).toFixed(0)}k`;
-                                mdContent += `- **${m.name || m.model_id}** (\`${m.model_id}\`)\n`;
-                                mdContent += `  - *Domaine :* ${m.domain}\n`;
-                                mdContent += `  - *Prix (1M tokens) :* ${priceInfo}\n`;
-                                mdContent += `  - *Contexte :* ${ctxInfo}\n`;
-                                mdContent += `  - *Description :* ${m.description_fr.replace(/\n/g, ' ')}\n\n`;
-                            });
-                        });
-
-                        const filename = `${dateStr}-extraction-modèles.md`;
-                        downloadFile(mdContent, filename);
-                        alert("Synchronisation réussie ! Le fichier markdown a été généré et téléchargé."); 
+                        alert("Synchronisation réussie !"); 
+                    } else if (res.status === 401) {
+                        alert("Votre session a expiré."); window.location.href = '/login';
                     } else {
                         let errText = await res.text();
                         try { const errObj = JSON.parse(errText); errText = errObj.detail || errText; } catch(e){}
@@ -545,6 +620,7 @@
             };
 
             const downloadTemplate = () => {
+                logToTerminal("Téléchargement du template MD généré.");
                 const templateContent = `# AETHAS38 - Configuration Multi-Agents\n\n**Rappel important :**\n- **Prompteur :** Le système de l'orchestrateur utilisera ce modèle pour traduire et optimiser votre requête initiale en ANGLAIS (langue native des IA).\n- **Concaténeur :** Le système utilisera ce modèle pour regrouper les réponses des travailleurs et traduire la synthèse finale en FRANÇAIS (en préservant le code brut).\n\n## Sélection des Modèles\nRenseignez l'ID exact du modèle (ex: gemini-3.5-flash-lite, mistralai/mistral-large-4-0). Laissez vide si inutilisé.\n\n- Prompteur : \n- Travailleur 1 : \n- Travailleur 2 : \n- Travailleur 3 : \n- Travailleur 4 : \n- Travailleur 5 : \n- Concaténeur : \n`;
                 downloadFile(templateContent, 'aethas38-config-agents.md');
             };
@@ -552,8 +628,9 @@
             const handleConfigImport = (event) => {
                 const file = event.target.files[0];
                 if (!file) return;
+                logToTerminal(`Importation de configuration depuis ${file.name}`);
                 const reader = new FileReader();
-                reader.onload = (e) => {
+                reader.onload = async (e) => {
                     const content = e.target.result;
                     
                     const extractModel = (key) => {
@@ -573,6 +650,7 @@
                     selectedPrompter.value = extractModel('Prompteur');
                     selectedConcatenator.value = extractModel('Concateneur');
 
+                    await validateConfigAndReplace();
                     alert("Configuration IA importée et appliquée avec succès !");
                 };
                 reader.readAsText(file);
@@ -623,6 +701,7 @@
             };
 
             const processFile = (file) => {
+                logToTerminal(`Fichier ${file.name} ajouté en pièce jointe.`);
                 const reader = new FileReader();
                 const textExts = ['.txt', '.md', '.csv', '.json', '.py', '.js', '.html', '.css', '.xml', '.yml', '.yaml', '.sh', '.bat', '.ps1', '.ini', '.cfg', '.conf', '.log'];
                 const isText = textExts.some(ext => file.name.toLowerCase().endsWith(ext)) || file.type.startsWith('text/');
@@ -631,7 +710,6 @@
                     attachedFiles.value.push({ name: file.name, content: e.target.result });
                 };
 
-                // Les fichiers binaires sont lus en Base64.
                 if (isText) {
                     reader.readAsText(file);
                 } else {
@@ -648,8 +726,51 @@
             const parseMessage = (content) => { const regex = /```([\w.-]*)\n([\s\S]*?)```/g; let parts = [], last = 0, m; while ((m = regex.exec(content)) !== null) { if (m.index > last) parts.push({ type: 'text', content: content.slice(last, m.index) }); parts.push({ type: 'code', language: m[1], content: m[2] }); last = m.index + m[0].length; } if (last < content.length) parts.push({ type: 'text', content: content.slice(last) }); return parts.length > 0 ? parts : [{ type: 'text', content: content }]; };
 
             const fetchProjects = async () => { try { const res = await fetch('/api/projects'); if(res.ok) projects.value = await res.json(); nextTick(()=>lucide.createIcons()); } catch(e){} };
-            const selectProject = async (project) => { activeView.value = 'chat'; activeProject.value = project; messages.value = []; try { const res = await fetch(`/api/projects/${project.id}/messages`); if(res.ok) { messages.value = await res.json(); scrollToBottom(); nextTick(()=>lucide.createIcons()); } } catch(e){} };
-            const createNewProject = async () => { activeView.value = 'chat'; isLoading.value = true; try { const res = await fetch('/api/projects', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({title: "Nouvelle discussion"})}); if(res.ok){ const np = await res.json(); projects.value.unshift(np); selectProject(np); } } catch(e){} finally{isLoading.value = false;} };
+            const selectProject = async (project) => { 
+                activeView.value = 'chat'; 
+                activeProject.value = project; 
+                messages.value = []; 
+                logToTerminal(`Chargement du projet: ${project.title}`);
+
+                const saved = localStorage.getItem('aethas_config_' + project.id);
+                if (saved) {
+                    try {
+                        const config = JSON.parse(saved);
+                        workers.value = config.workers || ["", "", "", "", ""];
+                        selectedPrompter.value = config.prompter || "";
+                        selectedConcatenator.value = config.concatenator || "";
+                    } catch(e) {
+                        workers.value = ["", "", "", "", ""];
+                        selectedPrompter.value = "";
+                        selectedConcatenator.value = "";
+                    }
+                } else {
+                    workers.value = ["", "", "", "", ""];
+                    selectedPrompter.value = "";
+                    selectedConcatenator.value = "";
+                }
+
+                try { 
+                    const res = await fetch(`/api/projects/${project.id}/messages`); 
+                    if(res.ok) { 
+                        messages.value = await res.json(); 
+                        scrollToBottom(); 
+                        nextTick(()=>lucide.createIcons()); 
+                    } else if (res.status === 401) {
+                        alert("Votre session a expiré."); window.location.href = '/login';
+                    }
+                } catch(e){} 
+
+                await validateConfigAndReplace();
+            };
+            
+            const createNewProject = async () => { 
+                activeView.value = 'chat'; isLoading.value = true; 
+                try { 
+                    const res = await fetch('/api/projects', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({title: "Nouvelle discussion"})}); 
+                    if(res.ok){ const np = await res.json(); projects.value.unshift(np); selectProject(np); } else if (res.status === 401) { alert("Session expirée."); window.location.href='/login'; }
+                } catch(e){} finally{isLoading.value = false;} 
+            };
 
             const sendMessage = async () => {
                 const activeWorkers = workers.value.filter(w => w && w.trim() !== "");
@@ -667,19 +788,15 @@
                 scrollToBottom();
                 
                 const payloadFiles = [...attachedFiles.value];
-
                 const payload = { 
                     role: 'user', 
                     content: userText || "Analyse ces fichiers joints.", 
-                    config: { 
-                        workers: activeWorkers, 
-                        prompter: selectedPrompter.value, 
-                        concatenator: selectedConcatenator.value 
-                    },
+                    config: { workers: activeWorkers, prompter: selectedPrompter.value, concatenator: selectedConcatenator.value },
                     files: payloadFiles
                 };
 
                 attachedFiles.value = [];
+                logToTerminal("Envoi de la requête à l'orchestrateur...");
 
                 try {
                     const response = await fetch(`/api/projects/${activeProject.value.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -715,17 +832,27 @@
             const togglePin = async (pid) => { try { const res = await fetch(`/api/projects/${pid}/pin`, { method: 'PUT' }); if (res.ok) { const up = await res.json(); const i = projects.value.findIndex(p => p.id === pid); if (i !== -1) projects.value[i] = up; } } catch (e) {} };
             const deleteProject = async (pid) => { if (!confirm("Supprimer ce projet ?")) return; try { const res = await fetch(`/api/projects/${pid}`, { method: 'DELETE' }); if (res.ok) { projects.value = projects.value.filter(p => p.id !== pid); if (activeProject.value && activeProject.value.id === pid) activeProject.value = null; } } catch (e) {} };
 
-            onMounted(() => { lucide.createIcons(); fetchUser(); fetchProjects(); fetchModelsInfo(); fetchFinances(); });
+            onMounted(() => { 
+                lucide.createIcons(); 
+                fetchUser(); 
+                fetchProjects(); 
+                fetchModelsInfo().then(() => {
+                    // Force la validation de la première vue si nécessaire
+                    if(activeProject.value) validateConfigAndReplace();
+                }); 
+                fetchFinances(); 
+                logInterval = setInterval(fetchLogs, 2000);
+            });
 
             return { 
                 user, activeView, settingsTab, isSidebarOpen, toggleSidebar, prompt, autoResize, promptTextarea, 
                 projects, pinnedProjects, recentProjects, activeProject, messages, isAiThinking,
                 createNewProject, selectProject, renameProject, sendMessage, isLoading, togglePin, deleteProject,
                 isSettingsModalOpen, openSettings, closeSettings, passForm, settingsMessage, isSavingSettings, changePassword, uploadAvatar,
-                modelInfo, financesList, filterSearch, filterDomain, filterPricing, filteredModels, getFilteredModelsForCol, formatDate, syncModels, isSyncing,
+                modelInfo, financesList, filterSearch, filterDomain, filterPricing, filterProvider, uniqueProviders, filteredModels, getFilteredModelsForCol, formatDate, syncModels, isSyncing,
                 workers, selectedPrompter, selectedConcatenator, colPricing, colDomain, downloadTemplate, handleConfigImport,
                 attachedFiles, handleFileUpload, handlePaste, removeFile,
-                exportProject, copyToClipboard, downloadFile, downloadMessage, parseMessage
+                exportProject, copyToClipboard, downloadFile, downloadMessage, parseMessage, systemLogs
             };
         }
     }).mount('#app');
