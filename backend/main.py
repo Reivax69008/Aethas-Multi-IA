@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from typing import List
 import os, json, asyncio, shutil, base64, io, csv, zipfile
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import pytz
 
 from .database import engine, Base, get_db, SessionLocal
@@ -28,11 +28,27 @@ async def scheduler_task():
         now = datetime.now(tz)
         if (now.hour == 0 or now.hour == 12) and now.minute == 0:
             db = SessionLocal()
-            settings = db.query(SystemSettings).first()
-            if settings:
-                try: await sync_providers_models(db, settings, "Automatique")
-                except: pass
-            db.close()
+            try:
+                # 1. Sync des modèles
+                settings = db.query(SystemSettings).first()
+                if settings:
+                    try: await sync_providers_models(db, settings, "Automatique")
+                    except: pass
+                
+                # 2. Nettoyage automatique des discussions > 7 jours non épinglées
+                cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+                old_projects = db.query(Project).filter(Project.is_pinned == False, Project.created_at < cutoff).all()
+                if old_projects:
+                    log_activity(f"[Nettoyage] Suppression de {len(old_projects)} discussion(s) de plus de 7 jours.")
+                    for op in old_projects:
+                        db.delete(op)
+                    db.commit()
+            except Exception as e:
+                db.rollback()
+                log_activity(f"[Erreur Nettoyage] {str(e)}")
+            finally:
+                db.close()
+            
             await asyncio.sleep(60)
         await asyncio.sleep(30)
 
@@ -189,6 +205,18 @@ def get_messages(project_id: int, db: Session = Depends(get_db), current_user: U
 
 @app.post("/api/projects/{project_id}/messages", response_model=List[MessageResponse])
 async def create_message(project_id: int, message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # 1. Gestion de l'auto-renommage à la 2ème requête
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if p and p.title == "Nouvelle discussion":
+        user_msgs = db.query(Message).filter(Message.project_id == project_id, Message.role == "user").order_by(Message.created_at.asc()).all()
+        if len(user_msgs) == 1:
+            first_content = user_msgs[0].content.split("\n\n[Fichiers joints")[0].strip()
+            new_title = first_content.split('\n')[0][:35].strip()
+            if not new_title: new_title = "Discussion"
+            p.title = new_title + ("..." if len(first_content) > 35 else "")
+            db.commit()
+
+    # 2. Gestion des fichiers
     extracted_files_data = []
     files_names = []
     
@@ -302,23 +330,9 @@ def export_models(db: Session = Depends(get_db), current_user: User = Depends(ge
         md_content += f"## Fournisseur : {prov.upper()}\n\n"
         prov_models = [m for m in models if m.provider == prov]
         for m in prov_models:
-            price_info = "**GRATUIT**" if m.is_free else f"In: ${m.pricing_prompt:.2f} / Out: ${m.pricing_completion:.2f}"
+            price_info = "**GRATUIT**" if m.is_free else f"In: ${m.pricing_prompt:.2f} / Out:${m.pricing_completion:.2f}"
             ctx_info = f"{int(m.context_length/1000)}k"
             desc = m.description_fr.replace('\n', ' ') if m.description_fr else ""
             md_content += f"- **{m.name or m.model_id}** (`{m.model_id}`)\n"
             md_content += f"  - *Domaine :* {m.domain}\n"
-            md_content += f"  - *Prix (1M tokens) :* {price_info}\n"
-            md_content += f"  - *Contexte :* {ctx_info}\n"
-            md_content += f"  - *Description :* {desc}\n\n"
-
-    zip_io = io.BytesIO()
-    with zipfile.ZipFile(zip_io, mode='w', compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("models_export.csv", csv_io.getvalue().encode('utf-8'))
-        zf.writestr(f"{datetime.now().strftime('%Y%m%d')}-extraction-modeles.md", md_content.encode('utf-8'))
-
-    zip_io.seek(0)
-    return Response(
-        content=zip_io.getvalue(), 
-        media_type="application/zip", 
-        headers={"Content-Disposition": f"attachment; filename=aethas38_models_{datetime.now().strftime('%Y%m%d')}.zip"}
-    )
+            md_
