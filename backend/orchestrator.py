@@ -141,7 +141,6 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
                         models_to_process[m_id] = {"provider": "cloudflare", "name": m_id.split("/")[-1], "desc": "Modèle Serverless Cloudflare Workers AI.", "domain": determine_domain(m_id), "is_free": True, "ctx": 4096, "pp": 0.0, "pc": 0.0}
             except Exception: pass
 
-    # Phase de traduction asynchrone pour les modèles OpenRouter (les autres sont déjà en français natif)
     sem = asyncio.Semaphore(15)
     async def process_and_translate(m_id, data, client_session):
         async with sem:
@@ -206,7 +205,6 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
 
     final_response = ""
     try:
-        # Étape 1 : Le prompteur traduit et optimise la requête en ANGLAIS pour les travailleurs
         p_mod = config.get("prompter", "gemini-3.5-flash-lite")
         p_client, p_prov = get_client_for_model(db, p_mod, settings)
         prompt_system = "You are an expert prompt engineer. Translate and optimize the user request into clear, precise English tailored for AI execution."
@@ -224,7 +222,6 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                 w_tasks.append(ask_agent(w_client, w, formatted_history + [{"role": "user", "content": optimized}], w_prov))
             responses = await asyncio.gather(*w_tasks, return_exceptions=True)
 
-        # Étape 2 : Le concaténeur synthétise et traduit le retour en FRANÇAIS (en préservant le code et les commentaires)
         c_mod = config.get("concatenator", "gemini-3.5-flash-lite")
         c_client, c_prov = get_client_for_model(db, c_mod, settings)
         
