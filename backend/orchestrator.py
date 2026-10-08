@@ -1,5 +1,6 @@
 import asyncio
 import httpx
+import urllib.parse
 from openai import AsyncOpenAI
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -13,6 +14,20 @@ def determine_domain(model_id: str) -> str:
     if "coder" in mid or "code" in mid or "math" in mid: return "Code & Logique"
     if "audio" in mid or "whisper" in mid: return "Audio"
     return "Texte Polyvalent"
+
+async def translate_en_to_fr(client: httpx.AsyncClient, text: str) -> str:
+    """Traduit automatiquement l'anglais vers le français via l'API publique Google Translate."""
+    if not text: return "Aucune description fournie."
+    try:
+        short_text = text[:300].strip() # Limite stricte pour l'API gratuite
+        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=fr&dt=t&q={urllib.parse.quote(short_text)}"
+        resp = await client.get(url, timeout=4.0)
+        if resp.status_code == 200:
+            translated = "".join([s[0] for s in resp.json()[0]])
+            return translated + ("..." if len(text) > 300 else "")
+    except Exception:
+        pass
+    return text[:200] + "..."
 
 async def sync_finances(db: Session, settings: SystemSettings):
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -75,8 +90,8 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
                             pp = float(pricing.get("prompt") or 0.0) * 1000000
                             pc = float(pricing.get("completion") or 0.0) * 1000000
                             is_free = (pp == 0.0 and pc == 0.0)
-                            desc = item.get("description", "Modèle OpenRouter.")[:200] + "..."
-                            models_to_process[m_id] = {"provider": "openrouter", "name": item.get("name", "Inconnu"), "desc": desc, "domain": determine_domain(m_id), "is_free": is_free, "ctx": item.get("context_length", 0), "pp": pp, "pc": pc}
+                            desc_en = item.get("description", "Generic AI Model.")
+                            models_to_process[m_id] = {"provider": "openrouter", "name": item.get("name", "Inconnu"), "desc_en": desc_en, "domain": determine_domain(m_id), "is_free": is_free, "ctx": item.get("context_length", 0), "pp": pp, "pc": pc}
                         except: pass
             except Exception as e: print(f"Erreur OR Models: {e}")
             
@@ -86,7 +101,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
                 if resp.status_code == 200:
                     for item in resp.json().get("data", []):
                         m_id = item["id"]
-                        models_to_process[m_id] = {"provider": "groq", "name": m_id.capitalize(), "desc": "Modèle rapide LPU Groq.", "domain": determine_domain(m_id), "is_free": True, "ctx": 8192, "pp": 0.0, "pc": 0.0}
+                        models_to_process[m_id] = {"provider": "groq", "name": m_id.capitalize(), "desc": "Modèle très rapide hébergé sur LPU Groq.", "domain": determine_domain(m_id), "is_free": True, "ctx": 8192, "pp": 0.0, "pc": 0.0}
             except Exception: pass
 
         if settings.deepseek_api_key:
@@ -95,7 +110,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
                 if resp.status_code == 200:
                     for item in resp.json().get("data", []):
                         m_id = item["id"]
-                        models_to_process[m_id] = {"provider": "deepseek", "name": m_id.capitalize(), "desc": "Modèle officiel DeepSeek.", "domain": determine_domain(m_id), "is_free": False, "ctx": 64000, "pp": 0.14, "pc": 0.28}
+                        models_to_process[m_id] = {"provider": "deepseek", "name": m_id.capitalize(), "desc": "Modèle officiel du fournisseur DeepSeek.", "domain": determine_domain(m_id), "is_free": False, "ctx": 64000, "pp": 0.14, "pc": 0.28}
             except Exception: pass
 
         if settings.mistral_api_key:
@@ -104,7 +119,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
                 if resp.status_code == 200:
                     for item in resp.json().get("data", []):
                         m_id = item["id"]
-                        models_to_process[m_id] = {"provider": "mistral", "name": m_id.capitalize(), "desc": "Modèle officiel Mistral AI.", "domain": determine_domain(m_id), "is_free": False, "ctx": 32000, "pp": 0.2, "pc": 0.6}
+                        models_to_process[m_id] = {"provider": "mistral", "name": m_id.capitalize(), "desc": "Modèle officiel développé par Mistral AI.", "domain": determine_domain(m_id), "is_free": False, "ctx": 32000, "pp": 0.2, "pc": 0.6}
             except Exception: pass
 
         if settings.gemini_api_key:
@@ -113,8 +128,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
                 if resp.status_code == 200:
                     for item in resp.json().get("models", []):
                         m_id = item["name"].replace("models/", "")
-                        desc = item.get("description", "Modèle Google Gemini.")[:200] + "..."
-                        models_to_process[m_id] = {"provider": "gemini", "name": item.get("displayName", m_id), "desc": desc, "domain": determine_domain(m_id), "is_free": True, "ctx": item.get("inputTokenLimit", 32000), "pp": 0.0, "pc": 0.0}
+                        models_to_process[m_id] = {"provider": "gemini", "name": item.get("displayName", m_id), "desc": "Modèle natif de l'écosystème Google Gemini.", "domain": determine_domain(m_id), "is_free": True, "ctx": item.get("inputTokenLimit", 32000), "pp": 0.0, "pc": 0.0}
             except Exception: pass
 
         if settings.cloudflare_account_id and settings.cloudflare_api_token:
@@ -124,15 +138,26 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
                 if resp.status_code == 200:
                     for item in resp.json().get("result", []):
                         m_id = item.get("name")
-                        desc = item.get("description", "Modèle Cloudflare Workers AI.")[:200] + "..."
-                        models_to_process[m_id] = {"provider": "cloudflare", "name": m_id.split("/")[-1], "desc": desc, "domain": determine_domain(m_id), "is_free": True, "ctx": 4096, "pp": 0.0, "pc": 0.0}
+                        models_to_process[m_id] = {"provider": "cloudflare", "name": m_id.split("/")[-1], "desc": "Modèle Serverless Cloudflare Workers AI.", "domain": determine_domain(m_id), "is_free": True, "ctx": 4096, "pp": 0.0, "pc": 0.0}
             except Exception: pass
 
-    for m_id, data in models_to_process.items():
+    # Phase de traduction asynchrone pour les modèles OpenRouter (les autres sont déjà en français natif)
+    sem = asyncio.Semaphore(15)
+    async def process_and_translate(m_id, data, client_session):
+        async with sem:
+            if "desc_en" in data:
+                data["desc"] = await translate_en_to_fr(client_session, data["desc_en"])
+            return m_id, data
+
+    async with httpx.AsyncClient(timeout=30.0) as client_trans:
+        tasks = [process_and_translate(m_id, data, client_trans) for m_id, data in models_to_process.items()]
+        translated_results = await asyncio.gather(*tasks)
+
+    for m_id, data in translated_results:
         try:
             existing = db.query(AIModel).filter(AIModel.model_id == m_id).first()
             if existing:
-                existing.pricing_prompt = data["pp"]; existing.pricing_completion = data["pc"]; existing.is_free = data["is_free"]; existing.last_updated = datetime.now(timezone.utc)
+                existing.pricing_prompt = data["pp"]; existing.pricing_completion = data["pc"]; existing.is_free = data["is_free"]; existing.description_fr = data["desc"]; existing.last_updated = datetime.now(timezone.utc)
             else:
                 db.add(AIModel(provider=data["provider"], model_id=m_id, name=data["name"], description_fr=data["desc"], domain=data["domain"], is_free=data["is_free"], context_length=data["ctx"], pricing_prompt=data["pp"], pricing_completion=data["pc"]))
             added += 1

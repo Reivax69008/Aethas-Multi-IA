@@ -296,7 +296,7 @@
                 <div class="p-4 md:p-6 w-full max-w-7xl mx-auto space-y-2 flex-shrink-0">
                     <div class="grid grid-cols-9 border border-black bg-gray-900 rounded-lg overflow-hidden text-center text-xs font-bold shadow-lg">
                         
-                        <!-- 1. PAYANT / GRATUIT -->
+                        <!-- 1. PAYANT / GRATUIT (Filtre par colonne local sans impacter workers) -->
                         <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-gray-400 mb-1">PRIX</label>
                             <select v-model="colPricing" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none">
@@ -306,7 +306,7 @@
                             </select>
                         </div>
 
-                        <!-- 2. TYPE (DOMAINE) -->
+                        <!-- 2. TYPE (DOMAINE) (Filtre par colonne local sans impacter workers) -->
                         <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-gray-400 mb-1">TYPE</label>
                             <select v-model="colDomain" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none">
@@ -450,7 +450,7 @@
             const selectedPrompter = ref("gemini-3.5-flash-lite");
             const selectedConcatenator = ref("gemini-3.5-flash-lite");
 
-            const attachedFiles = ref([]); // Liste de max 10 fichiers
+            const attachedFiles = ref([]); 
 
             const pinnedProjects = computed(() => projects.value.filter(p => p.is_pinned));
             const recentProjects = computed(() => projects.value.filter(p => !p.is_pinned));
@@ -501,7 +501,31 @@
                     if(res.ok) { 
                         await fetchModelsInfo(); 
                         await fetchFinances();
-                        alert("Synchronisation réussie !"); 
+                        
+                        // GENERATION DU FICHIER MARKDOWN A L'EXTRACTION
+                        let mdContent = `# Extraction des Modèles IA - AETHAS38\n\n`;
+                        const d = new Date();
+                        const dateStr = d.getFullYear() + String(d.getMonth()+1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+                        mdContent += `**Date d'extraction :** ${d.toLocaleDateString('fr-FR')} à ${d.toLocaleTimeString('fr-FR')}\n\n`;
+                        
+                        const providers = [...new Set(modelInfo.models.map(m => m.provider))];
+                        providers.forEach(prov => {
+                            mdContent += `## Fournisseur : ${prov.toUpperCase()}\n\n`;
+                            const provModels = modelInfo.models.filter(m => m.provider === prov);
+                            provModels.forEach(m => {
+                                const priceInfo = m.is_free ? "**GRATUIT**" : `In: $${m.pricing_prompt.toFixed(2)} / Out: $${m.pricing_completion.toFixed(2)}`;
+                                const ctxInfo = `${(m.context_length / 1000).toFixed(0)}k`;
+                                mdContent += `- **${m.name || m.model_id}** (\`${m.model_id}\`)\n`;
+                                mdContent += `  - *Domaine :* ${m.domain}\n`;
+                                mdContent += `  - *Prix (1M tokens) :* ${priceInfo}\n`;
+                                mdContent += `  - *Contexte :* ${ctxInfo}\n`;
+                                mdContent += `  - *Description :* ${m.description_fr.replace(/\n/g, ' ')}\n\n`;
+                            });
+                        });
+
+                        const filename = `${dateStr}-extraction-modèles.md`;
+                        downloadFile(mdContent, filename);
+                        alert("Synchronisation réussie ! Le fichier markdown a été généré et téléchargé."); 
                     } else {
                         let errText = await res.text();
                         try { const errObj = JSON.parse(errText); errText = errObj.detail || errText; } catch(e){}
@@ -589,7 +613,6 @@
                 isAiThinking.value = true; 
                 scrollToBottom();
                 
-                // Préparation du payload avec copie des fichiers avant destruction
                 const payloadFiles = [...attachedFiles.value];
 
                 const payload = { 
@@ -603,7 +626,6 @@
                     files: payloadFiles
                 };
 
-                // DESTRUCTION AUTOMATIQUE DES FICHIERS JOINTS APRÈS ENVOI
                 attachedFiles.value = [];
 
                 try {
