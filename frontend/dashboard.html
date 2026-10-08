@@ -383,19 +383,28 @@
 
                     </div>
 
-                    <!-- Champ de texte et boutons d'envoi / fichiers -->
-                    <div class="relative flex items-end bg-gray-800 border border-gray-600 rounded-2xl p-2 shadow-lg focus-within:border-aethas-cyan">
-                        <!-- Bouton d'import de fichiers -->
-                        <label class="p-3 text-gray-400 hover:text-aethas-cyan cursor-pointer transition-colors" title="Joindre un fichier (code, texte, script, etc.)">
-                            <i data-lucide="paperclip" class="w-5 h-5"></i>
-                            <input type="file" @change="handleFileUpload" class="hidden">
-                        </label>
-
-                        <textarea v-model="prompt" @input="autoResize" @paste="handlePaste" @keydown.enter.exact.prevent="sendMessage" ref="promptTextarea" :disabled="isAiThinking" rows="1" class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none disabled:opacity-50 custom-scrollbar" :placeholder="attachedFile ? 'Fichier attaché : ' + attachedFile.name : 'Posez votre question ou glissez un fichier ici...'"></textarea>
+                    <!-- Champ de texte et boutons d'envoi / multi-fichiers (jusqu'à 10) -->
+                    <div class="relative flex items-end bg-gray-800 border border-gray-600 rounded-2xl p-2 shadow-lg focus-within:border-aethas-cyan flex-col gap-2">
                         
-                        <button v-if="attachedFile" @click="removeFile" class="p-2 text-red-400 hover:text-red-300 text-xs flex items-center gap-1 mr-2" title="Retirer le fichier"><i data-lucide="x-circle" class="w-4 h-4"></i></button>
+                        <!-- Liste des fichiers attachés (max 10) -->
+                        <div v-if="attachedFiles.length > 0" class="w-full flex flex-wrap gap-2 px-2 pt-2">
+                            <div v-for="(file, index) in attachedFiles" :key="index" class="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 flex items-center gap-2">
+                                <i data-lucide="file" class="w-3.5 h-3.5 text-aethas-cyan"></i>
+                                <span class="truncate max-w-[150px]">{{ file.name }}</span>
+                                <button @click="removeFile(index)" class="text-red-400 hover:text-red-300"><i data-lucide="x" class="w-3 h-3"></i></button>
+                            </div>
+                        </div>
 
-                        <button @click="sendMessage" :disabled="(!prompt.trim() && !attachedFile) || isAiThinking" class="p-3 text-aethas-cyan hover:text-white disabled:opacity-50"><i data-lucide="send" class="w-5 h-5"></i></button>
+                        <div class="w-full flex items-end">
+                            <label class="p-3 text-gray-400 hover:text-aethas-cyan cursor-pointer transition-colors" title="Joindre des fichiers (max 10)">
+                                <i data-lucide="paperclip" class="w-5 h-5"></i>
+                                <input type="file" multiple @change="handleFileUpload" class="hidden">
+                            </label>
+
+                            <textarea v-model="prompt" @input="autoResize" @paste="handlePaste" @keydown.enter.exact.prevent="sendMessage" ref="promptTextarea" :disabled="isAiThinking" rows="1" class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none disabled:opacity-50 custom-scrollbar" :placeholder="attachedFiles.length > 0 ? attachedFiles.length + ' fichier(s) attaché(s)' : 'Posez votre question ou glissez jusqu\'à 10 fichiers ici...'"></textarea>
+                            
+                            <button @click="sendMessage" :disabled="(!prompt.trim() && attachedFiles.length === 0) || isAiThinking" class="p-3 text-aethas-cyan hover:text-white disabled:opacity-50"><i data-lucide="send" class="w-5 h-5"></i></button>
+                        </div>
                     </div>
                 </div>
             </template>
@@ -441,7 +450,7 @@
             const selectedPrompter = ref("gemini-3.5-flash-lite");
             const selectedConcatenator = ref("gemini-3.5-flash-lite");
 
-            const attachedFile = ref(null);
+            const attachedFiles = ref([]); // Liste de max 10 fichiers
 
             const pinnedProjects = computed(() => projects.value.filter(p => p.is_pinned));
             const recentProjects = computed(() => projects.value.filter(p => !p.is_pinned));
@@ -516,9 +525,15 @@
             };
 
             const handleFileUpload = (event) => {
-                const file = event.target.files[0];
-                if (!file) return;
-                processFile(file);
+                const files = event.target.files;
+                if (!files) return;
+                for (let i = 0; i < files.length; i++) {
+                    if (attachedFiles.value.length >= 10) {
+                        alert("Maximum 10 fichiers autorisés par message.");
+                        break;
+                    }
+                    processFile(files[i]);
+                }
                 event.target.value = null;
             };
 
@@ -528,7 +543,13 @@
                     let item = items[index];
                     if (item.kind === 'file') {
                         let file = item.getAsFile();
-                        if (file) processFile(file);
+                        if (file) {
+                            if (attachedFiles.value.length >= 10) {
+                                alert("Maximum 10 fichiers autorisés par message.");
+                                break;
+                            }
+                            processFile(file);
+                        }
                     }
                 }
             };
@@ -536,12 +557,12 @@
             const processFile = (file) => {
                 const reader = new FileReader();
                 reader.onload = (e) => {
-                    attachedFile.value = { name: file.name, content: e.target.result };
+                    attachedFiles.value.push({ name: file.name, content: e.target.result });
                 };
                 reader.readAsText(file);
             };
 
-            const removeFile = () => { attachedFile.value = null; };
+            const removeFile = (index) => { attachedFiles.value.splice(index, 1); };
 
             const exportProject = (format) => { if(activeProject.value) window.open(`/api/projects/${activeProject.value.id}/export?format=${format}`, '_blank'); };
             const copyToClipboard = async (text) => { try { await navigator.clipboard.writeText(text); alert("Copié !"); } catch (e) {} };
@@ -555,7 +576,7 @@
 
             const sendMessage = async () => {
                 const activeWorkers = workers.value.filter(w => w && w.trim() !== "");
-                if ((!prompt.value.trim() && !attachedFile.value) || !activeProject.value || activeWorkers.length === 0) {
+                if ((!prompt.value.trim() && attachedFiles.value.length === 0) || !activeProject.value || activeWorkers.length === 0) {
                     alert("Veuillez sélectionner au moins un travailleur et rédiger ou joindre un contenu.");
                     return;
                 }
@@ -563,24 +584,27 @@
                 prompt.value = ""; 
                 autoResize();
                 
-                messages.value.push({ id: Date.now(), role: 'user', content: userText + (attachedFile.value ? `\n[Fichier joint: ${attachedFile.value.name}]` : "") });
+                const fileNames = attachedFiles.value.map(f => f.name).join(", ");
+                messages.value.push({ id: Date.now(), role: 'user', content: userText + (attachedFiles.value.length > 0 ? `\n[Fichiers joints: ${fileNames}]` : "") });
                 isAiThinking.value = true; 
                 scrollToBottom();
                 
+                // Préparation du payload avec copie des fichiers avant destruction
+                const payloadFiles = [...attachedFiles.value];
+
                 const payload = { 
                     role: 'user', 
-                    content: userText || "Analyse ce fichier joint.", 
+                    content: userText || "Analyse ces fichiers joints.", 
                     config: { 
                         workers: activeWorkers, 
                         prompter: selectedPrompter.value, 
                         concatenator: selectedConcatenator.value 
                     },
-                    file_content: attachedFile.value ? attachedFile.value.content : null,
-                    file_name: attachedFile.value ? attachedFile.value.name : null
+                    files: payloadFiles
                 };
 
-                // DESTRUCTION IMMÉDIATE DU FICHIER CÔTÉ FRONTEND APRÈS ENVOI
-                attachedFile.value = null;
+                // DESTRUCTION AUTOMATIQUE DES FICHIERS JOINTS APRÈS ENVOI
+                attachedFiles.value = [];
 
                 try {
                     const response = await fetch(`/api/projects/${activeProject.value.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -615,7 +639,7 @@
                 isSettingsModalOpen, openSettings, closeSettings, passForm, settingsMessage, isSavingSettings, changePassword, uploadAvatar,
                 modelInfo, financesList, filterSearch, filterDomain, filterPricing, filteredModels, getFilteredModelsForCol, formatDate, syncModels, isSyncing,
                 workers, selectedPrompter, selectedConcatenator, colPricing, colDomain,
-                attachedFile, handleFileUpload, handlePaste, removeFile,
+                attachedFiles, handleFileUpload, handlePaste, removeFile,
                 exportProject, copyToClipboard, downloadFile, downloadMessage, parseMessage
             };
         }

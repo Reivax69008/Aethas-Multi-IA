@@ -44,14 +44,17 @@ class OrchestratorConfig(BaseModel):
     prompter: Optional[str] = "gemini-3.5-flash-lite"
     concatenator: Optional[str] = "gemini-3.5-flash-lite"
 
+class AttachedFile(BaseModel):
+    name: str
+    content: str
+
 class MessageBase(BaseModel):
     role: str
     content: str
 
 class MessageCreate(MessageBase):
     config: Optional[OrchestratorConfig] = None
-    file_content: Optional[str] = None
-    file_name: Optional[str] = None
+    files: Optional[List[AttachedFile]] = None
 
 class MessageResponse(MessageBase):
     id: int

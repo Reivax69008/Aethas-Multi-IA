@@ -144,8 +144,11 @@ def get_messages(project_id: int, db: Session = Depends(get_db), current_user: U
 @app.post("/api/projects/{project_id}/messages", response_model=List[MessageResponse])
 async def create_message(project_id: int, message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     final_content = message.content
-    if message.file_content and message.file_name:
-        final_content = f"[Fichier attaché : {message.file_name}]\n```\n{message.file_content}\n```\n\n{message.content}"
+    if message.files:
+        files_text = ""
+        for f in message.files:
+            files_text += f"\n\n[Fichier attaché : {f.name}]\n```\n{f.content}\n```"
+        final_content = message.content + files_text
 
     db.add(Message(role=message.role, content=final_content, project_id=project_id))
     db.commit()
