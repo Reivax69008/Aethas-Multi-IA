@@ -50,6 +50,8 @@ class MessageBase(BaseModel):
 
 class MessageCreate(MessageBase):
     config: Optional[OrchestratorConfig] = None
+    file_content: Optional[str] = None
+    file_name: Optional[str] = None
 
 class MessageResponse(MessageBase):
     id: int

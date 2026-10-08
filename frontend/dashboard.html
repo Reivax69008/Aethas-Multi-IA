@@ -136,6 +136,62 @@
             </div>
         </header>
 
+        <!-- VUE : CONFIGURATION -->
+        <div v-if="activeView === 'settings'" class="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
+            <div class="max-w-4xl mx-auto space-y-6">
+                <h2 class="text-2xl font-bold text-white flex items-center gap-2 border-b border-gray-700 pb-4"><i data-lucide="settings-2" class="w-6 h-6 text-aethas-cyan"></i> Configuration Système</h2>
+                
+                <div class="flex border-b border-gray-700">
+                    <button @click="settingsTab = 'user'" :class="['py-2 px-4 text-sm font-semibold border-b-2 transition-colors', settingsTab === 'user' ? 'border-aethas-cyan text-aethas-cyan' : 'border-transparent text-gray-400 hover:text-white']">Mon Profil (Utilisateur)</button>
+                    <button v-if="user.is_admin" @click="settingsTab = 'admin'" :class="['py-2 px-4 text-sm font-semibold border-b-2 transition-colors', settingsTab === 'admin' ? 'border-red-500 text-red-400' : 'border-transparent text-gray-400 hover:text-white']">Administration</button>
+                    <button v-if="user.is_superadmin" @click="settingsTab = 'super'" :class="['py-2 px-4 text-sm font-semibold border-b-2 transition-colors', settingsTab === 'super' ? 'border-aethas-purple text-purple-400' : 'border-transparent text-gray-400 hover:text-white']">Super-Admin</button>
+                </div>
+
+                <div v-if="settingsTab === 'user'" class="space-y-6">
+                    <div class="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                        <h3 class="text-lg font-semibold text-white mb-4">Personnalisation du Profil</h3>
+                        <div class="flex items-center gap-6">
+                            <img v-if="user.avatar_path" :src="user.avatar_path" class="w-20 h-20 rounded-full object-cover border-2 border-aethas-cyan bg-gray-900 shadow-lg">
+                            <div v-else class="w-20 h-20 rounded-full bg-gradient-to-tr from-aethas-cyan to-aethas-purple flex items-center justify-center text-2xl font-bold shadow-lg">{{ user.username.charAt(0).toUpperCase() }}</div>
+                            <div class="flex-1">
+                                <label class="bg-aethas-panel hover:bg-gray-700 text-white border border-gray-600 px-4 py-2 rounded-lg cursor-pointer transition-colors text-sm inline-block">
+                                    <i data-lucide="upload" class="w-4 h-4 inline mr-1"></i> Uploader un nouvel Avatar
+                                    <input type="file" accept="image/*" @change="uploadAvatar" class="hidden">
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                        <h3 class="text-lg font-semibold text-white mb-4">Sécurité</h3>
+                        <div v-if="settingsMessage" class="p-3 rounded text-sm mb-4 bg-gray-900 border border-aethas-cyan text-aethas-cyan">{{ settingsMessage }}</div>
+                        <div class="grid gap-4 max-w-md">
+                            <input v-model="passForm.old" type="password" placeholder="Ancien mot de passe" class="bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none">
+                            <input v-model="passForm.new" type="password" placeholder="Nouveau mot de passe" class="bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none">
+                            <input v-model="passForm.confirm" type="password" placeholder="Confirmer" class="bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none">
+                            <button @click="changePassword" :disabled="isSavingSettings" class="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg disabled:opacity-50">Modifier le mot de passe</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="settingsTab === 'admin' && user.is_admin" class="space-y-6">
+                    <div class="bg-gray-800 p-6 rounded-xl border border-gray-700">
+                        <h3 class="text-lg font-semibold text-red-400 mb-4">Outils Administrateur</h3>
+                        <div class="flex gap-4">
+                            <button @click="activeView = 'models'" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600">Ouvrir le panneau Modèles IA</button>
+                            <a href="/api/models/export" target="_blank" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600">Exporter DB Modèles (JSON)</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="settingsTab === 'super' && user.is_superadmin" class="space-y-6">
+                    <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 border-l-4 border-l-aethas-purple">
+                        <h3 class="text-lg font-semibold text-purple-400 mb-4">Espace Réservé Super-Admin</h3>
+                        <p class="text-sm text-gray-400">Gestion globale du système.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- VUE : MODÈLES ET FINANCES -->
         <div v-if="activeView === 'models' && user.is_admin" class="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 custom-scrollbar">
             <div class="flex justify-between items-end border-b border-gray-700 pb-4">
@@ -243,7 +299,7 @@
                         <!-- 1. PAYANT / GRATUIT -->
                         <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-gray-400 mb-1">PRIX</label>
-                            <select v-model="filterPricing" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none">
+                            <select v-model="colPricing" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none">
                                 <option value="">TOUS</option>
                                 <option value="free">GRATUIT</option>
                                 <option value="paid">PAYANT</option>
@@ -253,7 +309,7 @@
                         <!-- 2. TYPE (DOMAINE) -->
                         <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-gray-400 mb-1">TYPE</label>
-                            <select v-model="filterDomain" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none">
+                            <select v-model="colDomain" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none">
                                 <option value="">TOUS</option>
                                 <option value="Texte Polyvalent">Texte</option>
                                 <option value="Code & Logique">Codage</option>
@@ -267,7 +323,7 @@
                             <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 1</label>
                             <select v-model="workers[0]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
                                 <option value="">(Aucun)</option>
-                                <option v-for="m in filteredBarModels" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
+                                <option v-for="m in getFilteredModelsForCol(colPricing, colDomain, workers[0])" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
                             </select>
                         </div>
 
@@ -276,7 +332,7 @@
                             <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 2</label>
                             <select v-model="workers[1]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
                                 <option value="">(Aucun)</option>
-                                <option v-for="m in filteredBarModels" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
+                                <option v-for="m in getFilteredModelsForCol(colPricing, colDomain, workers[1])" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
                             </select>
                         </div>
 
@@ -285,7 +341,7 @@
                             <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 3</label>
                             <select v-model="workers[2]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
                                 <option value="">(Aucun)</option>
-                                <option v-for="m in filteredBarModels" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
+                                <option v-for="m in getFilteredModelsForCol(colPricing, colDomain, workers[2])" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
                             </select>
                         </div>
 
@@ -294,7 +350,7 @@
                             <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 4</label>
                             <select v-model="workers[3]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
                                 <option value="">(Aucun)</option>
-                                <option v-for="m in filteredBarModels" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
+                                <option v-for="m in getFilteredModelsForCol(colPricing, colDomain, workers[3])" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
                             </select>
                         </div>
 
@@ -303,7 +359,7 @@
                             <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 5</label>
                             <select v-model="workers[4]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
                                 <option value="">(Aucun)</option>
-                                <option v-for="m in filteredBarModels" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
+                                <option v-for="m in getFilteredModelsForCol(colPricing, colDomain, workers[4])" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
                             </select>
                         </div>
 
@@ -312,7 +368,7 @@
                             <label class="block text-[9px] text-gray-400 mb-1">PROMPTEUR</label>
                             <select v-model="selectedPrompter" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
                                 <option value="gemini-3.5-flash-lite">Gemini Flash</option>
-                                <option v-for="m in modelInfo.models" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
+                                <option v-for="m in getFilteredModelsForCol(colPricing, colDomain, selectedPrompter)" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
                             </select>
                         </div>
 
@@ -321,16 +377,25 @@
                             <label class="block text-[9px] text-aethas-purple mb-1">CONCATENEUR</label>
                             <select v-model="selectedConcatenator" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
                                 <option value="gemini-3.5-flash-lite">Gemini Flash</option>
-                                <option v-for="m in modelInfo.models" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
+                                <option v-for="m in getFilteredModelsForCol(colPricing, colDomain, selectedConcatenator)" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
                             </select>
                         </div>
 
                     </div>
 
-                    <!-- Champ de texte du message -->
+                    <!-- Champ de texte et boutons d'envoi / fichiers -->
                     <div class="relative flex items-end bg-gray-800 border border-gray-600 rounded-2xl p-2 shadow-lg focus-within:border-aethas-cyan">
-                        <textarea v-model="prompt" @input="autoResize" @keydown.enter.exact.prevent="sendMessage" ref="promptTextarea" :disabled="isAiThinking" rows="1" class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none disabled:opacity-50 custom-scrollbar" placeholder="Posez votre question à l'orchestrateur..."></textarea>
-                        <button @click="sendMessage" :disabled="!prompt.trim() || isAiThinking" class="p-3 text-aethas-cyan hover:text-white disabled:opacity-50"><i data-lucide="send" class="w-5 h-5"></i></button>
+                        <!-- Bouton d'import de fichiers -->
+                        <label class="p-3 text-gray-400 hover:text-aethas-cyan cursor-pointer transition-colors" title="Joindre un fichier (code, texte, script, etc.)">
+                            <i data-lucide="paperclip" class="w-5 h-5"></i>
+                            <input type="file" @change="handleFileUpload" class="hidden">
+                        </label>
+
+                        <textarea v-model="prompt" @input="autoResize" @paste="handlePaste" @keydown.enter.exact.prevent="sendMessage" ref="promptTextarea" :disabled="isAiThinking" rows="1" class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none disabled:opacity-50 custom-scrollbar" :placeholder="attachedFile ? 'Fichier attaché : ' + attachedFile.name : 'Posez votre question ou glissez un fichier ici...'"></textarea>
+                        
+                        <button v-if="attachedFile" @click="removeFile" class="p-2 text-red-400 hover:text-red-300 text-xs flex items-center gap-1 mr-2" title="Retirer le fichier"><i data-lucide="x-circle" class="w-4 h-4"></i></button>
+
+                        <button @click="sendMessage" :disabled="(!prompt.trim() && !attachedFile) || isAiThinking" class="p-3 text-aethas-cyan hover:text-white disabled:opacity-50"><i data-lucide="send" class="w-5 h-5"></i></button>
                     </div>
                 </div>
             </template>
@@ -369,9 +434,14 @@
             const filterDomain = ref("");
             const filterPricing = ref("");
             
+            const colPricing = ref("");
+            const colDomain = ref("");
+
             const workers = ref(["gemini-3.5-flash-lite", "", "", "", ""]);
             const selectedPrompter = ref("gemini-3.5-flash-lite");
             const selectedConcatenator = ref("gemini-3.5-flash-lite");
+
+            const attachedFile = ref(null);
 
             const pinnedProjects = computed(() => projects.value.filter(p => p.is_pinned));
             const recentProjects = computed(() => projects.value.filter(p => !p.is_pinned));
@@ -387,15 +457,16 @@
                 });
             });
 
-            const filteredBarModels = computed(() => {
+            const getFilteredModelsForCol = (pricingFilter, domainFilter, currentSelectedId) => {
                 return modelInfo.models.filter(m => {
-                    const matchDomain = filterDomain.value === "" || m.domain === filterDomain.value;
+                    if (m.model_id === currentSelectedId) return true;
+                    const matchDomain = domainFilter === "" || m.domain === domainFilter;
                     let matchPrice = true;
-                    if (filterPricing.value === 'free') matchPrice = m.is_free;
-                    if (filterPricing.value === 'paid') matchPrice = !m.is_free;
+                    if (pricingFilter === 'free') matchPrice = m.is_free;
+                    if (pricingFilter === 'paid') matchPrice = !m.is_free;
                     return matchDomain && matchPrice;
                 });
-            });
+            };
 
             const formatDate = (isoString) => {
                 if (!isoString) return "Jamais";
@@ -444,6 +515,34 @@
                 event.target.value = null;
             };
 
+            const handleFileUpload = (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                processFile(file);
+                event.target.value = null;
+            };
+
+            const handlePaste = (event) => {
+                const items = (event.clipboardData || event.originalEvent.clipboardData).items;
+                for (let index in items) {
+                    let item = items[index];
+                    if (item.kind === 'file') {
+                        let file = item.getAsFile();
+                        if (file) processFile(file);
+                    }
+                }
+            };
+
+            const processFile = (file) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    attachedFile.value = { name: file.name, content: e.target.result };
+                };
+                reader.readAsText(file);
+            };
+
+            const removeFile = () => { attachedFile.value = null; };
+
             const exportProject = (format) => { if(activeProject.value) window.open(`/api/projects/${activeProject.value.id}/export?format=${format}`, '_blank'); };
             const copyToClipboard = async (text) => { try { await navigator.clipboard.writeText(text); alert("Copié !"); } catch (e) {} };
             const downloadFile = (content, hint) => { let fname = hint ? hint.trim() : 'code.txt'; if (!fname.includes('.')) fname += '.txt'; const blob = new Blob([content], { type: 'text/plain;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = fname; a.click(); URL.revokeObjectURL(url); };
@@ -456,23 +555,33 @@
 
             const sendMessage = async () => {
                 const activeWorkers = workers.value.filter(w => w && w.trim() !== "");
-                if (!prompt.value.trim() || !activeProject.value || activeWorkers.length === 0) {
-                    alert("Veuillez sélectionner au moins un travailleur.");
+                if ((!prompt.value.trim() && !attachedFile.value) || !activeProject.value || activeWorkers.length === 0) {
+                    alert("Veuillez sélectionner au moins un travailleur et rédiger ou joindre un contenu.");
                     return;
                 }
-                const userText = prompt.value.trim(); prompt.value = ""; autoResize();
-                messages.value.push({ id: Date.now(), role: 'user', content: userText });
-                isAiThinking.value = true; scrollToBottom();
+                const userText = prompt.value.trim(); 
+                prompt.value = ""; 
+                autoResize();
+                
+                messages.value.push({ id: Date.now(), role: 'user', content: userText + (attachedFile.value ? `\n[Fichier joint: ${attachedFile.value.name}]` : "") });
+                isAiThinking.value = true; 
+                scrollToBottom();
                 
                 const payload = { 
                     role: 'user', 
-                    content: userText, 
+                    content: userText || "Analyse ce fichier joint.", 
                     config: { 
                         workers: activeWorkers, 
                         prompter: selectedPrompter.value, 
                         concatenator: selectedConcatenator.value 
-                    } 
+                    },
+                    file_content: attachedFile.value ? attachedFile.value.content : null,
+                    file_name: attachedFile.value ? attachedFile.value.name : null
                 };
+
+                // DESTRUCTION IMMÉDIATE DU FICHIER CÔTÉ FRONTEND APRÈS ENVOI
+                attachedFile.value = null;
+
                 try {
                     const response = await fetch(`/api/projects/${activeProject.value.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
                     if (response.ok) { 
@@ -504,8 +613,9 @@
                 projects, pinnedProjects, recentProjects, activeProject, messages, isAiThinking,
                 createNewProject, selectProject, renameProject, sendMessage, isLoading, togglePin, deleteProject,
                 isSettingsModalOpen, openSettings, closeSettings, passForm, settingsMessage, isSavingSettings, changePassword, uploadAvatar,
-                modelInfo, financesList, filterSearch, filterDomain, filterPricing, filteredModels, filteredBarModels, formatDate, syncModels, isSyncing,
-                workers, selectedPrompter, selectedConcatenator,
+                modelInfo, financesList, filterSearch, filterDomain, filterPricing, filteredModels, getFilteredModelsForCol, formatDate, syncModels, isSyncing,
+                workers, selectedPrompter, selectedConcatenator, colPricing, colDomain,
+                attachedFile, handleFileUpload, handlePaste, removeFile,
                 exportProject, copyToClipboard, downloadFile, downloadMessage, parseMessage
             };
         }

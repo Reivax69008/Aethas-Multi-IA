@@ -143,14 +143,21 @@ def get_messages(project_id: int, db: Session = Depends(get_db), current_user: U
 
 @app.post("/api/projects/{project_id}/messages", response_model=List[MessageResponse])
 async def create_message(project_id: int, message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    db.add(Message(role=message.role, content=message.content, project_id=project_id)); db.commit()
+    final_content = message.content
+    if message.file_content and message.file_name:
+        final_content = f"[Fichier attaché : {message.file_name}]\n```\n{message.file_content}\n```\n\n{message.content}"
+
+    db.add(Message(role=message.role, content=final_content, project_id=project_id))
+    db.commit()
+    
     history = db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
     settings = db.query(SystemSettings).first()
     conf = message.config.dict() if message.config else {"workers": ["gemini-3.5-flash-lite"]} 
     
-    ai_resp = await run_orchestrator(db, history, settings, conf) # Transmission de DB
+    ai_resp = await run_orchestrator(db, history, settings, conf)
     
-    db.add(Message(role="assistant", content=ai_resp, project_id=project_id)); db.commit()
+    db.add(Message(role="assistant", content=ai_resp, project_id=project_id))
+    db.commit()
     return db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
 
 # --- ROUTES MODÈLES & FINANCES ---
