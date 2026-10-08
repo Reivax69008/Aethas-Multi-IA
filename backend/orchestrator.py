@@ -194,6 +194,9 @@ async def ask_agent(client, model_id, messages, provider="openrouter"):
     kwargs = {"model": model_id, "messages": messages}
     if provider == "openrouter": 
         kwargs["extra_headers"] = {"HTTP-Referer": "https://aethas38.duckdns.org", "X-Title": "AETHAS38 Orchestrator"}
+        # Activation du plugin natif de compression d'OpenRouter pour éviter le dépassement de contexte
+        kwargs["extra_body"] = {"plugins": [{"id": "context-compression"}]}
+        
     resp = await client.chat.completions.create(**kwargs)
     return resp.choices[0].message.content
 
@@ -210,22 +213,45 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
         
         p_client, p_prov = get_client_for_model(db, p_mod, settings)
 
-        # --- WORKFLOW MAP-REDUCE : PRÉ-TRAITEMENT PARALLÈLE DES FICHIERS ---
+        # --- WORKFLOW MAP-REDUCE : PRÉ-TRAITEMENT SÉQUENTIEL & CHUNKING ---
         files_context = ""
         if extracted_files:
             async def process_single_file(f):
-                file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nAnalysez le fichier ci-dessous. Extrayez, résumez et conservez méticuleusement tout le code, les macros VBA, les requêtes SQL, ou les données métier pertinentes pour répondre à la demande.\n\nFichier : {f['name']}\nContenu :\n```\n{f['content']}\n```"
                 file_sys = "You are an expert data analyst and senior developer. Extract the most important technical information from the file without losing critical code syntax."
-                try:
-                    analysis = await ask_agent(p_client, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}], p_prov)
-                    return f"\n\n--- Extraction du fichier {f['name']} ---\n{analysis}"
-                except Exception as e:
-                    return f"\n\n--- Erreur sur {f['name']} ---\n{str(e)}"
+                content = f['content']
+                chunk_size = 150000  # Environ 35k à 40k tokens par morceau pour rester très large par rapport aux limites
+                
+                # CHUNKING : Découpage intelligent si le fichier est massif
+                if len(content) > chunk_size:
+                    chunks = [content[i:i+chunk_size] for i in range(0, len(content), chunk_size)]
+                    chunk_analyses = []
+                    for idx, chunk in enumerate(chunks):
+                        file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nPartie {idx+1}/{len(chunks)} du fichier '{f['name']}'. Analysez, extrayez et résumez le code, VBA, SQL ou les données pertinentes.\n\nContenu :\n```\n{chunk}\n```"
+                        try:
+                            analysis = await ask_agent(p_client, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}], p_prov)
+                            chunk_analyses.append(analysis)
+                        except Exception as e:
+                            chunk_analyses.append(f"[Erreur sur la partie {idx+1}: {str(e)}]")
+                        
+                        await asyncio.sleep(1.5) # Pause anti-spam (429) entre les morceaux
+                    
+                    return f"\n\n--- Extraction du fichier {f['name']} (en {len(chunks)} parties) ---\n" + "\n".join(chunk_analyses)
+                else:
+                    file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nAnalysez le fichier ci-dessous. Extrayez, résumez et conservez méticuleusement tout le code, les macros VBA, les requêtes SQL, ou les données métier pertinentes pour répondre à la demande.\n\nFichier : {f['name']}\nContenu :\n```\n{content}\n```"
+                    try:
+                        analysis = await ask_agent(p_client, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}], p_prov)
+                        return f"\n\n--- Extraction du fichier {f['name']} ---\n{analysis}"
+                    except Exception as e:
+                        return f"\n\n--- Erreur sur {f['name']} ---\n{str(e)}"
 
-            file_tasks = [process_single_file(f) for f in extracted_files]
-            file_analyses = await asyncio.gather(*file_tasks)
-            files_context = "".join(file_analyses)
+            file_analyses = []
+            for f in extracted_files:
+                analysis = await process_single_file(f)
+                file_analyses.append(analysis)
+                # SÉQUENÇAGE : Pause de 1.5 seconde entre les fichiers pour éviter l'erreur 429
+                await asyncio.sleep(1.5)
             
+            files_context = "".join(file_analyses)
             user_prompt = f"{original_user_text}\n\nVoici les données pré-traitées des fichiers joints :\n{files_context}"
 
         # --- OPTIMISATION & TRADUCTION ---
