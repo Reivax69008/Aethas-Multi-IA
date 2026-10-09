@@ -206,7 +206,8 @@ async def ask_agent(client, model_id, messages, provider="openrouter"):
     kwargs = {"model": model_id, "messages": messages}
     if provider == "openrouter": 
         kwargs["extra_headers"] = {"HTTP-Referer": "https://aethas38.duckdns.org", "X-Title": "AETHAS38 Orchestrator"}
-        kwargs["extra_body"] = {"plugins": [{"id": "context-compression"}]}
+        # Activation native du plugin web-search et de compression
+        kwargs["extra_body"] = {"plugins": [{"id": "context-compression"}, {"id": "web-search"}]}
         
     resp = await client.chat.completions.create(**kwargs)
     return resp.choices[0].message.content
@@ -225,7 +226,6 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
         log_activity(f"Démarrage de l'orchestration. Modèle Prompteur: {p_mod}")
         p_client, p_prov = get_client_for_model(db, p_mod, settings)
 
-        # --- WORKFLOW MAP-REDUCE : PRÉ-TRAITEMENT SÉQUENTIEL & CHUNKING ---
         files_context = ""
         if extracted_files:
             log_activity(f"Traitement Map-Reduce de {len(extracted_files)} fichier(s) joint(s).")
@@ -270,7 +270,6 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
             files_context = "".join(file_analyses)
             user_prompt = f"{original_user_text}\n\nVoici les données pré-traitées des fichiers joints :\n{files_context}"
 
-        # --- OPTIMISATION & TRADUCTION ---
         log_activity(f"Optimisation/Traduction de la requête via Prompteur...")
         prompt_system = "You are an expert prompt engineer. Translate and optimize the user request and any file context into clear, precise English tailored for AI execution. Keep all code blocks intact."
         optimized = await ask_agent(p_client, p_mod, [{"role": "system", "content": prompt_system}, {"role": "user", "content": user_prompt}], p_prov)

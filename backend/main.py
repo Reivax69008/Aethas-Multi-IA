@@ -9,7 +9,7 @@ import pytz
 
 from .database import engine, Base, get_db, SessionLocal
 from .auth import get_password_hash, generate_totp_secret, get_totp_uri, verify_password, verify_totp, create_access_token, verify_token
-from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, ProjectRename, MessageCreate, MessageResponse, PasswordChange, ModelReplacementRequest, LogRequest
+from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, ProjectRename, MessageCreate, MessageResponse, PasswordChange, ModelReplacementRequest, LogRequest, SystemSettingsUpdate, SystemSettingsResponse
 from .models import User, Project, Message, SystemSettings, AIModel, FinancialLog
 from .orchestrator import run_orchestrator, sync_providers_models, sync_finances, activity_logs, log_activity
 
@@ -29,13 +29,11 @@ async def scheduler_task():
         if (now.hour == 0 or now.hour == 12) and now.minute == 0:
             db = SessionLocal()
             try:
-                # 1. Sync des modèles
                 settings = db.query(SystemSettings).first()
                 if settings:
                     try: await sync_providers_models(db, settings, "Automatique")
                     except: pass
                 
-                # 2. Nettoyage automatique des discussions > 7 jours non épinglées
                 cutoff = datetime.now(timezone.utc) - timedelta(days=7)
                 old_projects = db.query(Project).filter(Project.is_pinned == False, Project.created_at < cutoff).all()
                 if old_projects:
@@ -89,7 +87,9 @@ def login(login_data: LoginRequest, response: Response, db: Session = Depends(ge
     user = db.query(User).filter(User.username == login_data.username).first()
     if not user or not verify_password(login_data.password, user.hashed_password): raise HTTPException(status_code=401, detail="Identifiants incorrects.")
     if not verify_totp(user.totp_secret, login_data.totp_code): raise HTTPException(status_code=401, detail="2FA invalide.")
-    response.set_cookie(key="session_token", value=create_access_token(data={"sub": user.username}), httponly=True, max_age=604800, samesite="lax")
+    
+    # Session valide 8 heures (28800 secondes)
+    response.set_cookie(key="session_token", value=create_access_token(data={"sub": user.username}), httponly=True, max_age=28800, samesite="lax")
     return {"message": "Connexion réussie"}
 
 @app.get("/dashboard")
@@ -164,6 +164,23 @@ async def upload_avatar(file: UploadFile = File(...), db: Session = Depends(get_
     db.commit()
     return {"message": "Avatar mis à jour", "avatar_path": current_user.avatar_path}
 
+# --- ROUTES SUPER-ADMIN ---
+@app.get("/api/settings", response_model=SystemSettingsResponse)
+def get_settings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not current_user.is_superadmin: raise HTTPException(status_code=403, detail="Super-Admin requis.")
+    return db.query(SystemSettings).first()
+
+@app.put("/api/settings")
+def update_settings(settings_data: SystemSettingsUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if not current_user.is_superadmin: raise HTTPException(status_code=403, detail="Super-Admin requis.")
+    s = db.query(SystemSettings).first()
+    if not s: raise HTTPException(status_code=404)
+    for k, v in settings_data.dict(exclude_unset=True).items():
+        setattr(s, k, v)
+    db.commit()
+    log_activity("Configuration système mise à jour par le Super-Admin.")
+    return {"message": "Paramètres mis à jour avec succès."}
+
 @app.get("/api/projects", response_model=List[ProjectResponse])
 def get_projects(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)): return db.query(Project).filter(Project.user_id == current_user.id).order_by(Project.created_at.desc()).all()
 
@@ -205,7 +222,6 @@ def get_messages(project_id: int, db: Session = Depends(get_db), current_user: U
 
 @app.post("/api/projects/{project_id}/messages", response_model=List[MessageResponse])
 async def create_message(project_id: int, message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # 1. Gestion de l'auto-renommage à la 2ème requête
     p = db.query(Project).filter(Project.id == project_id).first()
     if p and p.title == "Nouvelle discussion":
         user_msgs = db.query(Message).filter(Message.project_id == project_id, Message.role == "user").order_by(Message.created_at.asc()).all()
@@ -216,7 +232,6 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
             p.title = new_title + ("..." if len(first_content) > 35 else "")
             db.commit()
 
-    # 2. Gestion des fichiers
     extracted_files_data = []
     files_names = []
     
@@ -330,9 +345,23 @@ def export_models(db: Session = Depends(get_db), current_user: User = Depends(ge
         md_content += f"## Fournisseur : {prov.upper()}\n\n"
         prov_models = [m for m in models if m.provider == prov]
         for m in prov_models:
-            price_info = "**GRATUIT**" if m.is_free else f"In: ${m.pricing_prompt:.2f} / Out:${m.pricing_completion:.2f}"
+            price_info = "**GRATUIT**" if m.is_free else f"In: ${m.pricing_prompt:.2f} / Out: ${m.pricing_completion:.2f}"
             ctx_info = f"{int(m.context_length/1000)}k"
             desc = m.description_fr.replace('\n', ' ') if m.description_fr else ""
             md_content += f"- **{m.name or m.model_id}** (`{m.model_id}`)\n"
             md_content += f"  - *Domaine :* {m.domain}\n"
-            md_
+            md_content += f"  - *Prix (1M tokens) :* {price_info}\n"
+            md_content += f"  - *Contexte :* {ctx_info}\n"
+            md_content += f"  - *Description :* {desc}\n\n"
+
+    zip_io = io.BytesIO()
+    with zipfile.ZipFile(zip_io, mode='w', compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("models_export.csv", csv_io.getvalue().encode('utf-8'))
+        zf.writestr(f"{datetime.now().strftime('%Y%m%d')}-extraction-modeles.md", md_content.encode('utf-8'))
+
+    zip_io.seek(0)
+    return Response(
+        content=zip_io.getvalue(), 
+        media_type="application/zip", 
+        headers={"Content-Disposition": f"attachment; filename=aethas38_models_{datetime.now().strftime('%Y%m%d')}.zip"}
+    )

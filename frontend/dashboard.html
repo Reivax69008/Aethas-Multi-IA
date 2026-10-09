@@ -23,6 +23,12 @@
 
 <div id="app" class="flex w-full h-full relative bg-aethas-dark">
 
+    <!-- TOAST NOTIFICATION TEMPORAIRE -->
+    <div v-if="toastVisible" class="fixed bottom-6 right-6 bg-gray-800 border-l-4 border-aethas-cyan text-gray-200 p-4 rounded shadow-[0_0_15px_rgba(6,182,212,0.3)] z-[200] flex items-center gap-3 transition-opacity duration-300">
+        <i data-lucide="check-circle" class="w-5 h-5 text-aethas-cyan"></i>
+        <span class="text-sm font-medium">{{ toastMessage }}</span>
+    </div>
+
     <!-- MODAL ASSIGNATION MODÈLE -->
     <div v-if="isAssignModalOpen" class="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
         <div class="bg-aethas-panel border border-gray-600 rounded-2xl w-full max-w-md overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.7)]">
@@ -65,7 +71,7 @@
         </div>
     </div>
 
-    <!-- MODAL PARAMÈTRES -->
+    <!-- MODAL PARAMÈTRES (PROFIL) -->
     <div v-if="isSettingsModalOpen" class="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
         <div class="bg-aethas-panel border border-gray-600 rounded-2xl w-full max-w-md overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.7)]">
             <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50">
@@ -242,8 +248,33 @@
 
                 <div v-if="settingsTab === 'super' && user.is_superadmin" class="space-y-6">
                     <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 border-l-4 border-l-aethas-purple">
-                        <h3 class="text-lg font-semibold text-purple-400 mb-4">Espace Réservé Super-Admin</h3>
-                        <p class="text-sm text-gray-400">Gestion globale du système.</p>
+                        <h3 class="text-lg font-semibold text-purple-400 mb-4">Espace Réservé Super-Admin - Clés API & SMTP</h3>
+                        
+                        <div v-if="adminSettingsMessage" class="p-3 rounded text-sm mb-4 bg-gray-900 border border-aethas-purple text-purple-300">{{ adminSettingsMessage }}</div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <!-- Clés API -->
+                            <div><label class="block text-xs text-gray-400 mb-1">OpenRouter API Key</label><input v-model="adminSettings.openrouter_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                            <div><label class="block text-xs text-gray-400 mb-1">OpenRouter Management Key</label><input v-model="adminSettings.openrouter_management_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                            <div><label class="block text-xs text-gray-400 mb-1">Gemini API Key</label><input v-model="adminSettings.gemini_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                            <div><label class="block text-xs text-gray-400 mb-1">Groq API Key</label><input v-model="adminSettings.groq_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                            <div><label class="block text-xs text-gray-400 mb-1">DeepSeek API Key</label><input v-model="adminSettings.deepseek_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                            <div><label class="block text-xs text-gray-400 mb-1">Mistral API Key</label><input v-model="adminSettings.mistral_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                            <div><label class="block text-xs text-gray-400 mb-1">HuggingFace API Key</label><input v-model="adminSettings.huggingface_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                            <div><label class="block text-xs text-gray-400 mb-1">Cloudflare Account ID</label><input v-model="adminSettings.cloudflare_account_id" type="text" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                            <div><label class="block text-xs text-gray-400 mb-1">Cloudflare API Token</label><input v-model="adminSettings.cloudflare_api_token" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                            
+                            <!-- SMTP -->
+                            <div class="col-span-1 md:col-span-2 mt-2 border-t border-gray-700 pt-4"><h4 class="text-sm font-semibold text-gray-300 mb-2">Configuration SMTP</h4></div>
+                            <div><label class="block text-xs text-gray-400 mb-1">SMTP Host</label><input v-model="adminSettings.smtp_host" type="text" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                            <div><label class="block text-xs text-gray-400 mb-1">SMTP Port</label><input v-model.number="adminSettings.smtp_port" type="number" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                            <div><label class="block text-xs text-gray-400 mb-1">SMTP User</label><input v-model="adminSettings.smtp_user" type="text" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                            <div><label class="block text-xs text-gray-400 mb-1">SMTP Password</label><input v-model="adminSettings.smtp_password" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                        </div>
+                        
+                        <button @click="saveAdminSettings" :disabled="isSavingAdminSettings" class="mt-6 w-full bg-aethas-purple hover:bg-purple-600 text-white font-bold py-2 rounded transition-colors disabled:opacity-50">
+                            Sauvegarder la configuration
+                        </button>
                     </div>
                 </div>
             </div>
@@ -308,7 +339,6 @@
                         </thead>
                         <tbody>
                             <tr v-for="model in filteredModels" :key="model.model_id" class="border-b border-gray-700 hover:bg-gray-800/50 transition-colors">
-                                <!-- PUCE DE SELECTION -->
                                 <td class="px-4 py-3 text-center">
                                     <input type="radio" name="modelSelect" @click.prevent="openAssignModal(model.model_id)" class="w-4 h-4 text-aethas-cyan bg-gray-900 border-gray-600 focus:ring-aethas-cyan cursor-pointer">
                                 </td>
@@ -349,17 +379,21 @@
                                 <div v-if="part.type === 'code'" class="my-4 bg-gray-900 rounded-lg border border-gray-700 overflow-hidden shadow-inner">
                                     <div class="flex justify-between items-center px-4 py-2 bg-gray-800 border-b border-gray-700">
                                         <span class="text-xs text-gray-400 font-mono flex items-center gap-2"><i data-lucide="file-code-2" class="w-4 h-4"></i> {{ part.language || 'code' }}</span>
-                                        <button @click="downloadFile(part.content, part.language)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded"><i data-lucide="download" class="w-3 h-3"></i> Fichier</button>
+                                        <div class="flex items-center">
+                                            <!-- BOUTON COPIER CODE (NOUVEAU) -->
+                                            <button @click="copyToClipboard(part.content)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded mr-2"><i data-lucide="copy" class="w-3 h-3"></i> Copier Code</button>
+                                            <button @click="downloadFile(part.content, part.language)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded"><i data-lucide="download" class="w-3 h-3"></i> Fichier</button>
+                                        </div>
                                     </div>
                                     <pre class="p-4 text-xs font-mono text-gray-300 overflow-x-auto custom-scrollbar"><code>{{ part.content }}</code></pre>
                                 </div>
                             </template>
                         </div>
 
-                        <!-- Boutons de copie et téléchargement individuel -->
+                        <!-- Boutons de copie et téléchargement individuel du message -->
                         <div class="mt-3 flex items-center gap-3 border-t border-gray-700/50 pt-2 opacity-50 hover:opacity-100 transition-opacity">
-                            <button @click="copyToClipboard(msg.content)" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1"><i data-lucide="copy" class="w-3 h-3"></i> Copier</button>
-                            <button @click="downloadMessage(msg.content, msg.created_at || new Date().toISOString())" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1"><i data-lucide="file-down" class="w-3 h-3"></i> Extraire</button>
+                            <button @click="copyToClipboard(msg.content)" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1"><i data-lucide="copy" class="w-3 h-3"></i> Copier Message</button>
+                            <button @click="downloadMessage(msg.content, msg.created_at || new Date().toISOString())" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1"><i data-lucide="file-down" class="w-3 h-3"></i> Extraire Message</button>
                         </div>
                     </div>
 
@@ -509,16 +543,30 @@
             const isLoading = ref(false);
             const isAiThinking = ref(false);
             const isSyncing = ref(false);
-            const isSavingSettings = ref(false);
+
+            // TOAST (Non bloquant)
+            const toastVisible = ref(false);
+            const toastMessage = ref("");
+            const showToast = (msg) => {
+                toastMessage.value = msg;
+                toastVisible.value = true;
+                setTimeout(() => { toastVisible.value = false; }, 5000); // Disparaît après 5 secondes
+            };
 
             const isAssignModalOpen = ref(false);
             const assignForm = reactive({ modelId: '', projectId: '', role: 'worker1' });
             const assignMessage = ref("");
 
-            const isSettingsModalOpen = ref(false); // Ajout crucial : initialisation de la variable du modal paramètres
+            const isSettingsModalOpen = ref(false);
 
+            // FORMULAIRES SETTINGS
             const passForm = reactive({ old: '', new: '', confirm: '' });
             const settingsMessage = ref("");
+            const isSavingSettings = ref(false);
+
+            const adminSettings = reactive({});
+            const adminSettingsMessage = ref("");
+            const isSavingAdminSettings = ref(false);
             
             const modelInfo = reactive({ last_sync_date: null, last_sync_type: null, models: [] });
             const financesList = ref([]);
@@ -591,9 +639,39 @@
             const autoResize = () => { const el = promptTextarea.value; if(el){ el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }};
             const scrollToBottom = () => { nextTick(() => { const c = document.getElementById('chat-container'); if (c) c.scrollTop = c.scrollHeight; }); };
 
+            const fetchAdminSettings = async () => {
+                try {
+                    const res = await fetch('/api/settings');
+                    if (res.ok) {
+                        const data = await res.json();
+                        Object.assign(adminSettings, data);
+                    }
+                } catch(e) {}
+            };
+
+            const saveAdminSettings = async () => {
+                isSavingAdminSettings.value = true;
+                adminSettingsMessage.value = "";
+                try {
+                    const res = await fetch('/api/settings', {
+                        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(adminSettings)
+                    });
+                    if (res.ok) {
+                        adminSettingsMessage.value = "Paramètres sauvegardés avec succès.";
+                        setTimeout(() => adminSettingsMessage.value="", 3000);
+                    } else {
+                        adminSettingsMessage.value = "Erreur lors de la sauvegarde.";
+                    }
+                } catch (e) {
+                    adminSettingsMessage.value = "Erreur réseau.";
+                }
+                isSavingAdminSettings.value = false;
+            };
+
             const openSettings = () => { 
                 activeView.value = 'settings'; 
                 if(window.innerWidth < 768) isSidebarOpen.value = false;
+                if(user.value.is_superadmin) fetchAdminSettings();
                 nextTick(() => lucide.createIcons()); 
             };
 
@@ -726,7 +804,7 @@
                     if(res.ok) { 
                         await fetchModelsInfo(); 
                         await fetchFinances();
-                        alert("Synchronisation réussie !"); 
+                        showToast("Synchronisation réussie !"); 
                     } else if (res.status === 401) {
                         alert("Votre session a expiré."); window.location.href = '/login';
                     } else {
@@ -799,7 +877,7 @@
                     selectedConcatenator.value = extractModel('Concateneur');
 
                     await validateConfigAndReplace();
-                    alert("Configuration IA importée et appliquée avec succès !");
+                    showToast("Configuration IA importée et appliquée avec succès !");
                 };
                 reader.readAsText(file);
                 event.target.value = null;
@@ -868,7 +946,14 @@
             const removeFile = (index) => { attachedFiles.value.splice(index, 1); };
 
             const exportProject = (format) => { if(activeProject.value) window.open(`/api/projects/${activeProject.value.id}/export?format=${format}`, '_blank'); };
-            const copyToClipboard = async (text) => { try { await navigator.clipboard.writeText(text); alert("Copié !"); } catch (e) {} };
+            
+            // COPIE REMPLACEE PAR UN TOAST (NON BLOQUANT)
+            const copyToClipboard = async (text) => { 
+                try { 
+                    await navigator.clipboard.writeText(text); 
+                    showToast("Texte copié dans le presse-papier !"); 
+                } catch (e) {} 
+            };
             
             const downloadFile = (content, hint, mimeType = 'text/plain;charset=utf-8') => { 
                 let fname = hint ? hint.trim() : 'code.txt'; 
@@ -939,8 +1024,12 @@
                     return;
                 }
                 const userText = prompt.value.trim(); 
+                
+                // REINITIALISATION DE LA HAUTEUR DU TEXTAREA
                 prompt.value = ""; 
-                autoResize();
+                nextTick(() => {
+                    if (promptTextarea.value) promptTextarea.value.style.height = 'auto';
+                });
                 
                 const fileNames = attachedFiles.value.map(f => f.name).join(", ");
                 messages.value.push({ id: Date.now(), role: 'user', content: userText + (attachedFiles.value.length > 0 ? `\n[Fichiers joints: ${fileNames}]` : "") });
@@ -1015,12 +1104,14 @@
                 projects, pinnedProjects, recentProjects, activeProject, messages, isAiThinking,
                 createNewProject, selectProject, renameProject, sendMessage, isLoading, togglePin, deleteProject,
                 openSettings, closeSettings, passForm, settingsMessage, isSavingSettings, changePassword, uploadAvatar,
+                adminSettings, adminSettingsMessage, isSavingAdminSettings, saveAdminSettings,
                 modelInfo, financesList, filterSearch, filterDomain, filterPricing, filterProvider, uniqueProviders, filteredModels, getFilteredModelsForCol, formatDate, syncModels, isSyncing,
                 workers, selectedPrompter, selectedConcatenator, colPricing, colDomain, downloadTemplate, exportCSV, handleConfigImport,
                 isAssignModalOpen, openAssignModal, closeAssignModal, assignForm, assignMessage, confirmAssignModel,
-                isSettingsModalOpen, // EXPORTATION OBLIGATOIRE DE LA VARIABLE ICI
+                isSettingsModalOpen,
                 attachedFiles, handleFileUpload, handlePaste, removeFile,
-                exportProject, copyToClipboard, downloadFile, downloadMessage, parseMessage, systemLogs
+                exportProject, copyToClipboard, downloadFile, downloadMessage, parseMessage, systemLogs,
+                toastVisible, toastMessage, showToast
             };
         }
     }).mount('#app');
