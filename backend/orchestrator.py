@@ -6,16 +6,20 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from .models import SystemSettings, AIModel, FinancialLog
+from .logger import system_logger  # Import du vrai logger fichier
 from datetime import datetime, timezone
 
-# --- LOGGER GLOBAL POUR LE TERMINAL ---
+# --- LOGGER GLOBAL (Mémoire UI + Fichier Système) ---
 activity_logs = []
 
 def log_activity(msg: str):
     ts = datetime.now(timezone.utc).strftime('%H:%M:%S')
-    activity_logs.append(f"[{ts}] {msg}")
+    formatted_msg = f"[{ts}] {msg}"
+    activity_logs.append(formatted_msg)
     if len(activity_logs) > 100:
         activity_logs.pop(0)
+    # Écriture effective dans le fichier de log (logs/aethas38_system.log)
+    system_logger.info(msg)
 # --------------------------------------
 
 def determine_domain(model_id: str) -> str:
@@ -46,13 +50,13 @@ async def sync_finances(db: Session, settings: SystemSettings):
                 cred_resp = await client.get("https://openrouter.ai/api/v1/credits", headers={"Authorization": f"Bearer {key}"})
                 balance = 0.0
                 usage = 0.0
-                if cred_resp.status_code == 200 and cred_resp.json().get("data"):
+                if cred_resp.status_code == 200 and cred_resp.json() and cred_resp.json().get("data"):
                     c_data = cred_resp.json().get("data", {})
                     balance = float(c_data.get("total_credits") or 0.0) - float(c_data.get("total_usage") or 0.0)
                     usage = float(c_data.get("total_usage") or 0.0)
                 else:
                     key_resp = await client.get("https://openrouter.ai/api/v1/auth/key", headers={"Authorization": f"Bearer {key}"})
-                    if key_resp.status_code == 200:
+                    if key_resp.status_code == 200 and key_resp.json():
                         data = key_resp.json().get("data", {})
                         limit = data.get("limit")
                         usage = float(data.get("usage") or 0.0)
@@ -64,9 +68,11 @@ async def sync_finances(db: Session, settings: SystemSettings):
         if settings.deepseek_api_key:
             try:
                 resp = await client.get("https://api.deepseek.com/user/balance", headers={"Authorization": f"Bearer {settings.deepseek_api_key}"})
-                if resp.status_code == 200:
-                    infos = resp.json().get("balance_infos", [{}])[0]
-                    update_finance_db(db, "DeepSeek", float(infos.get("total_balance", 0)), 0.0)
+                if resp.status_code == 200 and resp.json():
+                    balance_infos = resp.json().get("balance_infos", [])
+                    if balance_infos:
+                        infos = balance_infos[0]
+                        update_finance_db(db, "DeepSeek", float(infos.get("total_balance", 0)), 0.0)
             except Exception: pass
         if settings.mistral_api_key: update_finance_db(db, "Mistral", 0.0, 0.0)
         if settings.gemini_api_key: update_finance_db(db, "Gemini", 0.0, 0.0)
@@ -91,7 +97,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
         if settings.openrouter_api_key:
             try:
                 resp = await client.get("https://openrouter.ai/api/v1/models")
-                if resp.status_code == 200:
+                if resp.status_code == 200 and resp.json():
                     for item in resp.json().get("data", []):
                         try:
                             m_id = item.get("id")
@@ -108,7 +114,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
         if settings.groq_api_key:
             try:
                 resp = await client.get("https://api.groq.com/openai/v1/models", headers={"Authorization": f"Bearer {settings.groq_api_key}"})
-                if resp.status_code == 200:
+                if resp.status_code == 200 and resp.json():
                     for item in resp.json().get("data", []):
                         m_id = item["id"]
                         models_to_process[m_id] = {"provider": "groq", "name": m_id.capitalize(), "desc": "Modèle très rapide hébergé sur LPU Groq.", "domain": determine_domain(m_id), "is_free": True, "ctx": 8192, "pp": 0.0, "pc": 0.0}
@@ -117,7 +123,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
         if settings.deepseek_api_key:
             try:
                 resp = await client.get("https://api.deepseek.com/models", headers={"Authorization": f"Bearer {settings.deepseek_api_key}"})
-                if resp.status_code == 200:
+                if resp.status_code == 200 and resp.json():
                     for item in resp.json().get("data", []):
                         m_id = item["id"]
                         models_to_process[m_id] = {"provider": "deepseek", "name": m_id.capitalize(), "desc": "Modèle officiel du fournisseur DeepSeek.", "domain": determine_domain(m_id), "is_free": False, "ctx": 64000, "pp": 0.14, "pc": 0.28}
@@ -126,7 +132,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
         if settings.mistral_api_key:
             try:
                 resp = await client.get("https://api.mistral.ai/v1/models", headers={"Authorization": f"Bearer {settings.mistral_api_key}"})
-                if resp.status_code == 200:
+                if resp.status_code == 200 and resp.json():
                     for item in resp.json().get("data", []):
                         m_id = item["id"]
                         models_to_process[m_id] = {"provider": "mistral", "name": m_id.capitalize(), "desc": "Modèle officiel développé par Mistral AI.", "domain": determine_domain(m_id), "is_free": False, "ctx": 32000, "pp": 0.2, "pc": 0.6}
@@ -135,7 +141,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
         if settings.gemini_api_key:
             try:
                 resp = await client.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={settings.gemini_api_key}")
-                if resp.status_code == 200:
+                if resp.status_code == 200 and resp.json():
                     for item in resp.json().get("models", []):
                         m_id = item["name"].replace("models/", "")
                         models_to_process[m_id] = {"provider": "gemini", "name": item.get("displayName", m_id), "desc": "Modèle natif de l'écosystème Google Gemini.", "domain": determine_domain(m_id), "is_free": True, "ctx": item.get("inputTokenLimit", 32000), "pp": 0.0, "pc": 0.0}
@@ -145,7 +151,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
             try:
                 url = f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/models/search"
                 resp = await client.get(url, headers={"Authorization": f"Bearer {settings.cloudflare_api_token}"})
-                if resp.status_code == 200:
+                if resp.status_code == 200 and resp.json():
                     for item in resp.json().get("result", []):
                         m_id = item.get("name")
                         models_to_process[m_id] = {"provider": "cloudflare", "name": m_id.split("/")[-1], "desc": "Modèle Serverless Cloudflare Workers AI.", "domain": determine_domain(m_id), "is_free": True, "ctx": 4096, "pp": 0.0, "pc": 0.0}
@@ -206,7 +212,6 @@ async def ask_agent(client, model_id, messages, provider="openrouter", enable_we
     kwargs = {"model": model_id, "messages": messages}
     if provider == "openrouter": 
         kwargs["extra_headers"] = {"HTTP-Referer": "https://aethas38.duckdns.org", "X-Title": "AETHAS38 Orchestrator"}
-        # Utilisation de l'identifiant officiel "web" d'OpenRouter (et non "web-search")
         plugins = [{"id": "context-compression"}]
         if enable_web:
             plugins.append({"id": "web"})
@@ -214,18 +219,21 @@ async def ask_agent(client, model_id, messages, provider="openrouter", enable_we
         
         try:
             resp = await client.chat.completions.create(**kwargs)
-            return resp.choices[0].message.content
+            if resp and hasattr(resp, 'choices') and resp.choices:
+                return resp.choices[0].message.content
         except Exception as e:
-            # Repli automatique sans le plugin web si le modèle ou le solde ne le permet pas
             if enable_web:
                 log_activity(f"Repli sans plugin web pour {model_id} : {str(e)[:80]}")
                 kwargs["extra_body"] = {"plugins": [{"id": "context-compression"}]}
                 resp = await client.chat.completions.create(**kwargs)
-                return resp.choices[0].message.content
+                if resp and hasattr(resp, 'choices') and resp.choices:
+                    return resp.choices[0].message.content
             raise e
         
     resp = await client.chat.completions.create(**kwargs)
-    return resp.choices[0].message.content
+    if resp and hasattr(resp, 'choices') and resp.choices:
+        return resp.choices[0].message.content
+    return "[Erreur : L'IA a renvoyé une réponse vide]"
 
 async def run_orchestrator(db: Session, history: list, settings: SystemSettings, config: dict, extracted_files: list = None) -> str:
     workers = config.get("workers", ["gemini-3.5-flash-lite"])
