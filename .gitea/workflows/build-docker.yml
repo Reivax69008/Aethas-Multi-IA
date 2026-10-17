@@ -1,4 +1,4 @@
-name: Build & Push Local Gitea Registry
+name: Build Local AETHAS38
 
 on:
   push:
@@ -8,37 +8,32 @@ on:
       - 'v*'
 
 env:
-  REGISTRY: 192.168.1.20:3000
-  IMAGE_NAME: xavier/multi-ia-codage
+  IMAGE_NAME: multi-ia-codage
 
 jobs:
-  build-and-push:
+  build-local:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout du dépôt
         uses: actions/checkout@v4
 
-      - name: Connexion et Push direct sur le registre Gitea local
+      - name: Compilation directe sur le serveur hôte (sans cache)
         run: |
-          # 1. Connexion au registre HTTP local via le client Docker natif de l'hôte
-          echo "${{ secrets.GITEA_TOKEN || gitea.token }}" | docker login ${{ env.REGISTRY }} -u ${{ gitea.actor }} --password-stdin
-
-          # 2. Détermination dynamique du tag (version Git ou 'latest')
+          # Détermination dynamique du tag (version Git ou 'latest')
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             VERSION="${GITHUB_REF#refs/tags/}"
-            TAGGED_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
-            LATEST_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-            
-            docker build --no-cache -t ${TAGGED_IMAGE} -t ${LATEST_IMAGE} .
-            docker push ${TAGGED_IMAGE}
-            docker push ${LATEST_IMAGE}
+            docker build --no-cache -t ${{ env.IMAGE_NAME }}:${VERSION} -t ${{ env.IMAGE_NAME }}:latest .
           else
-            LATEST_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-            
-            docker build --no-cache -t ${LATEST_IMAGE} .
-            docker push ${LATEST_IMAGE}
+            docker build --no-cache -t ${{ env.IMAGE_NAME }}:latest .
           fi
 
-      - name: Nettoyage des images locales sur le serveur
+      - name: Redéploiement automatique du conteneur
         run: |
+          # Si le chemin de votre stack est sur le RAID, met à jour et recrée le service
+          if [ -d "/mnt/stockage_raid/AppData/MULTI-IA-AETHAS38" ]; then
+            cd /mnt/stockage_raid/AppData/MULTI-IA-AETHAS38
+            docker compose up -d --force-recreate
+          fi
+          
+          # Nettoyage des images orphelines
           docker image prune -f
