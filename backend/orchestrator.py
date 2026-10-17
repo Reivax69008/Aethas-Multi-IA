@@ -202,12 +202,27 @@ def get_client_for_model(db: Session, model_id: str, settings: SystemSettings):
     
     return AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=settings.openrouter_api_key), "openrouter"
 
-async def ask_agent(client, model_id, messages, provider="openrouter"):
+async def ask_agent(client, model_id, messages, provider="openrouter", enable_web=True):
     kwargs = {"model": model_id, "messages": messages}
     if provider == "openrouter": 
         kwargs["extra_headers"] = {"HTTP-Referer": "https://aethas38.duckdns.org", "X-Title": "AETHAS38 Orchestrator"}
-        # Activation native du plugin web-search et de compression
-        kwargs["extra_body"] = {"plugins": [{"id": "context-compression"}, {"id": "web-search"}]}
+        # Utilisation de l'identifiant officiel "web" d'OpenRouter (et non "web-search")
+        plugins = [{"id": "context-compression"}]
+        if enable_web:
+            plugins.append({"id": "web"})
+        kwargs["extra_body"] = {"plugins": plugins}
+        
+        try:
+            resp = await client.chat.completions.create(**kwargs)
+            return resp.choices[0].message.content
+        except Exception as e:
+            # Repli automatique sans le plugin web si le modèle ou le solde ne le permet pas
+            if enable_web:
+                log_activity(f"Repli sans plugin web pour {model_id} : {str(e)[:80]}")
+                kwargs["extra_body"] = {"plugins": [{"id": "context-compression"}]}
+                resp = await client.chat.completions.create(**kwargs)
+                return resp.choices[0].message.content
+            raise e
         
     resp = await client.chat.completions.create(**kwargs)
     return resp.choices[0].message.content
@@ -241,7 +256,7 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                     for idx, chunk in enumerate(chunks):
                         file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nPartie {idx+1}/{len(chunks)} du fichier '{f['name']}'. Analysez, extrayez et résumez le code, VBA, SQL ou les données pertinentes.\n\nContenu :\n```\n{chunk}\n```"
                         try:
-                            analysis = await ask_agent(p_client, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}], p_prov)
+                            analysis = await ask_agent(p_client, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}], p_prov, enable_web=False)
                             chunk_analyses.append(analysis)
                             log_activity(f"Analyse chunk {idx+1}/{len(chunks)} pour {f['name']} réussie.")
                         except Exception as e:
@@ -254,7 +269,7 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                 else:
                     file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nAnalysez le fichier ci-dessous. Extrayez, résumez et conservez méticuleusement tout le code, les macros VBA, les requêtes SQL, ou les données métier pertinentes pour répondre à la demande.\n\nFichier : {f['name']}\nContenu :\n```\n{content}\n```"
                     try:
-                        analysis = await ask_agent(p_client, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}], p_prov)
+                        analysis = await ask_agent(p_client, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}], p_prov, enable_web=False)
                         log_activity(f"Analyse intégrale de {f['name']} réussie.")
                         return f"\n\n--- Extraction du fichier {f['name']} ---\n{analysis}"
                     except Exception as e:
@@ -272,20 +287,20 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
 
         log_activity(f"Optimisation/Traduction de la requête via Prompteur...")
         prompt_system = "You are an expert prompt engineer. Translate and optimize the user request and any file context into clear, precise English tailored for AI execution. Keep all code blocks intact."
-        optimized = await ask_agent(p_client, p_mod, [{"role": "system", "content": prompt_system}, {"role": "user", "content": user_prompt}], p_prov)
+        optimized = await ask_agent(p_client, p_mod, [{"role": "system", "content": prompt_system}, {"role": "user", "content": user_prompt}], p_prov, enable_web=False)
 
         log_activity(f"Lancement de {len(workers)} travailleur(s) en parallèle...")
         if len(workers) == 1:
             w_mod = workers[0]
             client, provider = get_client_for_model(db, w_mod, settings)
-            worker_response = await ask_agent(client, w_mod, formatted_history + [{"role": "user", "content": optimized}], provider)
+            worker_response = await ask_agent(client, w_mod, formatted_history + [{"role": "user", "content": optimized}], provider, enable_web=True)
             responses = [worker_response]
             log_activity(f"Travailleur 1 ({w_mod}) a terminé.")
         else:
             w_tasks = []
             for w in workers:
                 w_client, w_prov = get_client_for_model(db, w, settings)
-                w_tasks.append(ask_agent(w_client, w, formatted_history + [{"role": "user", "content": optimized}], w_prov))
+                w_tasks.append(ask_agent(w_client, w, formatted_history + [{"role": "user", "content": optimized}], w_prov, enable_web=True))
             responses = await asyncio.gather(*w_tasks, return_exceptions=True)
             log_activity("Tous les travailleurs ont terminé leur analyse.")
 
@@ -304,7 +319,7 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
         )
         
         synth = f"User Request: {original_user_text}\n\n" + "\n".join([f"--- EXPERT {i+1} ---\n{str(r)}" for i, r in enumerate(responses)])
-        final_response = await ask_agent(c_client, c_mod, [{"role": "system", "content": concat_system}, {"role": "user", "content": synth}], c_prov)
+        final_response = await ask_agent(c_client, c_mod, [{"role": "system", "content": concat_system}, {"role": "user", "content": synth}], c_prov, enable_web=False)
         
         log_activity("Orchestration terminée avec succès.")
 
