@@ -1,44 +1,46 @@
-name: Build and Push Docker Image
+name: Build & Push Local Gitea Registry
 
 on:
   push:
     branches:
       - main
     tags:
-      - 'v*' # Déclenche aussi le pipeline lors de la création d'un tag
+      - 'v*'
+
+env:
+  REGISTRY: 192.168.1.20:3000
+  IMAGE_NAME: xavier/multi-ia-aethas38
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      
     steps:
-      - name: Checkout du code
-        uses: actions/checkout@v3
+      - name: Checkout du dépôt
+        uses: actions/checkout@v4
 
-      # NOUVEAU : Génération dynamique des tags (SemVer + Latest)
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v4
+      - name: Connexion au registre Gitea local
+        uses: docker/login-action@v3
         with:
-          images: gitea.aethas38.duckdns.org/xavier/multi-ia-codage
+          registry: ${{ env.REGISTRY }}
+          username: ${{ gitea.actor }}
+          password: ${{ secrets.GITEA_TOKEN || gitea.token }}
+
+      - name: Extraction des métadonnées (Tags & Labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
 
-      - name: Connexion au registre Gitea
-        uses: docker/login-action@v2
-        with:
-          registry: gitea.aethas38.duckdns.org
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_TOKEN }} 
-
-      - name: Build et Push de l'image
-        uses: docker/build-push-action@v4
+      - name: Build et Push sur le registre local
+        uses: docker/build-push-action@v5
         with:
           context: .
           push: true
+          no-cache: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
