@@ -1,12 +1,13 @@
 import asyncio
 import httpx
 import urllib.parse
+import traceback
 from openai import AsyncOpenAI
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from .models import SystemSettings, AIModel, FinancialLog
-from .logger import system_logger  # Import du vrai logger fichier
+from .logger import system_logger
 from datetime import datetime, timezone
 
 # --- LOGGER GLOBAL (Mémoire UI + Fichier Système) ---
@@ -23,6 +24,7 @@ def log_activity(msg: str):
 # --------------------------------------
 
 def determine_domain(model_id: str) -> str:
+    if not model_id: return "Texte Polyvalent"
     mid = model_id.lower()
     if "vision" in mid or "vl" in mid or "omni" in mid: return "Vision & Texte"
     if "coder" in mid or "code" in mid or "math" in mid: return "Code & Logique"
@@ -36,13 +38,16 @@ async def translate_en_to_fr(client: httpx.AsyncClient, text: str) -> str:
         url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=fr&dt=t&q={urllib.parse.quote(short_text)}"
         resp = await client.get(url, timeout=4.0)
         if resp.status_code == 200:
-            translated = "".join([s[0] for s in resp.json()[0]])
-            return translated + ("..." if len(text) > 300 else "")
+            data = resp.json()
+            if data and isinstance(data, list) and data[0]:
+                translated = "".join([s[0] for s in data[0] if s and s[0]])
+                return translated + ("..." if len(text) > 300 else "")
     except Exception:
         pass
     return text[:200] + "..."
 
 async def sync_finances(db: Session, settings: SystemSettings):
+    if not settings: return
     async with httpx.AsyncClient(timeout=30.0) as client:
         if settings.openrouter_management_key or settings.openrouter_api_key:
             try:
@@ -50,14 +55,16 @@ async def sync_finances(db: Session, settings: SystemSettings):
                 cred_resp = await client.get("https://openrouter.ai/api/v1/credits", headers={"Authorization": f"Bearer {key}"})
                 balance = 0.0
                 usage = 0.0
-                if cred_resp.status_code == 200 and cred_resp.json() and cred_resp.json().get("data"):
-                    c_data = cred_resp.json().get("data", {})
+                cred_json = cred_resp.json() if cred_resp.status_code == 200 else {}
+                if cred_json and isinstance(cred_json, dict) and cred_json.get("data"):
+                    c_data = cred_json.get("data") or {}
                     balance = float(c_data.get("total_credits") or 0.0) - float(c_data.get("total_usage") or 0.0)
                     usage = float(c_data.get("total_usage") or 0.0)
                 else:
                     key_resp = await client.get("https://openrouter.ai/api/v1/auth/key", headers={"Authorization": f"Bearer {key}"})
-                    if key_resp.status_code == 200 and key_resp.json():
-                        data = key_resp.json().get("data", {})
+                    key_json = key_resp.json() if key_resp.status_code == 200 else {}
+                    if key_json and isinstance(key_json, dict):
+                        data = key_json.get("data") or {}
                         limit = data.get("limit")
                         usage = float(data.get("usage") or 0.0)
                         balance = (float(limit) - usage) if limit is not None else -usage
@@ -68,11 +75,12 @@ async def sync_finances(db: Session, settings: SystemSettings):
         if settings.deepseek_api_key:
             try:
                 resp = await client.get("https://api.deepseek.com/user/balance", headers={"Authorization": f"Bearer {settings.deepseek_api_key}"})
-                if resp.status_code == 200 and resp.json():
-                    balance_infos = resp.json().get("balance_infos", [])
-                    if balance_infos:
+                ds_json = resp.json() if resp.status_code == 200 else {}
+                if ds_json and isinstance(ds_json, dict):
+                    balance_infos = ds_json.get("balance_infos") or []
+                    if balance_infos and len(balance_infos) > 0 and balance_infos[0]:
                         infos = balance_infos[0]
-                        update_finance_db(db, "DeepSeek", float(infos.get("total_balance", 0)), 0.0)
+                        update_finance_db(db, "DeepSeek", float(infos.get("total_balance") or 0.0), 0.0)
             except Exception: pass
         if settings.mistral_api_key: update_finance_db(db, "Mistral", 0.0, 0.0)
         if settings.gemini_api_key: update_finance_db(db, "Gemini", 0.0, 0.0)
@@ -90,6 +98,7 @@ def update_finance_db(db, provider, balance, usage):
     except Exception as e: print(f"Finance DB Error: {e}")
 
 async def sync_providers_models(db: Session, settings: SystemSettings, sync_type: str = "Automatique"):
+    if not settings: return {"status": "error", "models_processed": 0}
     log_activity(f"Lancement de la synchronisation des modèles ({sync_type})...")
     added = 0
     models_to_process = {}
@@ -98,16 +107,17 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
             try:
                 resp = await client.get("https://openrouter.ai/api/v1/models")
                 if resp.status_code == 200 and resp.json():
-                    for item in resp.json().get("data", []):
+                    for item in (resp.json().get("data") or []):
                         try:
+                            if not item: continue
                             m_id = item.get("id")
                             if not m_id: continue
                             pricing = item.get("pricing") or {}
                             pp = float(pricing.get("prompt") or 0.0) * 1000000
                             pc = float(pricing.get("completion") or 0.0) * 1000000
                             is_free = (pp == 0.0 and pc == 0.0)
-                            desc_en = item.get("description", "Generic AI Model.")
-                            models_to_process[m_id] = {"provider": "openrouter", "name": item.get("name", "Inconnu"), "desc_en": desc_en, "domain": determine_domain(m_id), "is_free": is_free, "ctx": item.get("context_length", 0), "pp": pp, "pc": pc}
+                            desc_en = item.get("description") or "Generic AI Model."
+                            models_to_process[m_id] = {"provider": "openrouter", "name": item.get("name") or "Inconnu", "desc_en": desc_en, "domain": determine_domain(m_id), "is_free": is_free, "ctx": item.get("context_length") or 0, "pp": pp, "pc": pc}
                         except: pass
             except Exception as e: print(f"Erreur OR Models: {e}")
             
@@ -115,7 +125,8 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
             try:
                 resp = await client.get("https://api.groq.com/openai/v1/models", headers={"Authorization": f"Bearer {settings.groq_api_key}"})
                 if resp.status_code == 200 and resp.json():
-                    for item in resp.json().get("data", []):
+                    for item in (resp.json().get("data") or []):
+                        if not item or "id" not in item: continue
                         m_id = item["id"]
                         models_to_process[m_id] = {"provider": "groq", "name": m_id.capitalize(), "desc": "Modèle très rapide hébergé sur LPU Groq.", "domain": determine_domain(m_id), "is_free": True, "ctx": 8192, "pp": 0.0, "pc": 0.0}
             except Exception: pass
@@ -124,7 +135,8 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
             try:
                 resp = await client.get("https://api.deepseek.com/models", headers={"Authorization": f"Bearer {settings.deepseek_api_key}"})
                 if resp.status_code == 200 and resp.json():
-                    for item in resp.json().get("data", []):
+                    for item in (resp.json().get("data") or []):
+                        if not item or "id" not in item: continue
                         m_id = item["id"]
                         models_to_process[m_id] = {"provider": "deepseek", "name": m_id.capitalize(), "desc": "Modèle officiel du fournisseur DeepSeek.", "domain": determine_domain(m_id), "is_free": False, "ctx": 64000, "pp": 0.14, "pc": 0.28}
             except Exception: pass
@@ -133,7 +145,8 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
             try:
                 resp = await client.get("https://api.mistral.ai/v1/models", headers={"Authorization": f"Bearer {settings.mistral_api_key}"})
                 if resp.status_code == 200 and resp.json():
-                    for item in resp.json().get("data", []):
+                    for item in (resp.json().get("data") or []):
+                        if not item or "id" not in item: continue
                         m_id = item["id"]
                         models_to_process[m_id] = {"provider": "mistral", "name": m_id.capitalize(), "desc": "Modèle officiel développé par Mistral AI.", "domain": determine_domain(m_id), "is_free": False, "ctx": 32000, "pp": 0.2, "pc": 0.6}
             except Exception: pass
@@ -142,9 +155,10 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
             try:
                 resp = await client.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={settings.gemini_api_key}")
                 if resp.status_code == 200 and resp.json():
-                    for item in resp.json().get("models", []):
+                    for item in (resp.json().get("models") or []):
+                        if not item or "name" not in item: continue
                         m_id = item["name"].replace("models/", "")
-                        models_to_process[m_id] = {"provider": "gemini", "name": item.get("displayName", m_id), "desc": "Modèle natif de l'écosystème Google Gemini.", "domain": determine_domain(m_id), "is_free": True, "ctx": item.get("inputTokenLimit", 32000), "pp": 0.0, "pc": 0.0}
+                        models_to_process[m_id] = {"provider": "gemini", "name": item.get("displayName") or m_id, "desc": "Modèle natif de l'écosystème Google Gemini.", "domain": determine_domain(m_id), "is_free": True, "ctx": item.get("inputTokenLimit") or 32000, "pp": 0.0, "pc": 0.0}
             except Exception: pass
 
         if settings.cloudflare_account_id and settings.cloudflare_api_token:
@@ -152,7 +166,8 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
                 url = f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/models/search"
                 resp = await client.get(url, headers={"Authorization": f"Bearer {settings.cloudflare_api_token}"})
                 if resp.status_code == 200 and resp.json():
-                    for item in resp.json().get("result", []):
+                    for item in (resp.json().get("result") or []):
+                        if not item or not item.get("name"): continue
                         m_id = item.get("name")
                         models_to_process[m_id] = {"provider": "cloudflare", "name": m_id.split("/")[-1], "desc": "Modèle Serverless Cloudflare Workers AI.", "domain": determine_domain(m_id), "is_free": True, "ctx": 4096, "pp": 0.0, "pc": 0.0}
             except Exception: pass
@@ -208,7 +223,27 @@ def get_client_for_model(db: Session, model_id: str, settings: SystemSettings):
     
     return AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=settings.openrouter_api_key), "openrouter"
 
-async def ask_agent(client, model_id, messages, provider="openrouter", enable_web=True):
+def extract_safe_content(resp) -> str:
+    """Extrait le texte de la réponse OpenAI/OpenRouter en évitant toute erreur NoneType."""
+    if not resp:
+        raise ValueError("Réponse API vide (None).")
+    if getattr(resp, "error", None):
+        err_info = resp.error
+        if isinstance(err_info, dict):
+            raise ValueError(f"Erreur fournisseur: {err_info.get('message', err_info)}")
+        raise ValueError(f"Erreur fournisseur: {err_info}")
+    choices = getattr(resp, "choices", None)
+    if not choices or not isinstance(choices, list) or len(choices) == 0 or choices[0] is None:
+        raise ValueError("Aucun choix (choices) retourné par le modèle.")
+    msg = getattr(choices[0], "message", None)
+    if not msg:
+        raise ValueError("Objet message manquant dans la réponse.")
+    content = getattr(msg, "content", None)
+    if content is None:
+        raise ValueError("Le modèle a renvoyé un contenu vide (None).")
+    return str(content)
+
+async def ask_agent(client, model_id, messages, provider="openrouter", enable_web=True) -> str:
     kwargs = {"model": model_id, "messages": messages}
     if provider == "openrouter": 
         kwargs["extra_headers"] = {"HTTP-Referer": "https://aethas38.duckdns.org", "X-Title": "AETHAS38 Orchestrator"}
@@ -219,27 +254,24 @@ async def ask_agent(client, model_id, messages, provider="openrouter", enable_we
         
         try:
             resp = await client.chat.completions.create(**kwargs)
-            if resp and hasattr(resp, 'choices') and resp.choices:
-                return resp.choices[0].message.content
+            return extract_safe_content(resp)
         except Exception as e:
             if enable_web:
                 log_activity(f"Repli sans plugin web pour {model_id} : {str(e)[:80]}")
                 kwargs["extra_body"] = {"plugins": [{"id": "context-compression"}]}
                 resp = await client.chat.completions.create(**kwargs)
-                if resp and hasattr(resp, 'choices') and resp.choices:
-                    return resp.choices[0].message.content
+                return extract_safe_content(resp)
             raise e
-        
-    resp = await client.chat.completions.create(**kwargs)
-    if resp and hasattr(resp, 'choices') and resp.choices:
-        return resp.choices[0].message.content
-    return "[Erreur : L'IA a renvoyé une réponse vide]"
+    else:
+        resp = await client.chat.completions.create(**kwargs)
+        return extract_safe_content(resp)
 
 async def run_orchestrator(db: Session, history: list, settings: SystemSettings, config: dict, extracted_files: list = None) -> str:
-    workers = config.get("workers", ["gemini-3.5-flash-lite"])
-    user_prompt = history[-1].content
+    if not config: config = {}
+    workers = config.get("workers") or ["gemini-3.5-flash-lite"]
+    user_prompt = (history[-1].content or "") if history else ""
     original_user_text = user_prompt.split("\n\n[Fichiers joints")[0] if "[Fichiers joints" in user_prompt else user_prompt
-    formatted_history = [{"role": msg.role, "content": msg.content} for msg in history[:-1]]
+    formatted_history = [{"role": msg.role, "content": msg.content or ""} for msg in history[:-1]] if len(history) > 1 else []
 
     final_response = ""
     try:
@@ -253,41 +285,43 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
         if extracted_files:
             log_activity(f"Traitement Map-Reduce de {len(extracted_files)} fichier(s) joint(s).")
             async def process_single_file(f):
+                if not f or not isinstance(f, dict): return ""
+                fname = f.get('name') or 'Fichier_inconnu'
+                content = f.get('content') or ''
                 file_sys = "You are an expert data analyst and senior developer. Extract the most important technical information from the file without losing critical code syntax."
-                content = f['content']
                 chunk_size = 150000 
                 
                 if len(content) > chunk_size:
                     chunks = [content[i:i+chunk_size] for i in range(0, len(content), chunk_size)]
                     chunk_analyses = []
-                    log_activity(f"Fichier lourd ({f['name']}): Chunking en {len(chunks)} morceaux.")
+                    log_activity(f"Fichier lourd ({fname}): Chunking en {len(chunks)} morceaux.")
                     for idx, chunk in enumerate(chunks):
-                        file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nPartie {idx+1}/{len(chunks)} du fichier '{f['name']}'. Analysez, extrayez et résumez le code, VBA, SQL ou les données pertinentes.\n\nContenu :\n```\n{chunk}\n```"
+                        file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nPartie {idx+1}/{len(chunks)} du fichier '{fname}'. Analysez, extrayez et résumez le code, VBA, SQL ou les données pertinentes.\n\nContenu :\n```\n{chunk}\n```"
                         try:
                             analysis = await ask_agent(p_client, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}], p_prov, enable_web=False)
-                            chunk_analyses.append(analysis)
-                            log_activity(f"Analyse chunk {idx+1}/{len(chunks)} pour {f['name']} réussie.")
+                            chunk_analyses.append(analysis or "[ Analyse vide ]")
+                            log_activity(f"Analyse chunk {idx+1}/{len(chunks)} pour {fname} réussie.")
                         except Exception as e:
                             chunk_analyses.append(f"[Erreur sur la partie {idx+1}: {str(e)}]")
-                            log_activity(f"Erreur chunk {idx+1}/{len(chunks)} pour {f['name']}: {str(e)}")
+                            log_activity(f"Erreur chunk {idx+1}/{len(chunks)} pour {fname}: {str(e)}")
                         
                         await asyncio.sleep(1.5) 
                     
-                    return f"\n\n--- Extraction du fichier {f['name']} (en {len(chunks)} parties) ---\n" + "\n".join(chunk_analyses)
+                    return f"\n\n--- Extraction du fichier {fname} (en {len(chunks)} parties) ---\n" + "\n".join(chunk_analyses)
                 else:
-                    file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nAnalysez le fichier ci-dessous. Extrayez, résumez et conservez méticuleusement tout le code, les macros VBA, les requêtes SQL, ou les données métier pertinentes pour répondre à la demande.\n\nFichier : {f['name']}\nContenu :\n```\n{content}\n```"
+                    file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nAnalysez le fichier ci-dessous. Extrayez, résumez et conservez méticuleusement tout le code, les macros VBA, les requêtes SQL, ou les données métier pertinentes pour répondre à la demande.\n\nFichier : {fname}\nContenu :\n```\n{content}\n```"
                     try:
                         analysis = await ask_agent(p_client, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}], p_prov, enable_web=False)
-                        log_activity(f"Analyse intégrale de {f['name']} réussie.")
-                        return f"\n\n--- Extraction du fichier {f['name']} ---\n{analysis}"
+                        log_activity(f"Analyse intégrale de {fname} réussie.")
+                        return f"\n\n--- Extraction du fichier {fname} ---\n{analysis}"
                     except Exception as e:
-                        log_activity(f"Erreur d'analyse sur {f['name']}: {str(e)}")
-                        return f"\n\n--- Erreur sur {f['name']} ---\n{str(e)}"
+                        log_activity(f"Erreur d'analyse sur {fname}: {str(e)}")
+                        return f"\n\n--- Erreur sur {fname} ---\n{str(e)}"
 
             file_analyses = []
             for f in extracted_files:
                 analysis = await process_single_file(f)
-                file_analyses.append(analysis)
+                file_analyses.append(analysis or "")
                 await asyncio.sleep(1.5)
             
             files_context = "".join(file_analyses)
@@ -332,6 +366,8 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
         log_activity("Orchestration terminée avec succès.")
 
     except Exception as e:
+        tb_str = traceback.format_exc()
+        system_logger.error(f"Traceback complet:\n{tb_str}")
         final_response = f"L'IA a rencontré une erreur critique: {str(e)}"
         log_activity(f"ERREUR CRITIQUE: {str(e)}")
     
