@@ -24,10 +24,10 @@ jobs:
 
       - name: Connexion au registre Gitea (HTTPS) et Publication du Paquet
         run: |
-          # 1. Connexion au registre Gitea via son URL HTTPS officielle
-          echo "${{ secrets.GITEA_TOKEN || gitea.token }}" | docker login ${{ env.REGISTRY }} -u ${{ gitea.actor }} --password-stdin
+          # Connexion sécurisée en utilisant vos secrets Gitea
+          echo "${{ secrets.REGISTRY_TOKEN }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
 
-          # 2. Construction, Tag et Push des images (version et latest)
+          # Construction, Tag et Push des images
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             VERSION="${GITHUB_REF#refs/tags/}"
             TAGGED_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
