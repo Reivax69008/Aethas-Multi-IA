@@ -24,13 +24,15 @@ jobs:
 
       - name: Connexion au registre Gitea et Publication du Paquet
         run: |
-          # 1. Contourner la sécurité SSL pour le registre HTTP local de Gitea
-          export DOCKER_TLS_VERIFY=0
+          # Correction : Désactivation explicite du socket TLS pour forcer le HTTP local pur
+          unset DOCKER_TLS_VERIFY
+          unset DOCKER_HOST
+          unset DOCKER_CERT_PATH
 
-          # 2. Connexion au registre Gitea (192.168.1.20:3000)
+          # Connexion au registre Gitea local (192.168.1.20:3000)
           echo "${{ secrets.GITEA_TOKEN || gitea.token }}" | docker login ${{ env.REGISTRY }} -u ${{ gitea.actor }} --password-stdin
 
-          # 3. Construction et Push du paquet
+          # Construction et Push du paquet
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             VERSION="${GITHUB_REF#refs/tags/}"
             TAGGED_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
