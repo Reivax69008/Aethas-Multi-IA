@@ -64,9 +64,9 @@ class ProjectConfigUpdate(BaseModel):
     config_json: str
 
 class OrchestratorConfig(BaseModel):
-    mode: Optional[str] = "multi"          # "mono" ou "multi" (Point 2)
-    theme: Optional[str] = "general"       # "general", "code", "ocr_ce2", "web", "math" (Points 1 & 3)
-    enable_web: Optional[bool] = True      # Activation recherche web (Point 5)
+    mode: Optional[str] = "multi"
+    theme: Optional[str] = "general"
+    enable_web: Optional[bool] = True
     workers: List[str]
     prompter: Optional[str] = "gemini-3.5-flash-lite"
     concatenator: Optional[str] = "gemini-3.5-flash-lite"
@@ -88,6 +88,19 @@ class MessageResponse(MessageBase):
     created_at: datetime
     project_id: int
     class Config: from_attributes = True
+
+class MediaGenerateRequest(BaseModel):
+    prompt: str
+    media_type: str  # "image" ou "video"
+    model_id: str
+    prompter_id: Optional[str] = "gemini-3.5-flash-lite"
+    optimize_prompt: Optional[bool] = True
+
+class MediaGenerateResponse(BaseModel):
+    media_url: str
+    media_type: str
+    optimized_prompt: str
+    model_used: str
 
 class PasswordChange(BaseModel):
     old_password: str

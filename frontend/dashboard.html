@@ -13,20 +13,20 @@
     <style>
         body { background-color: #0f172a; color: #f8fafc; font-family: 'Inter', sans-serif; }
         .neon-text { background: linear-gradient(to right, #06b6d4, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
     </style>
 </head>
-<body class="h-screen flex overflow-hidden">
+<body class="h-screen w-screen flex overflow-hidden">
 
-<div id="app" class="flex w-full h-full relative bg-aethas-dark">
+<div id="app" class="flex w-full h-full relative bg-aethas-dark overflow-hidden">
 
     <!-- TOAST NOTIFICATION TEMPORAIRE -->
-    <div v-if="toastVisible" class="fixed bottom-6 right-6 bg-gray-800 border-l-4 border-aethas-cyan text-gray-200 p-4 rounded shadow-[0_0_15px_rgba(6,182,212,0.3)] z-[200] flex items-center gap-3 transition-opacity duration-300">
-        <i data-lucide="check-circle" class="w-5 h-5 text-aethas-cyan"></i>
-        <span class="text-sm font-medium">{{ toastMessage }}</span>
+    <div v-if="toastVisible" class="fixed bottom-6 right-6 bg-gray-800 border-l-4 border-aethas-cyan text-gray-200 p-4 rounded shadow-[0_0_15px_rgba(6,182,212,0.3)] z-[200] flex items-center gap-3 transition-opacity duration-300 max-w-md">
+        <i data-lucide="check-circle" class="w-5 h-5 text-aethas-cyan flex-shrink-0"></i>
+        <span class="text-xs font-medium">{{ toastMessage }}</span>
     </div>
 
     <!-- MODAL ASSIGNATION MODÈLE -->
@@ -38,54 +38,28 @@
             </div>
             <div class="p-6 space-y-4">
                 <div v-if="assignMessage" class="p-3 rounded text-sm text-center bg-green-900/50 text-green-200 border border-green-500">{{ assignMessage }}</div>
-                
                 <div>
                     <label class="block text-sm text-gray-300 mb-1">Modèle sélectionné</label>
                     <input type="text" :value="assignForm.modelId" disabled class="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-aethas-cyan font-mono text-xs">
                 </div>
-                
                 <div>
                     <label class="block text-sm text-gray-300 mb-1">Associer à la discussion :</label>
                     <select v-model="assignForm.projectId" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none text-gray-200">
                         <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.title }}</option>
                     </select>
                 </div>
-
                 <div>
                     <label class="block text-sm text-gray-300 mb-1">Définir le rôle :</label>
                     <select v-model="assignForm.role" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none text-gray-200">
-                        <option value="prompter">Prompteur</option>
-                        <option value="worker1">Travailleur 1</option>
+                        <option value="worker1">Travailleur 1 (IA Principale)</option>
                         <option value="worker2">Travailleur 2</option>
                         <option value="worker3">Travailleur 3</option>
                         <option value="worker4">Travailleur 4</option>
                         <option value="worker5">Travailleur 5</option>
-                        <option value="concatenator">Concaténeur</option>
                     </select>
                 </div>
-                
                 <button @click="confirmAssignModel" class="w-full mt-4 bg-aethas-cyan hover:bg-cyan-600 text-black font-bold py-2.5 px-4 rounded-lg transition-colors">
                     Valider l'assignation
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODAL PARAMÈTRES (PROFIL) -->
-    <div v-if="isSettingsModalOpen" class="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
-        <div class="bg-aethas-panel border border-gray-600 rounded-2xl w-full max-w-md overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.7)]">
-            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50">
-                <h2 class="text-lg font-bold text-white flex items-center gap-2"><i data-lucide="settings" class="w-5 h-5 text-aethas-cyan"></i> Paramètres</h2>
-                <button @click="closeSettings" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
-            </div>
-            <div class="p-6 space-y-4">
-                <h3 class="text-sm font-semibold text-aethas-cyan uppercase tracking-wider mb-2">Sécurité du compte</h3>
-                <div v-if="settingsMessage" :class="['p-3 rounded text-sm text-center', settingsMessage.includes('succès') ? 'bg-green-900/50 text-green-200 border border-green-500' : 'bg-red-900/50 text-red-200 border border-red-500']">{{ settingsMessage }}</div>
-                <div><label class="block text-sm text-gray-300 mb-1">Ancien mot de passe</label><input v-model="passForm.old" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none"></div>
-                <div><label class="block text-sm text-gray-300 mb-1">Nouveau mot de passe</label><input v-model="passForm.new" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none"></div>
-                <div><label class="block text-sm text-gray-300 mb-1">Confirmer</label><input v-model="passForm.confirm" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2 focus:border-aethas-cyan focus:outline-none"></div>
-                <button @click="changePassword" :disabled="isSavingSettings" class="w-full mt-4 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2.5 px-4 rounded-lg transition-colors border border-gray-500 disabled:opacity-50">
-                    <span v-if="isSavingSettings">Mise à jour...</span><span v-else>Modifier</span>
                 </button>
             </div>
         </div>
@@ -102,11 +76,15 @@
                 <button @click="toggleSidebar" class="md:hidden text-gray-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
             
-            <div class="p-4 space-y-2">
-                <button @click="createNewProject" :disabled="isLoading" class="w-full bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 rounded-lg py-2 px-4 flex items-center justify-center gap-2 shadow-md">
-                    <i data-lucide="plus" class="w-4 h-4 text-aethas-cyan"></i> Nouveau Projet
+            <div class="p-3 space-y-2">
+                <button @click="createNewProject" :disabled="isLoading" class="w-full bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 rounded-lg py-2 px-3 flex items-center justify-center gap-2 shadow-md text-sm">
+                    <i data-lucide="plus" class="w-4 h-4 text-aethas-cyan"></i> Nouveau Projet Chat
                 </button>
-                <button v-if="user.is_admin" @click="activeView = 'models'" :class="['w-full border rounded-lg py-2 px-4 flex items-center justify-center gap-2 transition-colors', activeView === 'models' ? 'bg-aethas-cyan/10 border-aethas-cyan text-aethas-cyan' : 'bg-aethas-dark hover:bg-gray-800 text-gray-300 border-gray-700']">
+                <!-- Point 6 : Bouton Studio Image & Vidéo -->
+                <button @click="activeView = 'media'" :class="['w-full border rounded-lg py-2 px-3 flex items-center justify-center gap-2 transition-colors text-sm font-medium', activeView === 'media' ? 'bg-aethas-purple/20 border-aethas-purple text-purple-300' : 'bg-aethas-dark hover:bg-gray-800 text-gray-300 border-gray-700']">
+                    <i data-lucide="film" class="w-4 h-4 text-aethas-purple"></i> Studio Image & Vidéo
+                </button>
+                <button v-if="user.is_admin" @click="activeView = 'models'" :class="['w-full border rounded-lg py-2 px-3 flex items-center justify-center gap-2 transition-colors text-sm', activeView === 'models' ? 'bg-aethas-cyan/10 border-aethas-cyan text-aethas-cyan' : 'bg-aethas-dark hover:bg-gray-800 text-gray-300 border-gray-700']">
                     <i data-lucide="database" class="w-4 h-4"></i> Modèles & Finances
                 </button>
             </div>
@@ -118,6 +96,7 @@
                         <li v-for="project in pinnedProjects" :key="project.id" @click="selectProject(project)" :class="['group flex items-center justify-between p-2 rounded cursor-pointer text-sm', activeView === 'chat' && activeProject && activeProject.id === project.id ? 'bg-gray-700 text-white' : 'hover:bg-gray-800 text-gray-300']">
                             <div class="flex items-center gap-2 truncate"><i data-lucide="pin" class="w-3 h-3 text-aethas-cyan"></i><span class="truncate">{{ project.title }}</span></div>
                             <div class="hidden group-hover:flex items-center gap-1 bg-gray-800 pl-2 rounded">
+                                <button @click.stop="renameProject(project)" class="text-gray-400 hover:text-aethas-cyan"><i data-lucide="edit-2" class="w-3.5 h-3.5"></i></button>
                                 <button @click.stop="togglePin(project.id)" class="text-gray-400 hover:text-white"><i data-lucide="pin-off" class="w-3.5 h-3.5"></i></button>
                                 <button @click.stop="deleteProject(project.id)" class="text-red-500 hover:text-red-400"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
                             </div>
@@ -142,11 +121,16 @@
                 </div>
             </div>
 
-            <!-- TERMINAL SYSTEME -->
+            <!-- TERMINAL SYSTEME + BOUTON EXTRACTION LOGS (Point 5 & 11) -->
             <div class="h-40 border-t border-gray-700 bg-black flex flex-col font-mono text-[9px] flex-shrink-0 shadow-inner">
                 <div class="p-1.5 bg-gray-900 border-b border-gray-700 text-aethas-cyan font-bold flex items-center justify-between">
-                    <div class="flex items-center gap-1"><i data-lucide="terminal" class="w-3 h-3"></i> SYSTEM LOGS</div>
-                    <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                    <div class="flex items-center gap-1"><i data-lucide="terminal" class="w-3 h-3"></i> SYSTEM LOGS (30j)</div>
+                    <div class="flex items-center gap-2">
+                        <a href="/api/logs/download" target="_blank" class="text-gray-200 hover:text-white bg-gray-800 hover:bg-gray-700 px-1.5 py-0.5 rounded border border-aethas-cyan/50 flex items-center gap-1" title="Télécharger le fichier de logs complet">
+                            <i data-lucide="download" class="w-2.5 h-2.5 text-aethas-cyan"></i> .LOG
+                        </a>
+                        <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                    </div>
                 </div>
                 <div class="flex-1 overflow-y-auto p-2 custom-scrollbar text-green-400 space-y-1" id="terminal-logs">
                     <div v-for="(log, i) in systemLogs" :key="i" class="break-words">{{ log }}</div>
@@ -179,10 +163,10 @@
         </aside>
     </div>
 
-    <!-- ZONE PRINCIPALE -->
-    <main class="flex-1 flex flex-col min-w-0 z-10 transition-all duration-300 bg-aethas-dark relative">
+    <!-- ZONE PRINCIPALE PLEINE LARGEUR ADAPTATIVE (Point 4) -->
+    <main class="flex-1 flex flex-col min-w-0 w-full h-full z-10 transition-all duration-300 bg-aethas-dark relative overflow-hidden">
         
-        <header class="flex items-center justify-between p-4 border-b border-gray-700 bg-aethas-panel h-[73px]">
+        <header class="flex items-center justify-between px-4 py-3 border-b border-gray-700 bg-aethas-panel h-[64px] w-full flex-shrink-0">
             <div class="flex items-center gap-3">
                 <button @click="toggleSidebar" class="text-gray-400 hover:text-white p-1.5 rounded hover:bg-gray-700"><i data-lucide="menu" class="w-6 h-6"></i></button>
                 <div v-show="!isSidebarOpen" class="flex items-center gap-2">
@@ -191,7 +175,7 @@
                 </div>
             </div>
             <div v-if="activeView === 'chat' && activeProject" class="text-sm font-medium text-gray-300 flex items-center gap-4">
-                <span class="truncate max-w-[200px] md:max-w-md">{{ activeProject.title }}</span>
+                <span class="truncate max-w-[250px] md:max-w-xl">{{ activeProject.title }}</span>
                 <div class="flex items-center gap-2 border-l border-gray-600 pl-4">
                     <button @click="exportProject('txt')" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="download" class="w-3 h-3"></i> TXT</button>
                     <button @click="exportProject('json')" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="file-json" class="w-3 h-3"></i> JSON</button>
@@ -199,9 +183,103 @@
             </div>
         </header>
 
+        <!-- VUE : STUDIO IMAGE & VIDÉO (Point 6) -->
+        <div v-if="activeView === 'media'" class="flex-1 w-full overflow-y-auto p-4 md:p-6 space-y-6 custom-scrollbar">
+            <div class="w-full space-y-6">
+                <div class="flex flex-wrap justify-between items-center border-b border-gray-700 pb-4 gap-4">
+                    <div>
+                        <h2 class="text-2xl font-bold text-white flex items-center gap-2">
+                            <i data-lucide="film" class="w-6 h-6 text-aethas-purple"></i> Studio Génération Image & Vidéo
+                        </h2>
+                        <p class="text-xs text-gray-400 mt-1">Générez des visuels et vidéos via HuggingFace, Cloudflare Workers AI et OpenRouter avec optimisation de prompt par Gemini.</p>
+                    </div>
+                    <div class="inline-flex rounded-xl border border-gray-600 overflow-hidden text-sm font-bold">
+                        <button @click="mediaType = 'image'" :class="['px-4 py-2 flex items-center gap-2 transition-colors', mediaType === 'image' ? 'bg-aethas-cyan text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700']">
+                            🎨 Mode Image
+                        </button>
+                        <button @click="mediaType = 'video'" :class="['px-4 py-2 flex items-center gap-2 transition-colors', mediaType === 'video' ? 'bg-aethas-purple text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700']">
+                            🎬 Mode Vidéo
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Filtres et Sélection des Modèles Média -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 bg-aethas-panel border border-gray-700 p-4 rounded-xl shadow-lg">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 uppercase mb-1">1. Catégorie de Prix</label>
+                        <select v-model="mediaPricing" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-aethas-cyan">
+                            <option value="">Tous (Gratuits & Payants)</option>
+                            <option value="free">Gratuits uniquement</option>
+                            <option value="paid">Payants uniquement</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-gray-400 uppercase mb-1">2. Fournisseur</label>
+                        <select v-model="mediaProvider" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-aethas-cyan">
+                            <option value="">Tous (HF, Cloudflare, OpenRouter)</option>
+                            <option value="huggingface">HUGGING FACE</option>
+                            <option value="cloudflare">CLOUDFLARE</option>
+                            <option value="openrouter">OPENROUTER</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-aethas-cyan uppercase mb-1">3. Modèle {{ mediaType === 'image' ? 'Image' : 'Vidéo' }}</label>
+                        <select v-model="selectedMediaModel" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-aethas-cyan">
+                            <option v-for="m in filteredMediaModels" :key="m.model_id" :value="m.model_id">
+                                [{{ m.provider.toUpperCase() }}] {{ m.name || m.model_id }} ({{ m.is_free ? 'GRATUIT' : 'PAYANT' }})
+                            </option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-amber-400 uppercase mb-1">4. Prompteur Visuel (Gemini)</label>
+                        <select v-model="selectedMediaPrompter" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-aethas-cyan">
+                            <option v-for="gm in prompterConcatModels" :key="gm.model_id" :value="gm.model_id">{{ gm.name }}</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Zone de prompt Média -->
+                <div class="bg-gray-800 border border-gray-600 rounded-2xl p-4 shadow-lg space-y-3">
+                    <textarea v-model="mediaPrompt" rows="3" class="w-full bg-aethas-dark border border-gray-700 rounded-xl p-3 text-sm text-gray-200 focus:border-aethas-cyan outline-none resize-none" :placeholder="mediaType === 'image' ? 'Décrivez l\'image souhaitée en français (ex: Un logo de club de fléchettes style biker noir et blanc très détaillé)...' : 'Décrivez la scène vidéo souhaitée en français (ex: Vue aérienne cinématique d\'un récif corallien sous-marin avec des plongeurs)...'"></textarea>
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs text-gray-400">Le Prompteur Gemini traduira et enrichira automatiquement votre description pour le moteur {{ mediaType }}.</span>
+                        <button @click="generateMediaAction" :disabled="isGeneratingMedia || !mediaPrompt.trim() || !selectedMediaModel" class="bg-gradient-to-r from-aethas-cyan to-aethas-purple hover:opacity-90 text-white font-bold px-6 py-2.5 rounded-xl text-sm flex items-center gap-2 disabled:opacity-50">
+                            <i data-lucide="sparkles" class="w-4 h-4"></i>
+                            <span v-if="isGeneratingMedia">Génération en cours...</span>
+                            <span v-else>Générer {{ mediaType === 'image' ? 'l\'Image' : 'la Vidéo' }}</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Galerie des résultats Média -->
+                <div v-if="generatedMediaList.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div v-for="(item, idx) in generatedMediaList" :key="idx" class="bg-aethas-panel border border-gray-700 rounded-xl overflow-hidden shadow-lg flex flex-col">
+                        <div class="bg-black flex items-center justify-center min-h-[260px] max-h-[420px] overflow-hidden">
+                            <img v-if="item.media_type === 'image'" :src="item.media_url" class="w-full h-full object-contain">
+                            <video v-else :src="item.media_url" controls autoplay loop class="w-full h-full object-contain"></video>
+                        </div>
+                        <div class="p-4 space-y-2 flex-1 flex flex-col justify-between">
+                            <div>
+                                <div class="text-xs font-mono text-aethas-cyan truncate">{{ item.model_used }}</div>
+                                <p class="text-xs text-gray-300 mt-1 line-clamp-2" :title="item.optimized_prompt">{{ item.optimized_prompt }}</p>
+                            </div>
+                            <div class="pt-3 border-t border-gray-700 flex justify-end">
+                                <a :href="item.media_url" :download="'aethas38_' + item.media_type + '_' + Date.now() + (item.media_type === 'video' ? '.mp4' : '.png')" class="text-xs bg-gray-800 hover:bg-gray-700 text-aethas-cyan border border-gray-600 px-3 py-1.5 rounded flex items-center gap-1">
+                                    <i data-lucide="download" class="w-3.5 h-3.5"></i> Télécharger
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- VUE : CONFIGURATION -->
-        <div v-if="activeView === 'settings'" class="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
-            <div class="max-w-4xl mx-auto space-y-6">
+        <div v-if="activeView === 'settings'" class="flex-1 w-full overflow-y-auto p-4 md:p-8 custom-scrollbar">
+            <div class="w-full max-w-6xl mx-auto space-y-6">
                 <h2 class="text-2xl font-bold text-white flex items-center gap-2 border-b border-gray-700 pb-4"><i data-lucide="settings-2" class="w-6 h-6 text-aethas-cyan"></i> Configuration Système</h2>
                 
                 <div class="flex border-b border-gray-700">
@@ -238,10 +316,11 @@
 
                 <div v-if="settingsTab === 'admin' && user.is_admin" class="space-y-6">
                     <div class="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                        <h3 class="text-lg font-semibold text-red-400 mb-4">Outils Administrateur</h3>
-                        <div class="flex gap-4">
+                        <h3 class="text-lg font-semibold text-red-400 mb-4">Outils Administrateur & Journaux</h3>
+                        <div class="flex flex-wrap gap-4">
                             <button @click="activeView = 'models'" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600">Ouvrir le panneau Modèles IA</button>
                             <a href="/api/models/export" target="_blank" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600">Exporter DB Modèles (ZIP CSV/MD)</a>
+                            <a href="/api/logs/download" target="_blank" class="bg-aethas-cyan/20 hover:bg-aethas-cyan/30 text-aethas-cyan px-4 py-2 rounded-lg text-sm border border-aethas-cyan">Télécharger les Logs Système (.log)</a>
                         </div>
                     </div>
                 </div>
@@ -249,29 +328,20 @@
                 <div v-if="settingsTab === 'super' && user.is_superadmin" class="space-y-6">
                     <div class="bg-gray-800 p-6 rounded-xl border border-gray-700 border-l-4 border-l-aethas-purple">
                         <h3 class="text-lg font-semibold text-purple-400 mb-4">Espace Réservé Super-Admin - Clés API & SMTP</h3>
-                        
                         <div v-if="adminSettingsMessage" class="p-3 rounded text-sm mb-4 bg-gray-900 border border-aethas-purple text-purple-300">{{ adminSettingsMessage }}</div>
-
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <!-- Clés API -->
-                            <div><label class="block text-xs text-gray-400 mb-1">OpenRouter API Key</label><input v-model="adminSettings.openrouter_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                            <div><label class="block text-xs text-gray-400 mb-1">OpenRouter API Key (Travailleur)</label><input v-model="adminSettings.openrouter_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
                             <div><label class="block text-xs text-gray-400 mb-1">OpenRouter Management Key</label><input v-model="adminSettings.openrouter_management_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
-                            <div><label class="block text-xs text-gray-400 mb-1">Gemini API Key</label><input v-model="adminSettings.gemini_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
-                            <div><label class="block text-xs text-gray-400 mb-1">Groq API Key</label><input v-model="adminSettings.groq_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
-                            <div><label class="block text-xs text-gray-400 mb-1">DeepSeek API Key</label><input v-model="adminSettings.deepseek_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
-                            <div><label class="block text-xs text-gray-400 mb-1">Mistral API Key</label><input v-model="adminSettings.mistral_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
-                            <div><label class="block text-xs text-gray-400 mb-1">HuggingFace API Key</label><input v-model="adminSettings.huggingface_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
-                            <div><label class="block text-xs text-gray-400 mb-1">Cloudflare Account ID</label><input v-model="adminSettings.cloudflare_account_id" type="text" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
-                            <div><label class="block text-xs text-gray-400 mb-1">Cloudflare API Token</label><input v-model="adminSettings.cloudflare_api_token" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
-                            
-                            <!-- SMTP -->
+                            <div><label class="block text-xs text-gray-400 mb-1">HuggingFace API Key (Travailleur & Média)</label><input v-model="adminSettings.huggingface_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                            <div><label class="block text-xs text-gray-400 mb-1">Cloudflare Account ID (Travailleur & Média)</label><input v-model="adminSettings.cloudflare_account_id" type="text" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                            <div><label class="block text-xs text-gray-400 mb-1">Cloudflare API Token (Travailleur & Média)</label><input v-model="adminSettings.cloudflare_api_token" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                            <div><label class="block text-xs text-gray-400 mb-1">Gemini API Key (Prompteur & Concaténeur)</label><input v-model="adminSettings.gemini_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
                             <div class="col-span-1 md:col-span-2 mt-2 border-t border-gray-700 pt-4"><h4 class="text-sm font-semibold text-gray-300 mb-2">Configuration SMTP</h4></div>
                             <div><label class="block text-xs text-gray-400 mb-1">SMTP Host</label><input v-model="adminSettings.smtp_host" type="text" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
                             <div><label class="block text-xs text-gray-400 mb-1">SMTP Port</label><input v-model.number="adminSettings.smtp_port" type="number" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
                             <div><label class="block text-xs text-gray-400 mb-1">SMTP User</label><input v-model="adminSettings.smtp_user" type="text" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
                             <div><label class="block text-xs text-gray-400 mb-1">SMTP Password</label><input v-model="adminSettings.smtp_password" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
                         </div>
-                        
                         <button @click="saveAdminSettings" :disabled="isSavingAdminSettings" class="mt-6 w-full bg-aethas-purple hover:bg-purple-600 text-white font-bold py-2 rounded transition-colors disabled:opacity-50">
                             Sauvegarder la configuration
                         </button>
@@ -281,7 +351,7 @@
         </div>
 
         <!-- VUE : MODÈLES ET FINANCES -->
-        <div v-if="activeView === 'models' && user.is_admin" class="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 custom-scrollbar">
+        <div v-if="activeView === 'models' && user.is_admin" class="flex-1 w-full overflow-y-auto p-4 md:p-8 space-y-6 custom-scrollbar">
             <div class="flex justify-between items-end border-b border-gray-700 pb-4">
                 <div>
                     <h2 class="text-2xl font-bold text-white flex items-center gap-2"><i data-lucide="cpu" class="w-6 h-6 text-aethas-cyan"></i> Modèles & Finances API</h2>
@@ -290,7 +360,7 @@
                 <button @click="syncModels" :disabled="isSyncing" class="bg-aethas-cyan hover:bg-cyan-600 text-aethas-dark font-semibold py-2 px-4 rounded flex items-center gap-2 text-sm disabled:opacity-50"><i data-lucide="refresh-cw" :class="{'animate-spin': isSyncing}" class="w-4 h-4"></i> Forcer Extraction</button>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div v-for="fin in financesList" :key="fin.provider" class="bg-gray-800 border border-gray-700 rounded-xl p-4 flex flex-col justify-between">
                     <div class="flex justify-between items-start mb-2"><span class="font-bold text-gray-200 capitalize">{{ fin.provider }}</span><i data-lucide="wallet" class="w-5 h-5 text-gray-500"></i></div>
                     <div>
@@ -300,18 +370,23 @@
                 </div>
             </div>
 
-            <div class="bg-aethas-panel border border-gray-700 rounded-xl overflow-hidden flex flex-col">
+            <div class="bg-aethas-panel border border-gray-700 rounded-xl overflow-hidden flex flex-col w-full">
                 <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex flex-wrap gap-4 items-center">
                     <input v-model="filterSearch" type="text" placeholder="Rechercher..." class="bg-gray-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 w-full md:w-64 focus:border-aethas-cyan focus:outline-none">
                     <select v-model="filterProvider" class="bg-gray-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:outline-none">
-                        <option value="">Tous les fournisseurs</option>
-                        <option v-for="p in uniqueProviders" :key="p" :value="p">{{ p.toUpperCase() }}</option>
+                        <option value="">Fournisseurs Travailleurs (HF / CF / OR)</option>
+                        <option value="openrouter">OPENROUTER</option>
+                        <option value="cloudflare">CLOUDFLARE</option>
+                        <option value="huggingface">HUGGINGFACE</option>
+                        <option value="gemini">GEMINI (Prompteur/Concaténeur)</option>
                     </select>
                     <select v-model="filterDomain" class="bg-gray-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:outline-none">
                         <option value="">Tous les domaines</option>
                         <option value="Texte Polyvalent">Texte Polyvalent</option>
                         <option value="Code & Logique">Code & Logique</option>
                         <option value="Vision & Texte">Vision & Texte</option>
+                        <option value="Génération Image">Génération Image</option>
+                        <option value="Génération Vidéo">Génération Vidéo</option>
                         <option value="Audio">Audio</option>
                     </select>
                     <select v-model="filterPricing" class="bg-gray-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:outline-none">
@@ -319,12 +394,11 @@
                         <option value="free">Gratuits uniquement</option>
                         <option value="paid">Payants</option>
                     </select>
-                    
                     <button @click="exportCSV" class="bg-aethas-panel border border-gray-600 hover:border-aethas-cyan text-gray-300 hover:text-white px-3 py-1.5 rounded flex items-center gap-2 text-sm transition-colors md:ml-auto">
                         <i data-lucide="download" class="w-4 h-4 text-green-500"></i> Export CSV
                     </button>
                 </div>
-                <div class="overflow-x-auto max-h-[500px] custom-scrollbar">
+                <div class="overflow-x-auto max-h-[550px] custom-scrollbar w-full">
                     <table class="w-full text-left text-sm text-gray-300">
                         <thead class="text-xs uppercase bg-gray-800 text-gray-400 sticky top-0">
                             <tr>
@@ -340,14 +414,15 @@
                         <tbody>
                             <tr v-for="model in filteredModels" :key="model.model_id" class="border-b border-gray-700 hover:bg-gray-800/50 transition-colors">
                                 <td class="px-4 py-3 text-center">
-                                    <input type="radio" name="modelSelect" @click.prevent="openAssignModal(model.model_id)" class="w-4 h-4 text-aethas-cyan bg-gray-900 border-gray-600 focus:ring-aethas-cyan cursor-pointer">
+                                    <input v-if="['openrouter', 'cloudflare', 'huggingface'].includes(model.provider)" type="radio" name="modelSelect" @click.prevent="openAssignModal(model.model_id)" class="w-4 h-4 text-aethas-cyan bg-gray-900 border-gray-600 focus:ring-aethas-cyan cursor-pointer">
+                                    <span v-else class="text-[10px] text-amber-400 font-semibold">Système</span>
                                 </td>
                                 <td class="px-4 py-3 font-mono text-xs text-aethas-cyan break-all">{{ model.model_id }}</td>
-                                <td class="px-4 py-3 capitalize">{{ model.provider }}</td>
+                                <td class="px-4 py-3 uppercase text-xs font-bold">{{ model.provider }}</td>
                                 <td class="px-4 py-3"><span class="bg-gray-700 text-gray-200 px-2 py-1 rounded text-xs">{{ model.domain }}</span></td>
                                 <td class="px-4 py-3 font-mono text-xs"><span v-if="model.is_free" class="text-green-400 font-bold">GRATUIT</span><span v-else>In: ${{ model.pricing_prompt.toFixed(2) }}<br>Out: ${{ model.pricing_completion.toFixed(2) }}</span></td>
                                 <td class="px-4 py-3">{{ (model.context_length / 1000).toFixed(0) }}k</td>
-                                <td class="px-4 py-3 text-xs text-gray-400 truncate max-w-[250px]" :title="model.description_fr">{{ model.description_fr }}</td>
+                                <td class="px-4 py-3 text-xs text-gray-400 truncate max-w-[350px]" :title="model.description_fr">{{ model.description_fr }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -355,19 +430,20 @@
             </div>
         </div>
 
-        <!-- VUE : CHAT -->
-        <div v-show="activeView === 'chat'" class="flex-1 flex flex-col min-h-0">
-            <div v-if="!activeProject" class="flex-1 overflow-y-auto p-4 flex flex-col items-center justify-center">
+        <!-- VUE : CHAT PLEINE LARGEUR ADAPTATIVE (Point 4) -->
+        <div v-show="activeView === 'chat'" class="flex-1 flex flex-col min-h-0 w-full overflow-hidden">
+            <div v-if="!activeProject" class="flex-1 w-full overflow-y-auto p-4 flex flex-col items-center justify-center">
                 <img src="/assets/logo.png" class="w-24 h-24 mb-6 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)]">
                 <h2 class="text-2xl font-bold text-gray-200 mb-2">Comment puis-je vous aider aujourd'hui ?</h2>
                 <p class="text-gray-500 text-sm">Sélectionnez ou créez un projet dans la barre latérale.</p>
             </div>
 
             <template v-else>
-                <div class="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 flex flex-col custom-scrollbar" id="chat-container">
+                <!-- Conteneur de messages 100% de la largeur disponible -->
+                <div class="flex-1 w-full overflow-y-auto px-4 md:px-8 py-6 space-y-6 flex flex-col custom-scrollbar" id="chat-container">
                     <div v-if="messages.length === 0" class="flex-1 flex items-center justify-center text-gray-500 italic">Démarrez la conversation ci-dessous.</div>
                     
-                    <div v-for="msg in messages" :key="msg.id" :class="['max-w-4xl rounded-2xl p-4', msg.role === 'user' ? 'bg-gray-800 ml-auto border border-gray-700' : 'bg-aethas-panel mr-auto border border-aethas-cyan/30 flex flex-col']">
+                    <div v-for="msg in messages" :key="msg.id" :class="['rounded-2xl p-5 shadow-md', msg.role === 'user' ? 'bg-gray-800 ml-auto border border-gray-700 w-full md:w-4/5 lg:w-3/4' : 'bg-aethas-panel mr-auto border border-aethas-cyan/30 flex flex-col w-full']">
                         <div class="flex items-center gap-2 mb-2">
                             <img v-if="msg.role === 'user' && user.avatar_path" :src="user.avatar_path" class="w-5 h-5 rounded-full object-cover">
                             <span class="text-xs font-semibold uppercase tracking-wider text-gray-400">{{ msg.role === 'user' ? 'Vous' : 'AETHAS38' }}</span>
@@ -375,29 +451,27 @@
                         
                         <div class="text-gray-200 text-sm leading-relaxed w-full">
                             <template v-for="(part, index) in parseMessage(msg.content)" :key="index">
-                                <div v-if="part.type === 'text'" class="whitespace-pre-wrap font-sans">{{ part.content }}</div>
-                                <div v-if="part.type === 'code'" class="my-4 bg-gray-900 rounded-lg border border-gray-700 overflow-hidden shadow-inner">
+                                <div v-if="part.type === 'text'" class="whitespace-pre-wrap font-sans w-full">{{ part.content }}</div>
+                                <div v-if="part.type === 'code'" class="my-4 bg-gray-900 rounded-lg border border-gray-700 overflow-hidden shadow-inner w-full">
                                     <div class="flex justify-between items-center px-4 py-2 bg-gray-800 border-b border-gray-700">
                                         <span class="text-xs text-gray-400 font-mono flex items-center gap-2"><i data-lucide="file-code-2" class="w-4 h-4"></i> {{ part.language || 'code' }}</span>
                                         <div class="flex items-center">
-                                            <!-- BOUTON COPIER CODE (NOUVEAU) -->
                                             <button @click="copyToClipboard(part.content)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded mr-2"><i data-lucide="copy" class="w-3 h-3"></i> Copier Code</button>
                                             <button @click="downloadFile(part.content, part.language)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded"><i data-lucide="download" class="w-3 h-3"></i> Fichier</button>
                                         </div>
                                     </div>
-                                    <pre class="p-4 text-xs font-mono text-gray-300 overflow-x-auto custom-scrollbar"><code>{{ part.content }}</code></pre>
+                                    <pre class="p-4 text-xs font-mono text-gray-300 overflow-x-auto custom-scrollbar w-full"><code>{{ part.content }}</code></pre>
                                 </div>
                             </template>
                         </div>
 
-                        <!-- Boutons de copie et téléchargement individuel du message -->
-                        <div class="mt-3 flex items-center gap-3 border-t border-gray-700/50 pt-2 opacity-50 hover:opacity-100 transition-opacity">
+                        <div class="mt-3 flex items-center gap-3 border-t border-gray-700/50 pt-2 opacity-60 hover:opacity-100 transition-opacity">
                             <button @click="copyToClipboard(msg.content)" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1"><i data-lucide="copy" class="w-3 h-3"></i> Copier Message</button>
                             <button @click="downloadMessage(msg.content, msg.created_at || new Date().toISOString())" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1"><i data-lucide="file-down" class="w-3 h-3"></i> Extraire Message</button>
                         </div>
                     </div>
 
-                    <div v-if="isAiThinking" class="max-w-3xl rounded-2xl p-4 bg-aethas-panel mr-auto border border-aethas-cyan/30 w-24">
+                    <div v-if="isAiThinking" class="rounded-2xl p-4 bg-aethas-panel mr-auto border border-aethas-cyan/30 w-24">
                         <div class="flex space-x-1.5 h-4 items-center">
                             <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce"></div>
                             <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce" style="animation-delay: 0.15s"></div>
@@ -406,21 +480,54 @@
                     </div>
                 </div>
 
-                <div class="p-4 md:px-6 md:pt-6 pb-2 w-full max-w-7xl mx-auto flex-shrink-0">
-                    <div class="flex justify-between items-center mb-2">
-                        <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Configuration des IA</span>
+                <!-- ZONE DE PILOTAGE IA PLEINE LARGEUR (S'adapte à la fenêtre disponible) -->
+                <div class="px-4 md:px-8 pt-3 pb-3 w-full flex-shrink-0 border-t border-gray-800 bg-aethas-dark/95">
+                    
+                    <div v-if="selectedTheme === 'ocr_ce2'" class="mb-2 px-3 py-1.5 rounded-lg bg-amber-950/60 border border-amber-500/60 text-amber-200 text-xs flex items-center justify-between">
+                        <div>
+                            <strong>🏫 Mode OCR & Correction CE2 (Céline) actif :</strong> Transcription exacte à l'identique des copies (aucune faute d'élève corrigée dans la version initiale) + retour individuel avec version corrigée selon le corrigé.
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap justify-between items-center gap-2 mb-2">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <div class="inline-flex rounded-lg border border-gray-600 overflow-hidden text-xs font-bold">
+                                <button @click="orchestratorMode = 'mono'" :class="['px-2.5 py-1 transition-colors', orchestratorMode === 'mono' ? 'bg-aethas-cyan text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700']">Mono-IA</button>
+                                <button @click="orchestratorMode = 'multi'" :class="['px-2.5 py-1 transition-colors', orchestratorMode === 'multi' ? 'bg-aethas-purple text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700']">Multi-IA</button>
+                            </div>
+
+                            <select v-model="selectedTheme" class="bg-gray-800 border border-gray-600 rounded-lg px-2.5 py-1 text-xs text-gray-200 focus:border-aethas-cyan outline-none font-semibold">
+                                <option value="general">🎯 Thème : Polyvalent / Standard</option>
+                                <option value="code">💻 Thème : Codage & Architecture</option>
+                                <option value="ocr_ce2">🏫 Thème : OCR & Correction CE2 (Céline)</option>
+                                <option value="web">🌐 Thème : Recherche Web & Synthèse</option>
+                                <option value="math">🧮 Thème : Mathématiques & Logique</option>
+                            </select>
+
+                            <div class="inline-flex items-center bg-gray-800 border border-gray-600 rounded-lg p-0.5 text-xs">
+                                <span class="px-2 text-[10px] text-gray-400 font-semibold uppercase">Auto-Choix (HF/CF/OR) :</span>
+                                <button @click="applyThemeRecommendation('free')" class="px-2 py-0.5 rounded hover:bg-green-600/30 text-green-400 font-semibold transition-colors">Gratuit</button>
+                                <button @click="applyThemeRecommendation('mixed')" class="px-2 py-0.5 rounded hover:bg-cyan-600/30 text-aethas-cyan font-semibold transition-colors">Mixte</button>
+                                <button @click="applyThemeRecommendation('paid')" class="px-2 py-0.5 rounded hover:bg-purple-600/30 text-purple-300 font-semibold transition-colors">Payant</button>
+                            </div>
+
+                            <button @click="enableWebSearch = !enableWebSearch" :class="['text-xs px-2.5 py-1 rounded-lg border font-semibold flex items-center gap-1 transition-colors', enableWebSearch ? 'bg-emerald-900/50 border-emerald-500 text-emerald-300' : 'bg-gray-800 border-gray-600 text-gray-400']">
+                                <i data-lucide="globe" class="w-3.5 h-3.5"></i> Web : {{ enableWebSearch ? 'ON' : 'OFF' }}
+                            </button>
+                        </div>
+
                         <div class="flex gap-2">
-                            <button @click="downloadTemplate" class="text-xs bg-gray-800 hover:bg-gray-700 text-aethas-cyan border border-gray-600 px-2 py-1 rounded flex items-center gap-1 transition-colors" title="Télécharger le modèle .md"><i data-lucide="download" class="w-3 h-3"></i> Template MD</button>
-                            <label class="text-xs bg-gray-800 hover:bg-gray-700 text-aethas-cyan border border-gray-600 px-2 py-1 rounded flex items-center gap-1 transition-colors cursor-pointer" title="Importer une configuration .md">
+                            <button @click="downloadTemplate" class="text-xs bg-gray-800 hover:bg-gray-700 text-aethas-cyan border border-gray-600 px-2 py-1 rounded flex items-center gap-1 transition-colors"><i data-lucide="download" class="w-3 h-3"></i> Template MD</button>
+                            <label class="text-xs bg-gray-800 hover:bg-gray-700 text-aethas-cyan border border-gray-600 px-2 py-1 rounded flex items-center gap-1 transition-colors cursor-pointer">
                                 <i data-lucide="upload" class="w-3 h-3"></i> Importer
                                 <input type="file" accept=".md" @change="handleConfigImport" class="hidden">
                             </label>
                         </div>
                     </div>
 
-                    <!-- BARRE DE SÉLECTION -->
-                    <div class="grid grid-cols-9 border border-black bg-gray-900 rounded-lg overflow-hidden text-center text-xs font-bold shadow-lg mb-4">
-                        <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
+                    <!-- GRILLE DE SÉLECTION ADAPTATIVE (Point 1 & Point 2) -->
+                    <div :class="['grid border border-black bg-gray-900 rounded-lg overflow-hidden text-center text-xs font-bold shadow-lg mb-3 w-full', orchestratorMode === 'mono' ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-5 lg:grid-cols-10']">
+                        <div class="border-r border-b lg:border-b-0 border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-gray-400 mb-1">PRIX</label>
                             <select v-model="colPricing" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none">
                                 <option value="">TOUS</option>
@@ -429,91 +536,103 @@
                             </select>
                         </div>
 
-                        <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
+                        <div class="border-r border-b lg:border-b-0 border-black p-1.5 bg-gray-800 flex flex-col justify-center">
+                            <label class="block text-[9px] text-gray-400 mb-1">FOURNISSEUR</label>
+                            <select v-model="colProvider" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none">
+                                <option value="">HF / CF / OR</option>
+                                <option value="openrouter">OPENROUTER</option>
+                                <option value="cloudflare">CLOUDFLARE</option>
+                                <option value="huggingface">HUGGINGFACE</option>
+                            </select>
+                        </div>
+
+                        <div class="border-r border-b lg:border-b-0 border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-gray-400 mb-1">TYPE</label>
                             <select v-model="colDomain" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none">
                                 <option value="">TOUS</option>
                                 <option value="Texte Polyvalent">Texte</option>
                                 <option value="Code & Logique">Codage</option>
-                                <option value="Vision & Texte">Vision</option>
-                                <option value="Audio">Audio</option>
+                                <option value="Vision & Texte">Vision / OCR</option>
                             </select>
                         </div>
 
-                        <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
-                            <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 1</label>
+                        <!-- Point 2 : Prompteur verrouillé sur les 3 modèles Gemini -->
+                        <div class="border-r border-b lg:border-b-0 border-black p-1.5 bg-gray-800 flex flex-col justify-center">
+                            <label class="block text-[9px] text-amber-400 mb-1">PROMPTEUR (GEMINI)</label>
+                            <select v-model="selectedPrompter" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
+                                <option v-for="gm in prompterConcatModels" :key="gm.model_id" :value="gm.model_id">{{ gm.name }}</option>
+                            </select>
+                        </div>
+
+                        <!-- Point 1 : Travailleurs verrouillés sur HF, Cloudflare et OpenRouter -->
+                        <div :class="[orchestratorMode === 'multi' ? 'border-r border-black' : '', 'p-1.5 bg-gray-800 flex flex-col justify-center']">
+                            <label class="block text-[9px] text-aethas-cyan mb-1">{{ orchestratorMode === 'mono' ? 'IA TRAVAILLEUR (MONO)' : 'TRAVAILLEUR 1' }}</label>
                             <select v-model="workers[0]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
                                 <option value="">(Aucun)</option>
-                                <option v-for="m in getFilteredModelsForCol(colPricing, colDomain, workers[0])" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
+                                <option v-for="m in getFilteredWorkerModels(colPricing, colDomain, colProvider, workers[0])" :key="m.model_id" :value="m.model_id">[{{ m.provider.slice(0,2).toUpperCase() }}] {{ m.name || m.model_id }}</option>
                             </select>
                         </div>
 
-                        <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
-                            <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 2</label>
-                            <select v-model="workers[1]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
-                                <option value="">(Aucun)</option>
-                                <option v-for="m in getFilteredModelsForCol(colPricing, colDomain, workers[1])" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
-                            </select>
-                        </div>
+                        <template v-if="orchestratorMode === 'multi'">
+                            <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
+                                <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 2</label>
+                                <select v-model="workers[1]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
+                                    <option value="">(Aucun)</option>
+                                    <option v-for="m in getFilteredWorkerModels(colPricing, colDomain, colProvider, workers[1])" :key="m.model_id" :value="m.model_id">[{{ m.provider.slice(0,2).toUpperCase() }}] {{ m.name || m.model_id }}</option>
+                                </select>
+                            </div>
 
-                        <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
-                            <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 3</label>
-                            <select v-model="workers[2]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
-                                <option value="">(Aucun)</option>
-                                <option v-for="m in getFilteredModelsForCol(colPricing, colDomain, workers[2])" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
-                            </select>
-                        </div>
+                            <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
+                                <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 3</label>
+                                <select v-model="workers[2]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
+                                    <option value="">(Aucun)</option>
+                                    <option v-for="m in getFilteredWorkerModels(colPricing, colDomain, colProvider, workers[2])" :key="m.model_id" :value="m.model_id">[{{ m.provider.slice(0,2).toUpperCase() }}] {{ m.name || m.model_id }}</option>
+                                </select>
+                            </div>
 
-                        <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
-                            <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 4</label>
-                            <select v-model="workers[3]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
-                                <option value="">(Aucun)</option>
-                                <option v-for="m in getFilteredModelsForCol(colPricing, colDomain, workers[3])" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
-                            </select>
-                        </div>
+                            <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
+                                <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 4</label>
+                                <select v-model="workers[3]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
+                                    <option value="">(Aucun)</option>
+                                    <option v-for="m in getFilteredWorkerModels(colPricing, colDomain, colProvider, workers[3])" :key="m.model_id" :value="m.model_id">[{{ m.provider.slice(0,2).toUpperCase() }}] {{ m.name || m.model_id }}</option>
+                                </select>
+                            </div>
 
-                        <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
-                            <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 5</label>
-                            <select v-model="workers[4]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
-                                <option value="">(Aucun)</option>
-                                <option v-for="m in getFilteredModelsForCol(colPricing, colDomain, workers[4])" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
-                            </select>
-                        </div>
+                            <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
+                                <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 5</label>
+                                <select v-model="workers[4]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
+                                    <option value="">(Aucun)</option>
+                                    <option v-for="m in getFilteredWorkerModels(colPricing, colDomain, colProvider, workers[4])" :key="m.model_id" :value="m.model_id">[{{ m.provider.slice(0,2).toUpperCase() }}] {{ m.name || m.model_id }}</option>
+                                </select>
+                            </div>
 
-                        <div class="border-r border-black p-1.5 bg-gray-800 flex flex-col justify-center">
-                            <label class="block text-[9px] text-gray-400 mb-1">PROMPTEUR</label>
-                            <select v-model="selectedPrompter" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
-                                <option value="">(Par défaut)</option>
-                                <option v-for="m in getFilteredModelsForCol(colPricing, colDomain, selectedPrompter)" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
-                            </select>
-                        </div>
-
-                        <div class="p-1.5 bg-gray-800 flex flex-col justify-center">
-                            <label class="block text-[9px] text-aethas-purple mb-1">CONCATENEUR</label>
-                            <select v-model="selectedConcatenator" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
-                                <option value="">(Par défaut)</option>
-                                <option v-for="m in getFilteredModelsForCol(colPricing, colDomain, selectedConcatenator)" :key="m.model_id" :value="m.model_id">{{ m.name || m.model_id }}</option>
-                            </select>
-                        </div>
+                            <!-- Point 2 : Concaténeur verrouillé sur les 3 modèles Gemini -->
+                            <div class="p-1.5 bg-gray-800 flex flex-col justify-center">
+                                <label class="block text-[9px] text-aethas-purple mb-1">CONCATENEUR (GEMINI)</label>
+                                <select v-model="selectedConcatenator" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
+                                    <option v-for="gm in prompterConcatModels" :key="gm.model_id" :value="gm.model_id">{{ gm.name }}</option>
+                                </select>
+                            </div>
+                        </template>
                     </div>
 
-                    <!-- CHAT INPUT -->
-                    <div class="relative flex items-end bg-gray-800 border border-gray-600 rounded-2xl p-2 shadow-lg focus-within:border-aethas-cyan flex-col gap-2">
+                    <!-- CHAT INPUT PLEINE LARGEUR -->
+                    <div class="relative flex items-end bg-gray-800 border border-gray-600 rounded-2xl p-2 shadow-lg focus-within:border-aethas-cyan flex-col gap-2 w-full">
                         <div v-if="attachedFiles.length > 0" class="w-full flex flex-wrap gap-2 px-2 pt-2">
                             <div v-for="(file, index) in attachedFiles" :key="index" class="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 flex items-center gap-2">
                                 <i data-lucide="file" class="w-3.5 h-3.5 text-aethas-cyan"></i>
-                                <span class="truncate max-w-[150px]">{{ file.name }}</span>
+                                <span class="truncate max-w-[180px]">{{ file.name }}</span>
                                 <button @click="removeFile(index)" class="text-red-400 hover:text-red-300"><i data-lucide="x" class="w-3 h-3"></i></button>
                             </div>
                         </div>
 
                         <div class="w-full flex items-end">
-                            <label class="p-3 text-gray-400 hover:text-aethas-cyan cursor-pointer transition-colors" title="Joindre des fichiers (max 10)">
+                            <label class="p-3 text-gray-400 hover:text-aethas-cyan cursor-pointer transition-colors" title="Joindre des fichiers ou copies d'élèves (max 10)">
                                 <i data-lucide="paperclip" class="w-5 h-5"></i>
                                 <input type="file" multiple @change="handleFileUpload" class="hidden">
                             </label>
 
-                            <textarea v-model="prompt" @input="autoResize" @paste="handlePaste" @keydown.enter.exact.prevent="sendMessage" ref="promptTextarea" :disabled="isAiThinking" rows="1" class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none disabled:opacity-50 custom-scrollbar" :placeholder="attachedFiles.length > 0 ? attachedFiles.length + ' fichier(s) attaché(s)' : 'Posez votre question ou glissez jusqu\'à 10 fichiers ici...'"></textarea>
+                            <textarea v-model="prompt" @input="autoResize" @paste="handlePaste" @keydown.enter.exact.prevent="sendMessage" ref="promptTextarea" :disabled="isAiThinking" rows="1" class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none disabled:opacity-50 custom-scrollbar" :placeholder="selectedTheme === 'ocr_ce2' ? 'Joignez les copies CE2 + le corrigé de référence, puis lancez la correction...' : (attachedFiles.length > 0 ? attachedFiles.length + ' fichier(s) attaché(s)' : 'Posez votre question ou glissez jusqu\'à 10 fichiers ici...')"></textarea>
                             
                             <button @click="sendMessage" :disabled="(!prompt.trim() && attachedFiles.length === 0) || isAiThinking" class="p-3 text-aethas-cyan hover:text-white disabled:opacity-50"><i data-lucide="send" class="w-5 h-5"></i></button>
                         </div>
@@ -544,22 +663,18 @@
             const isAiThinking = ref(false);
             const isSyncing = ref(false);
 
-            // TOAST (Non bloquant)
             const toastVisible = ref(false);
             const toastMessage = ref("");
             const showToast = (msg) => {
                 toastMessage.value = msg;
                 toastVisible.value = true;
-                setTimeout(() => { toastVisible.value = false; }, 5000); // Disparaît après 5 secondes
+                setTimeout(() => { toastVisible.value = false; }, 5000);
             };
 
             const isAssignModalOpen = ref(false);
             const assignForm = reactive({ modelId: '', projectId: '', role: 'worker1' });
             const assignMessage = ref("");
 
-            const isSettingsModalOpen = ref(false);
-
-            // FORMULAIRES SETTINGS
             const passForm = reactive({ old: '', new: '', confirm: '' });
             const settingsMessage = ref("");
             const isSavingSettings = ref(false);
@@ -576,23 +691,113 @@
             const filterProvider = ref("");
             
             const colPricing = ref("");
+            const colProvider = ref("");
             const colDomain = ref("");
 
+            const orchestratorMode = ref("multi");
+            const selectedTheme = ref("general");
+            const enableWebSearch = ref(true);
+
             const workers = ref(["", "", "", "", ""]);
-            const selectedPrompter = ref("");
-            const selectedConcatenator = ref("");
+            const selectedPrompter = ref("gemini-3.5-flash-lite");
+            const selectedConcatenator = ref("gemini-3.8-flash");
+
+            // Point 6 : États du Studio Image & Vidéo
+            const mediaType = ref("image");
+            const mediaPricing = ref("");
+            const mediaProvider = ref("");
+            const selectedMediaModel = ref("");
+            const selectedMediaPrompter = ref("gemini-3.5-flash-lite");
+            const mediaPrompt = ref("");
+            const isGeneratingMedia = ref(false);
+            const generatedMediaList = ref([]);
 
             const attachedFiles = ref([]); 
-            
             const systemLogs = ref([]);
             let logInterval = null;
+            let isRestoringConfig = false;
+
+            const ALLOWED_WORKER_PROVIDERS = ['openrouter', 'cloudflare', 'huggingface'];
 
             const pinnedProjects = computed(() => projects.value.filter(p => p.is_pinned));
             const recentProjects = computed(() => projects.value.filter(p => !p.is_pinned));
-            
-            const uniqueProviders = computed(() => {
-                return [...new Set(modelInfo.models.map(m => m.provider))].sort();
+
+            // Point 2 : Les 3 modèles Gemini exclusifs pour le Prompteur et le Concaténeur (avec adaptation au vrai nom en BDD)
+            const prompterConcatModels = computed(() => {
+                const geminiDb = modelInfo.models.filter(m => (m.provider || '').toLowerCase() === 'gemini');
+                const findExactOrMatch = (tokens, fallbackId, fallbackName) => {
+                    const found = geminiDb.find(m => {
+                        const hay = (m.model_id + ' ' + (m.name || '')).toLowerCase();
+                        return tokens.every(t => hay.includes(t));
+                    });
+                    return found ? { model_id: found.model_id, name: found.name || found.model_id } : { model_id: fallbackId, name: fallbackName };
+                };
+                return [
+                    findExactOrMatch(['3.5', 'lite'], 'gemini-3.5-flash-lite', 'Gemini 3.5 Flash-Lite'),
+                    findExactOrMatch(['3.8', 'flash'], 'gemini-3.8-flash', 'Gemini 3.8 Flash'),
+                    findExactOrMatch(['3.1', 'pro'], 'gemini-3.1-pro-preview', 'Gemini 3.1 Pro Preview')
+                ];
             });
+
+            // Point 1 : Filtrage strict des Travailleurs (uniquement HuggingFace, Cloudflare, OpenRouter)
+            const getFilteredWorkerModels = (pricingFilter, domainFilter, providerFilter, currentSelectedId) => {
+                let filtered = modelInfo.models.filter(m => {
+                    const prov = (m.provider || '').toLowerCase();
+                    if (!ALLOWED_WORKER_PROVIDERS.includes(prov)) return false;
+                    if (providerFilter && prov !== providerFilter) return false;
+                    if (domainFilter && m.domain !== domainFilter) return false;
+                    if (pricingFilter === 'free' && !m.is_free) return false;
+                    if (pricingFilter === 'paid' && m.is_free) return false;
+                    return true;
+                });
+
+                if (currentSelectedId && currentSelectedId.trim() !== "") {
+                    const exists = filtered.find(m => m.model_id === currentSelectedId);
+                    if (!exists) {
+                        const original = modelInfo.models.find(m => m.model_id === currentSelectedId && ALLOWED_WORKER_PROVIDERS.includes((m.provider || '').toLowerCase()));
+                        if (original) filtered.unshift(original);
+                    }
+                }
+                return filtered;
+            };
+
+            // Point 6 : Filtrage des modèles pour le Studio Image & Vidéo
+            const filteredMediaModels = computed(() => {
+                const targetDomain = mediaType.value === 'video' ? 'Génération Vidéo' : 'Génération Image';
+                let list = modelInfo.models.filter(m => {
+                    const prov = (m.provider || '').toLowerCase();
+                    if (!ALLOWED_WORKER_PROVIDERS.includes(prov)) return false;
+                    if (m.domain !== targetDomain) return false;
+                    if (mediaProvider.value && prov !== mediaProvider.value) return false;
+                    if (mediaPricing.value === 'free' && !m.is_free) return false;
+                    if (mediaPricing.value === 'paid' && m.is_free) return false;
+                    return true;
+                });
+
+                // Modèles par défaut si la BDD n'a pas encore été synchronisée
+                if (list.length === 0) {
+                    if (mediaType.value === 'image') {
+                        list = [
+                            { model_id: 'black-forest-labs/FLUX.1-schnell', name: 'FLUX.1 Schnell', provider: 'huggingface', is_free: true },
+                            { model_id: 'stabilityai/stable-diffusion-xl-base-1.0', name: 'Stable Diffusion XL 1.0', provider: 'huggingface', is_free: true },
+                            { model_id: '@cf/black-forest-labs/flux-1-schnell', name: 'CF FLUX.1 Schnell', provider: 'cloudflare', is_free: true }
+                        ];
+                    } else {
+                        list = [
+                            { model_id: 'Lightricks/LTX-Video', name: 'LTX-Video', provider: 'huggingface', is_free: true },
+                            { model_id: 'Wan-AI/Wan2.1-T2V-14B', name: 'Wan 2.1 Text-to-Video 14B', provider: 'huggingface', is_free: false },
+                            { model_id: 'ali-vilab/text-to-video-ms-1.7b', name: 'ModelScope Text-to-Video', provider: 'huggingface', is_free: true }
+                        ];
+                    }
+                }
+                return list;
+            });
+
+            watch(filteredMediaModels, (newList) => {
+                if (newList.length > 0 && !newList.some(m => m.model_id === selectedMediaModel.value)) {
+                    selectedMediaModel.value = newList[0].model_id;
+                }
+            }, { immediate: true });
 
             const filteredModels = computed(() => {
                 return modelInfo.models.filter(m => {
@@ -606,27 +811,98 @@
                 });
             });
 
-            const getFilteredModelsForCol = (pricingFilter, domainFilter, currentSelectedId) => {
-                let filtered = modelInfo.models.filter(m => {
-                    const matchDomain = domainFilter === "" || m.domain === domainFilter;
-                    let matchPrice = true;
-                    if (pricingFilter === 'free') matchPrice = m.is_free;
-                    if (pricingFilter === 'paid') matchPrice = !m.is_free;
-                    return matchDomain && matchPrice;
+            // Point 3 : Auto-Choix IA (uniquement HF/Cloudflare/OpenRouter pour les travailleurs, et les 3 Gemini pour Prompteur/Concaténeur)
+            const applyThemeRecommendation = (budgetMode) => {
+                const workerPool = modelInfo.models.filter(m => {
+                    const prov = (m.provider || '').toLowerCase();
+                    if (!ALLOWED_WORKER_PROVIDERS.includes(prov)) return false;
+                    if (budgetMode === 'free') return m.is_free;
+                    if (budgetMode === 'paid') return !m.is_free;
+                    return true;
                 });
-                
-                if (currentSelectedId && currentSelectedId.trim() !== "") {
-                    const exists = filtered.find(m => m.model_id === currentSelectedId);
-                    if (!exists) {
-                        const original = modelInfo.models.find(m => m.model_id === currentSelectedId);
-                        if (original) {
-                            filtered.unshift(original);
-                        } else {
-                            filtered.unshift({ model_id: currentSelectedId, name: currentSelectedId, domain: "Importé", pricing_prompt: 0, pricing_completion: 0 });
-                        }
-                    }
+
+                if (workerPool.length === 0) {
+                    showToast("Synchronisez d'abord les modèles dans Modèles & Finances.");
+                    return;
                 }
-                return filtered;
+
+                const scoreModel = (m, targetKeywords, preferDomain) => {
+                    let s = 0;
+                    const id = m.model_id.toLowerCase();
+                    if (preferDomain && m.domain === preferDomain) s += 50;
+                    targetKeywords.forEach((kw, idx) => {
+                        if (id.includes(kw)) s += (40 - idx * 4);
+                    });
+                    if (m.context_length >= 100000) s += 20;
+                    else if (m.context_length >= 32000) s += 10;
+                    if (budgetMode === 'mixed' && m.is_free) s += 8;
+                    return s;
+                };
+
+                let themeKeywords = ["qwen", "llama-3.3", "claude-3", "gpt-4o", "mistral", "deepseek"];
+                let preferDomain = "Texte Polyvalent";
+
+                if (selectedTheme.value === "code") {
+                    themeKeywords = ["qwen-2.5-coder", "qwen2.5-coder", "claude-3.5-sonnet", "deepseek-chat", "deepseek-r1", "codestral", "gpt-4o"];
+                    preferDomain = "Code & Logique";
+                } else if (selectedTheme.value === "ocr_ce2") {
+                    themeKeywords = ["qwen2.5-vl", "llama-3.2-11b-vision", "llama-3.2-90b-vision", "pixtral", "gpt-4o", "claude-3.5-sonnet"];
+                    preferDomain = "Vision & Texte";
+                } else if (selectedTheme.value === "math") {
+                    themeKeywords = ["deepseek-r1", "qwq", "o3-mini", "qwen", "claude-3.5"];
+                    preferDomain = "Code & Logique";
+                } else if (selectedTheme.value === "web") {
+                    themeKeywords = ["perplexity", "sonar", "gpt-4o", "llama-3.3", "qwen"];
+                    enableWebSearch.value = true;
+                }
+
+                const ranked = [...workerPool].sort((a, b) => scoreModel(b, themeKeywords, preferDomain) - scoreModel(a, themeKeywords, preferDomain));
+                const topModels = ranked.slice(0, 5).map(m => m.model_id);
+
+                const gemList = prompterConcatModels.value;
+                selectedPrompter.value = gemList[0].model_id; // Gemini 3.5 Flash-Lite
+                selectedConcatenator.value = (selectedTheme.value === 'code' || selectedTheme.value === 'ocr_ce2' || budgetMode === 'paid')
+                    ? gemList[2].model_id // Gemini 3.1 Pro
+                    : gemList[1].model_id; // Gemini 3.8 Flash
+
+                if (orchestratorMode.value === "mono") {
+                    workers.value = [topModels[0] || "", "", "", "", ""];
+                } else {
+                    workers.value = [topModels[0] || "", topModels[1] || "", topModels[2] || "", topModels[3] || "", topModels[4] || ""];
+                }
+
+                showToast(`Sélection Travailleurs (HF/CF/OR - ${budgetMode.toUpperCase()}) + Gemini appliquée.`);
+            };
+
+            const generateMediaAction = async () => {
+                if (!mediaPrompt.value.trim() || !selectedMediaModel.value) return;
+                isGeneratingMedia.value = true;
+                try {
+                    const res = await fetch('/api/media/generate', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            prompt: mediaPrompt.value,
+                            media_type: mediaType.value,
+                            model_id: selectedMediaModel.value,
+                            prompter_id: selectedMediaPrompter.value,
+                            optimize_prompt: true
+                        })
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        generatedMediaList.value.unshift(data);
+                        showToast(`${mediaType.value === 'video' ? 'Vidéo' : 'Image'} générée avec succès !`);
+                        nextTick(() => lucide.createIcons());
+                    } else {
+                        const err = await res.json();
+                        alert("Erreur de génération média : " + (err.detail || "Erreur inconnue"));
+                    }
+                } catch (e) {
+                    alert("Erreur réseau lors de la génération : " + e.message);
+                } finally {
+                    isGeneratingMedia.value = false;
+                }
             };
 
             const formatDate = (isoString) => {
@@ -642,10 +918,7 @@
             const fetchAdminSettings = async () => {
                 try {
                     const res = await fetch('/api/settings');
-                    if (res.ok) {
-                        const data = await res.json();
-                        Object.assign(adminSettings, data);
-                    }
+                    if (res.ok) Object.assign(adminSettings, await res.json());
                 } catch(e) {}
             };
 
@@ -653,18 +926,12 @@
                 isSavingAdminSettings.value = true;
                 adminSettingsMessage.value = "";
                 try {
-                    const res = await fetch('/api/settings', {
-                        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(adminSettings)
-                    });
+                    const res = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(adminSettings) });
                     if (res.ok) {
                         adminSettingsMessage.value = "Paramètres sauvegardés avec succès.";
-                        setTimeout(() => adminSettingsMessage.value="", 3000);
-                    } else {
-                        adminSettingsMessage.value = "Erreur lors de la sauvegarde.";
-                    }
-                } catch (e) {
-                    adminSettingsMessage.value = "Erreur réseau.";
-                }
+                        setTimeout(() => adminSettingsMessage.value = "", 3000);
+                    } else adminSettingsMessage.value = "Erreur lors de la sauvegarde.";
+                } catch (e) { adminSettingsMessage.value = "Erreur réseau."; }
                 isSavingAdminSettings.value = false;
             };
 
@@ -673,10 +940,6 @@
                 if(window.innerWidth < 768) isSidebarOpen.value = false;
                 if(user.value.is_superadmin) fetchAdminSettings();
                 nextTick(() => lucide.createIcons()); 
-            };
-
-            const closeSettings = () => {
-                isSettingsModalOpen.value = false;
             };
 
             const openAssignModal = (modelId) => {
@@ -688,43 +951,37 @@
                 nextTick(() => lucide.createIcons());
             };
 
-            const closeAssignModal = () => {
-                isAssignModalOpen.value = false;
+            const closeAssignModal = () => { isAssignModalOpen.value = false; };
+
+            const saveProjectConfigToDB = async (projectId, configObj) => {
+                const jsonStr = JSON.stringify(configObj);
+                localStorage.setItem('aethas_config_' + projectId, jsonStr);
+                try {
+                    await fetch(`/api/projects/${projectId}/config`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ config_json: jsonStr })
+                    });
+                    const pIdx = projects.value.findIndex(p => p.id == projectId);
+                    if (pIdx !== -1) projects.value[pIdx].config_json = jsonStr;
+                } catch(e) {}
             };
 
-            const confirmAssignModel = () => {
-                if(!assignForm.projectId || !assignForm.role) {
-                    assignMessage.value = "Veuillez sélectionner une discussion et un rôle.";
-                    return;
+            const confirmAssignModel = async () => {
+                if(!assignForm.projectId || !assignForm.role) return;
+                const targetProj = projects.value.find(p => p.id == assignForm.projectId);
+                let config = { mode: "multi", theme: "general", enable_web: true, workers: ["", "", "", "", ""], prompter: prompterConcatModels.value[0].model_id, concatenator: prompterConcatModels.value[1].model_id };
+                if (targetProj && targetProj.config_json) {
+                    try { Object.assign(config, JSON.parse(targetProj.config_json)); } catch(e){}
                 }
-                const storageKey = 'aethas_config_' + assignForm.projectId;
-                let config = { workers: ["", "", "", "", ""], prompter: "", concatenator: "" };
-                const saved = localStorage.getItem(storageKey);
-                if (saved) {
-                    try { config = JSON.parse(saved); } catch(e){}
-                }
-                
-                if(assignForm.role === 'prompter') config.prompter = assignForm.modelId;
-                else if(assignForm.role === 'concatenator') config.concatenator = assignForm.modelId;
-                else {
-                    const idx = parseInt(assignForm.role.replace('worker', '')) - 1;
-                    config.workers[idx] = assignForm.modelId;
-                }
-                
-                localStorage.setItem(storageKey, JSON.stringify(config));
-                
+                const idx = parseInt(assignForm.role.replace('worker', '')) - 1;
+                config.workers[idx] = assignForm.modelId;
+                await saveProjectConfigToDB(assignForm.projectId, config);
                 if (activeProject.value && activeProject.value.id == assignForm.projectId) {
                     workers.value = config.workers;
-                    selectedPrompter.value = config.prompter;
-                    selectedConcatenator.value = config.concatenator;
                 }
-                
-                assignMessage.value = `Modèle assigné avec succès !`;
-                setTimeout(() => { closeAssignModal(); }, 1200);
-            };
-            
-            const logToTerminal = async (msg) => {
-                try { await fetch('/api/logs', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ message: msg }) }); } catch(e){}
+                assignMessage.value = "Travailleur assigné et sauvegardé !";
+                setTimeout(() => { closeAssignModal(); }, 1000);
             };
 
             const fetchLogs = async () => {
@@ -745,12 +1002,14 @@
 
             const validateConfigAndReplace = async () => {
                 if (!modelInfo.models || modelInfo.models.length === 0) return;
-                const availableModels = modelInfo.models.map(m => m.model_id);
+                const validWorkerIds = modelInfo.models
+                    .filter(m => ALLOWED_WORKER_PROVIDERS.includes((m.provider || '').toLowerCase()))
+                    .map(m => m.model_id);
                 const replacements = [];
                 
-                const checkAndReplace = async (val, setterCallback, roleName) => {
-                    if (val && val.trim() !== "" && !availableModels.includes(val)) {
-                        logToTerminal(`Le modèle ${val} n'est plus reconnu. Recherche Gemini...`);
+                for(let i=0; i<5; i++) {
+                    const val = workers.value[i];
+                    if (val && val.trim() !== "" && !validWorkerIds.includes(val)) {
                         try {
                             const res = await fetch('/api/models/suggest_replacement', {
                                 method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -758,38 +1017,40 @@
                             });
                             if (res.ok) {
                                 const data = await res.json();
-                                setterCallback(data.suggestion);
-                                replacements.push(`- ${roleName} : ${val} a été remplacé par ${data.suggestion}\n  Raison: ${data.reason}`);
-                            } else {
-                                setterCallback("gemini-3.5-flash-lite");
-                                replacements.push(`- ${roleName} : ${val} remplacé par gemini-3.5-flash-lite (Erreur API)`);
+                                workers.value[i] = data.suggestion;
+                                replacements.push(`- Travailleur ${i+1} : ${val} -> ${data.suggestion}`);
                             }
-                        } catch(e) {
-                            setterCallback("gemini-3.5-flash-lite");
-                        }
+                        } catch(e) {}
                     }
-                };
+                }
 
-                await checkAndReplace(selectedPrompter.value, (n) => selectedPrompter.value = n, "Prompteur");
-                await checkAndReplace(selectedConcatenator.value, (n) => selectedConcatenator.value = n, "Concaténeur");
-                for(let i=0; i<5; i++) {
-                    await checkAndReplace(workers.value[i], (n) => workers.value[i] = n, `Travailleur ${i+1}`);
+                // Vérifie que Prompteur et Concaténeur sont bien parmi les 3 modèles Gemini autorisés
+                const validGeminiIds = prompterConcatModels.value.map(g => g.model_id);
+                if (!validGeminiIds.includes(selectedPrompter.value)) {
+                    selectedPrompter.value = validGeminiIds[0];
+                }
+                if (!validGeminiIds.includes(selectedConcatenator.value)) {
+                    selectedConcatenator.value = validGeminiIds[1] || validGeminiIds[0];
                 }
 
                 if (replacements.length > 0) {
-                    alert("⚠️ Mise à jour de la conversation\n\nCertains modèles ne sont plus disponibles. L'IA a trouvé des alternatives :\n\n" + replacements.join("\n\n"));
+                    showToast("Certains travailleurs ont été ajustés vers HF/Cloudflare/OpenRouter.");
                 }
             };
 
-            watch([workers, selectedPrompter, selectedConcatenator], () => {
-                if (activeProject.value) {
+            watch([workers, selectedPrompter, selectedConcatenator, orchestratorMode, selectedTheme, enableWebSearch], () => {
+                if (activeProject.value && !isRestoringConfig) {
                     const config = {
+                        mode: orchestratorMode.value,
+                        theme: selectedTheme.value,
+                        enable_web: enableWebSearch.value,
                         workers: workers.value,
                         prompter: selectedPrompter.value,
                         concatenator: selectedConcatenator.value
                     };
-                    localStorage.setItem('aethas_config_' + activeProject.value.id, JSON.stringify(config));
+                    saveProjectConfigToDB(activeProject.value.id, config);
                 }
+                nextTick(() => lucide.createIcons());
             }, { deep: true });
 
             const fetchUser = async () => { try { const res = await fetch('/api/users/me'); if(res.ok) user.value = await res.json(); } catch(e){} };
@@ -798,54 +1059,30 @@
             
             const syncModels = async () => { 
                 isSyncing.value = true; 
-                logToTerminal("Déclenchement manuel de l'extraction des modèles...");
                 try { 
                     const res = await fetch('/api/models/sync', { method: 'POST' }); 
                     if(res.ok) { 
                         await fetchModelsInfo(); 
                         await fetchFinances();
                         showToast("Synchronisation réussie !"); 
-                    } else if (res.status === 401) {
-                        alert("Votre session a expiré."); window.location.href = '/login';
-                    } else {
-                        let errText = await res.text();
-                        try { const errObj = JSON.parse(errText); errText = errObj.detail || errText; } catch(e){}
-                        alert("Erreur retournée par le serveur : " + errText);
                     }
-                } catch(e) { alert("Erreur réseau: impossible de contacter le serveur."); } 
+                } catch(e) {} 
                 isSyncing.value = false; 
             };
 
             const downloadTemplate = () => {
-                logToTerminal("Téléchargement du template MD généré.");
-                const templateContent = `# AETHAS38 - Configuration Multi-Agents\n\n**Rappel important :**\n- **Prompteur :** Le système de l'orchestrateur utilisera ce modèle pour traduire et optimiser votre requête initiale en ANGLAIS (langue native des IA).\n- **Concaténeur :** Le système utilisera ce modèle pour regrouper les réponses des travailleurs et traduire la synthèse finale en FRANÇAIS (en préservant le code brut).\n\n## Sélection des Modèles\nRenseignez l'ID exact du modèle (ex: gemini-3.5-flash-lite, mistralai/mistral-large-4-0). Laissez vide si inutilisé.\n\n- Prompteur : \n- Travailleur 1 : \n- Travailleur 2 : \n- Travailleur 3 : \n- Travailleur 4 : \n- Travailleur 5 : \n- Concaténeur : \n`;
+                const templateContent = `# AETHAS38 - Configuration Multi-Agents\n\n- Mode : ${orchestratorMode.value}\n- Theme : ${selectedTheme.value}\n- Prompteur : ${selectedPrompter.value}\n- Travailleur 1 : ${workers.value[0]}\n- Travailleur 2 : ${workers.value[1]}\n- Travailleur 3 : ${workers.value[2]}\n- Travailleur 4 : ${workers.value[3]}\n- Travailleur 5 : ${workers.value[4]}\n- Concaténeur : ${selectedConcatenator.value}\n`;
                 downloadFile(templateContent, 'aethas38-config-agents.md');
             };
 
             const exportCSV = () => {
-                logToTerminal("Génération de l'extraction CSV (vue filtrée)...");
                 let csvContent = "\uFEFF"; 
                 csvContent += "Fournisseur,Modèle,Nom,Domaine,Gratuit,Contexte,Prix_In,Prix_Out,Description\n";
-                
                 filteredModels.value.forEach(m => {
-                    const escapeCSV = (str) => {
-                        if (str === null || str === undefined) return '""';
-                        return `"${String(str).replace(/"/g, '""')}"`;
-                    };
-                    const row = [
-                        escapeCSV(m.provider),
-                        escapeCSV(m.model_id),
-                        escapeCSV(m.name),
-                        escapeCSV(m.domain),
-                        m.is_free ? "Oui" : "Non",
-                        m.context_length,
-                        m.pricing_prompt,
-                        m.pricing_completion,
-                        escapeCSV(m.description_fr)
-                    ];
+                    const escapeCSV = (str) => `"${String(str ?? '').replace(/"/g, '""')}"`;
+                    const row = [escapeCSV(m.provider), escapeCSV(m.model_id), escapeCSV(m.name), escapeCSV(m.domain), m.is_free ? "Oui" : "Non", m.context_length, m.pricing_prompt, m.pricing_completion, escapeCSV(m.description_fr)];
                     csvContent += row.join(",") + "\n";
                 });
-                
                 const d = new Date();
                 const dateStr = d.getFullYear() + String(d.getMonth()+1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
                 downloadFile(csvContent, `${dateStr}-extraction-modeles.csv`, 'text/csv;charset=utf-8');
@@ -854,30 +1091,20 @@
             const handleConfigImport = (event) => {
                 const file = event.target.files[0];
                 if (!file) return;
-                logToTerminal(`Importation de configuration depuis ${file.name}`);
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     const content = e.target.result;
-                    
                     const extractModel = (key) => {
                         const safeKey = key.replace(/[éèe]/gi, '[éèe]');
                         const regex = new RegExp(`-\\s*${safeKey}\\s*:\\s*([^\\r\\n]*)`, 'i');
                         const match = content.match(regex);
                         return match && match[1] ? match[1].trim() : "";
                     };
-
-                    const w1 = extractModel('Travailleur 1');
-                    const w2 = extractModel('Travailleur 2');
-                    const w3 = extractModel('Travailleur 3');
-                    const w4 = extractModel('Travailleur 4');
-                    const w5 = extractModel('Travailleur 5');
-
-                    workers.value = [w1, w2, w3, w4, w5];
-                    selectedPrompter.value = extractModel('Prompteur');
-                    selectedConcatenator.value = extractModel('Concateneur');
-
+                    workers.value = [extractModel('Travailleur 1'), extractModel('Travailleur 2'), extractModel('Travailleur 3'), extractModel('Travailleur 4'), extractModel('Travailleur 5')];
+                    selectedPrompter.value = extractModel('Prompteur') || prompterConcatModels.value[0].model_id;
+                    selectedConcatenator.value = extractModel('Concateneur') || prompterConcatModels.value[1].model_id;
                     await validateConfigAndReplace();
-                    showToast("Configuration IA importée et appliquée avec succès !");
+                    showToast("Configuration IA importée !");
                 };
                 reader.readAsText(file);
                 event.target.value = null;
@@ -891,8 +1118,7 @@
                     const res = await fetch('/api/users/me/avatar', { method: 'POST', body: formData });
                     const data = await res.json();
                     if(res.ok) user.value.avatar_path = data.avatar_path;
-                    else alert(data.detail);
-                } catch(e) { alert("Erreur d'upload"); }
+                } catch(e) {}
                 event.target.value = null;
             };
 
@@ -900,10 +1126,7 @@
                 const files = event.target.files;
                 if (!files) return;
                 for (let i = 0; i < files.length; i++) {
-                    if (attachedFiles.value.length >= 10) {
-                        alert("Maximum 10 fichiers autorisés par message.");
-                        break;
-                    }
+                    if (attachedFiles.value.length >= 10) { alert("Maximum 10 fichiers par message."); break; }
                     processFile(files[i]);
                 }
                 event.target.value = null;
@@ -915,85 +1138,65 @@
                     let item = items[index];
                     if (item.kind === 'file') {
                         let file = item.getAsFile();
-                        if (file) {
-                            if (attachedFiles.value.length >= 10) {
-                                alert("Maximum 10 fichiers autorisés par message.");
-                                break;
-                            }
-                            processFile(file);
-                        }
+                        if (file && attachedFiles.value.length < 10) processFile(file);
                     }
                 }
             };
 
             const processFile = (file) => {
-                logToTerminal(`Fichier ${file.name} ajouté en pièce jointe.`);
                 const reader = new FileReader();
-                const textExts = ['.txt', '.md', '.csv', '.json', '.py', '.js', '.html', '.css', '.xml', '.yml', '.yaml', '.sh', '.bat', '.ps1', '.ini', '.cfg', '.conf', '.log'];
-                const isText = textExts.some(ext => file.name.toLowerCase().endsWith(ext)) || file.type.startsWith('text/');
-                
-                reader.onload = (e) => {
-                    attachedFiles.value.push({ name: file.name, content: e.target.result });
-                };
-
-                if (isText) {
-                    reader.readAsText(file);
-                } else {
-                    reader.readAsDataURL(file);
-                }
+                const textExts = ['.txt', '.md', '.csv', '.json', '.py', '.js', '.html', '.css', '.xml', '.yml', '.yaml', '.sh', '.bat', '.ps1', '.ini', '.cfg', '.conf', '.log', '.sql'];
+                const isText = textExts.some(ext => file.name.toLowerCase().endsWith(ext)) || (file.type.startsWith('text/') && !file.name.endsWith('.rtf'));
+                reader.onload = (e) => { attachedFiles.value.push({ name: file.name, content: e.target.result }); };
+                if (isText) reader.readAsText(file);
+                else reader.readAsDataURL(file);
             };
 
             const removeFile = (index) => { attachedFiles.value.splice(index, 1); };
-
             const exportProject = (format) => { if(activeProject.value) window.open(`/api/projects/${activeProject.value.id}/export?format=${format}`, '_blank'); };
-            
-            // COPIE REMPLACEE PAR UN TOAST (NON BLOQUANT)
-            const copyToClipboard = async (text) => { 
-                try { 
-                    await navigator.clipboard.writeText(text); 
-                    showToast("Texte copié dans le presse-papier !"); 
-                } catch (e) {} 
-            };
+            const copyToClipboard = async (text) => { try { await navigator.clipboard.writeText(text); showToast("Texte copié dans le presse-papier !"); } catch (e) {} };
             
             const downloadFile = (content, hint, mimeType = 'text/plain;charset=utf-8') => { 
                 let fname = hint ? hint.trim() : 'code.txt'; 
                 if (!fname.includes('.')) fname += '.txt'; 
                 const blob = new Blob([content], { type: mimeType }); 
                 const url = URL.createObjectURL(blob); 
-                const a = document.createElement('a'); 
-                a.href = url; 
-                a.download = fname; 
-                a.click(); 
-                URL.revokeObjectURL(url); 
+                const a = document.createElement('a'); a.href = url; a.download = fname; a.click(); URL.revokeObjectURL(url); 
             };
             
             const downloadMessage = (content, dateString) => { downloadFile(content, `message_${dateString.replace(/[:T.Z]/g, '-')}.txt`); };
             const parseMessage = (content) => { const regex = /```([\w.-]*)\n([\s\S]*?)```/g; let parts = [], last = 0, m; while ((m = regex.exec(content)) !== null) { if (m.index > last) parts.push({ type: 'text', content: content.slice(last, m.index) }); parts.push({ type: 'code', language: m[1], content: m[2] }); last = m.index + m[0].length; } if (last < content.length) parts.push({ type: 'text', content: content.slice(last) }); return parts.length > 0 ? parts : [{ type: 'text', content: content }]; };
 
             const fetchProjects = async () => { try { const res = await fetch('/api/projects'); if(res.ok) projects.value = await res.json(); nextTick(()=>lucide.createIcons()); } catch(e){} };
+            
             const selectProject = async (project) => { 
                 activeView.value = 'chat'; 
                 activeProject.value = project; 
                 messages.value = []; 
-                logToTerminal(`Chargement du projet: ${project.title}`);
 
-                const saved = localStorage.getItem('aethas_config_' + project.id);
-                if (saved) {
+                isRestoringConfig = true;
+                const rawCfg = project.config_json || localStorage.getItem('aethas_config_' + project.id);
+                if (rawCfg) {
                     try {
-                        const config = JSON.parse(saved);
+                        const config = JSON.parse(rawCfg);
+                        orchestratorMode.value = config.mode || "multi";
+                        selectedTheme.value = config.theme || "general";
+                        enableWebSearch.value = config.enable_web !== undefined ? config.enable_web : true;
                         workers.value = config.workers || ["", "", "", "", ""];
-                        selectedPrompter.value = config.prompter || "";
-                        selectedConcatenator.value = config.concatenator || "";
+                        selectedPrompter.value = config.prompter || prompterConcatModels.value[0].model_id;
+                        selectedConcatenator.value = config.concatenator || prompterConcatModels.value[1].model_id;
                     } catch(e) {
                         workers.value = ["", "", "", "", ""];
-                        selectedPrompter.value = "";
-                        selectedConcatenator.value = "";
                     }
                 } else {
+                    orchestratorMode.value = "multi";
+                    selectedTheme.value = "general";
+                    enableWebSearch.value = true;
                     workers.value = ["", "", "", "", ""];
-                    selectedPrompter.value = "";
-                    selectedConcatenator.value = "";
+                    selectedPrompter.value = prompterConcatModels.value[0].model_id;
+                    selectedConcatenator.value = prompterConcatModels.value[1].model_id;
                 }
+                isRestoringConfig = false;
 
                 try { 
                     const res = await fetch(`/api/projects/${project.id}/messages`); 
@@ -1001,9 +1204,7 @@
                         messages.value = await res.json(); 
                         scrollToBottom(); 
                         nextTick(()=>lucide.createIcons()); 
-                    } else if (res.status === 401) {
-                        alert("Votre session a expiré."); window.location.href = '/login';
-                    }
+                    } else if (res.status === 401) window.location.href = '/login';
                 } catch(e){} 
 
                 await validateConfigAndReplace();
@@ -1013,23 +1214,22 @@
                 activeView.value = 'chat'; isLoading.value = true; 
                 try { 
                     const res = await fetch('/api/projects', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({title: "Nouvelle discussion"})}); 
-                    if(res.ok){ const np = await res.json(); projects.value.unshift(np); selectProject(np); } else if (res.status === 401) { alert("Session expirée."); window.location.href='/login'; }
+                    if(res.ok){ const np = await res.json(); projects.value.unshift(np); selectProject(np); }
                 } catch(e){} finally{isLoading.value = false;} 
             };
 
             const sendMessage = async () => {
-                const activeWorkers = workers.value.filter(w => w && w.trim() !== "");
+                const activeWorkers = orchestratorMode.value === 'mono'
+                    ? (workers.value[0] ? [workers.value[0]] : [])
+                    : workers.value.filter(w => w && w.trim() !== "");
+
                 if ((!prompt.value.trim() && attachedFiles.value.length === 0) || !activeProject.value || activeWorkers.length === 0) {
-                    alert("Veuillez sélectionner au moins un travailleur et rédiger ou joindre un contenu.");
+                    alert("Veuillez sélectionner au moins un travailleur (HF, Cloudflare ou OpenRouter) et saisir un message.");
                     return;
                 }
                 const userText = prompt.value.trim(); 
-                
-                // REINITIALISATION DE LA HAUTEUR DU TEXTAREA
                 prompt.value = ""; 
-                nextTick(() => {
-                    if (promptTextarea.value) promptTextarea.value.style.height = 'auto';
-                });
+                nextTick(() => { if (promptTextarea.value) promptTextarea.value.style.height = 'auto'; });
                 
                 const fileNames = attachedFiles.value.map(f => f.name).join(", ");
                 messages.value.push({ id: Date.now(), role: 'user', content: userText + (attachedFiles.value.length > 0 ? `\n[Fichiers joints: ${fileNames}]` : "") });
@@ -1039,13 +1239,19 @@
                 const payloadFiles = [...attachedFiles.value];
                 const payload = { 
                     role: 'user', 
-                    content: userText || "Analyse ces fichiers joints.", 
-                    config: { workers: activeWorkers, prompter: selectedPrompter.value, concatenator: selectedConcatenator.value },
+                    content: userText || (selectedTheme.value === 'ocr_ce2' ? "Transcris chaque copie d'élève à l'identique sans corriger leurs erreurs, puis fournis la version initiale et la version corrigée à partir du corrigé joint." : "Analyse ces fichiers joints."), 
+                    config: {
+                        mode: orchestratorMode.value,
+                        theme: selectedTheme.value,
+                        enable_web: enableWebSearch.value,
+                        workers: activeWorkers,
+                        prompter: selectedPrompter.value || prompterConcatModels.value[0].model_id,
+                        concatenator: selectedConcatenator.value || prompterConcatModels.value[1].model_id
+                    },
                     files: payloadFiles
                 };
 
                 attachedFiles.value = [];
-                logToTerminal("Envoi de la requête à l'orchestrateur...");
 
                 try {
                     const response = await fetch(`/api/projects/${activeProject.value.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -1054,19 +1260,16 @@
                         if (Array.isArray(data)) messages.value = data; 
                         await fetchFinances(); 
                     } else if (response.status === 401) {
-                        alert("Votre session a expiré. Veuillez vous reconnecter.");
-                        window.location.href = '/login';
-                        return;
+                        window.location.href = '/login'; return;
                     } else { 
                         const err = await response.json(); alert("Erreur API IA : " + err.detail); 
                     }
                 } catch (error) {
-                    alert("Erreur locale lors de l'envoi : " + error.message);
+                    alert("Erreur réseau : " + error.message);
                 } finally { 
                     isAiThinking.value = false; 
                     scrollToBottom(); 
                     nextTick(()=>lucide.createIcons()); 
-                    
                     fetchProjects().then(() => {
                         if(activeProject.value) {
                             const updated = projects.value.find(p => p.id === activeProject.value.id);
@@ -1093,6 +1296,9 @@
                 fetchUser(); 
                 fetchProjects(); 
                 fetchModelsInfo().then(() => {
+                    selectedPrompter.value = prompterConcatModels.value[0].model_id;
+                    selectedConcatenator.value = prompterConcatModels.value[1].model_id;
+                    selectedMediaPrompter.value = prompterConcatModels.value[0].model_id;
                     if(activeProject.value) validateConfigAndReplace();
                 }); 
                 fetchFinances(); 
@@ -1103,12 +1309,14 @@
                 user, activeView, settingsTab, isSidebarOpen, toggleSidebar, prompt, autoResize, promptTextarea, 
                 projects, pinnedProjects, recentProjects, activeProject, messages, isAiThinking,
                 createNewProject, selectProject, renameProject, sendMessage, isLoading, togglePin, deleteProject,
-                openSettings, closeSettings, passForm, settingsMessage, isSavingSettings, changePassword, uploadAvatar,
+                openSettings, passForm, settingsMessage, isSavingSettings, changePassword, uploadAvatar,
                 adminSettings, adminSettingsMessage, isSavingAdminSettings, saveAdminSettings,
-                modelInfo, financesList, filterSearch, filterDomain, filterPricing, filterProvider, uniqueProviders, filteredModels, getFilteredModelsForCol, formatDate, syncModels, isSyncing,
-                workers, selectedPrompter, selectedConcatenator, colPricing, colDomain, downloadTemplate, exportCSV, handleConfigImport,
+                modelInfo, financesList, filterSearch, filterDomain, filterPricing, filterProvider, filteredModels,
+                prompterConcatModels, getFilteredWorkerModels, formatDate, syncModels, isSyncing,
+                orchestratorMode, selectedTheme, enableWebSearch, applyThemeRecommendation,
+                workers, selectedPrompter, selectedConcatenator, colPricing, colProvider, colDomain, downloadTemplate, exportCSV, handleConfigImport,
+                mediaType, mediaPricing, mediaProvider, selectedMediaModel, selectedMediaPrompter, mediaPrompt, isGeneratingMedia, generatedMediaList, filteredMediaModels, generateMediaAction,
                 isAssignModalOpen, openAssignModal, closeAssignModal, assignForm, assignMessage, confirmAssignModel,
-                isSettingsModalOpen,
                 attachedFiles, handleFileUpload, handlePaste, removeFile,
                 exportProject, copyToClipboard, downloadFile, downloadMessage, parseMessage, systemLogs,
                 toastVisible, toastMessage, showToast

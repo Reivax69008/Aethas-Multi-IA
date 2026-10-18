@@ -13,15 +13,15 @@ from .auth import get_password_hash, generate_totp_secret, get_totp_uri, verify_
 from .schemas import (
     AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, ProjectRename,
     ProjectConfigUpdate, MessageCreate, MessageResponse, PasswordChange,
-    ModelReplacementRequest, LogRequest, SystemSettingsUpdate, SystemSettingsResponse
+    ModelReplacementRequest, LogRequest, SystemSettingsUpdate, SystemSettingsResponse,
+    MediaGenerateRequest, MediaGenerateResponse
 )
 from .models import User, Project, Message, SystemSettings, AIModel, FinancialLog
-from .orchestrator import run_orchestrator, sync_providers_models, sync_finances, activity_logs, log_activity
+from .orchestrator import run_orchestrator, sync_providers_models, sync_finances, activity_logs, log_activity, generate_media, resolve_gemini_model_id, ALLOWED_WORKER_PROVIDERS
 from .logger import log_file, cleanup_old_logs
 
 Base.metadata.create_all(bind=engine)
 
-# Migration automatique sécurisée pour PostgreSQL / SQLite (Point 4)
 try:
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS config_json TEXT;"))
@@ -52,7 +52,6 @@ async def scheduler_task():
                     try: await sync_providers_models(db, settings, "Automatique")
                     except: pass
                 
-                # Suppression des discussions > 7 jours non épinglées
                 cutoff = datetime.now(timezone.utc) - timedelta(days=7)
                 old_projects = db.query(Project).filter(Project.is_pinned == False, Project.created_at < cutoff).all()
                 if old_projects:
@@ -61,7 +60,6 @@ async def scheduler_task():
                         db.delete(op)
                     db.commit()
 
-                # Point 10 : Suppression automatique des fichiers de logs de plus de 30 jours
                 cleanup_old_logs(30)
             except Exception as e:
                 db.rollback()
@@ -129,50 +127,60 @@ def add_frontend_log(req: LogRequest, current_user: User = Depends(get_current_u
     log_activity(f"[Système UI] {req.message}")
     return {"status": "ok"}
 
-# Point 11 : Extraction directe des logs en cours depuis le site
 @app.get("/api/logs/download")
 def download_current_logs(current_user: User = Depends(get_current_user)):
     filename = f"aethas38_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
     if os.path.exists(log_file):
-        return FileResponse(
-            path=log_file,
-            media_type="text/plain;charset=utf-8",
-            filename=filename
-        )
+        return FileResponse(path=log_file, media_type="text/plain;charset=utf-8", filename=filename)
     content = "\n".join(activity_logs) if activity_logs else "Aucun log enregistré."
-    return Response(
-        content=content,
-        media_type="text/plain;charset=utf-8",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    return Response(content=content, media_type="text/plain;charset=utf-8", headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+# Point 6 : Route API Studio Image & Vidéo
+@app.post("/api/media/generate", response_model=MediaGenerateResponse)
+async def api_generate_media(req: MediaGenerateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    settings = db.query(SystemSettings).first()
+    if not settings:
+        raise HTTPException(status_code=400, detail="Paramètres système non initialisés.")
+    return await generate_media(
+        db=db,
+        settings=settings,
+        prompt=req.prompt,
+        media_type=req.media_type,
+        model_id=req.model_id,
+        prompter_id=req.prompter_id or "gemini-3.5-flash-lite",
+        optimize_prompt=req.optimize_prompt if req.optimize_prompt is not None else True
     )
 
 @app.post("/api/models/suggest_replacement")
 async def suggest_replacement(req: ModelReplacementRequest, db: Session = Depends(get_db)):
-    log_activity(f"⚠️ Modèle indisponible: {req.missing_model}. Demande de suggestion à Gemini...")
+    log_activity(f"⚠️ Modèle travailleur indisponible: {req.missing_model}. Demande de suggestion à Gemini...")
     settings = db.query(SystemSettings).first()
-    if not settings or not settings.gemini_api_key:
-        return {"suggestion": "gemini-3.5-flash-lite", "reason": "Clé API Gemini non configurée."}
-
-    models = db.query(AIModel).all()
+    models = db.query(AIModel).filter(AIModel.provider.in_(list(ALLOWED_WORKER_PROVIDERS))).all()
     available = [m.model_id for m in models]
-    prompt = f"Le modèle IA '{req.missing_model}' n'est plus disponible. Voici les modèles disponibles : {', '.join(available[:300])}. Trouve le modèle le plus proche techniquement. Réponds UNIQUEMENT avec ce format strict : ID_DU_MODELE | Brève explication en français de 10 mots max."
+    default_worker = available[0] if available else "Qwen/Qwen2.5-Coder-32B-Instruct"
+
+    if not settings or not settings.gemini_api_key:
+        return {"suggestion": default_worker, "reason": "Clé API Gemini non configurée."}
+
+    prompt = f"Le modèle IA '{req.missing_model}' n'est plus disponible. Voici les modèles disponibles (HuggingFace, Cloudflare, OpenRouter) : {', '.join(available[:250])}. Trouve le modèle le plus proche techniquement. Réponds UNIQUEMENT avec ce format strict : ID_DU_MODELE | Brève explication en français de 10 mots max."
     
     try:
         from openai import AsyncOpenAI
+        helper_mod = resolve_gemini_model_id(db, "gemini-3.5-flash-lite")
         client = AsyncOpenAI(base_url="https://generativelanguage.googleapis.com/v1beta/openai/", api_key=settings.gemini_api_key)
-        resp = await client.chat.completions.create(model="gemini-3.5-flash-lite", messages=[{"role": "user", "content": prompt}], max_tokens=50)
+        resp = await client.chat.completions.create(model=helper_mod, messages=[{"role": "user", "content": prompt}], max_tokens=50)
         res = resp.choices[0].message.content.strip()
         if "|" in res:
             parts = res.split("|")
             sugg, reason = parts[0].strip(), parts[1].strip()
         else:
             sugg, reason = res.strip(), "Sélectionné par Gemini."
-        if sugg not in available and sugg != "gemini-3.5-flash-lite":
-            sugg, reason = "gemini-3.5-flash-lite", "Fallback par défaut."
+        if sugg not in available:
+            sugg, reason = default_worker, "Repli sur travailleur autorisé."
         log_activity(f"✅ Remplacement trouvé : {req.missing_model} -> {sugg}")
         return {"suggestion": sugg, "reason": reason}
-    except Exception as e:
-        return {"suggestion": "gemini-3.5-flash-lite", "reason": "Fallback par défaut."}
+    except Exception:
+        return {"suggestion": default_worker, "reason": "Fallback par défaut."}
 
 @app.get("/api/users/me")
 def get_me(current_user: User = Depends(get_current_user)):
@@ -220,7 +228,6 @@ def create_project(project: ProjectCreate, db: Session = Depends(get_db), curren
     db.add(p); db.commit(); db.refresh(p)
     return p
 
-# Point 4 : Sauvegarde de la configuration IA du projet dans PostgreSQL
 @app.put("/api/projects/{project_id}/config", response_model=ProjectResponse)
 def update_project_config(project_id: int, cfg: ProjectConfigUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     p = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
@@ -267,12 +274,10 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
     p = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not p: raise HTTPException(status_code=404, detail="Projet introuvable.")
 
-    # Sauvegarde centrale de la configuration IA du projet en BDD (Point 4)
     if message.config:
         p.config_json = json.dumps(message.config.dict())
         db.commit()
 
-    # Auto-renommage à la 2ème requête
     if p.title == "Nouvelle discussion":
         user_msgs = db.query(Message).filter(Message.project_id == project_id, Message.role == "user").order_by(Message.created_at.asc()).all()
         if len(user_msgs) == 1:
@@ -291,7 +296,6 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
             ext = f.name.split('.')[-1].lower() if '.' in f.name else ''
 
             if content.startswith("data:"):
-                # Point 1 : Conservation native des images en Base64 pour l'OCR Vision
                 if ext in ['png', 'jpg', 'jpeg', 'webp', 'gif'] or content.startswith("data:image/"):
                     extracted_files_data.append({"name": f.name, "content": content, "is_image": True})
                     continue
@@ -308,7 +312,6 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
                             extracted_text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
                         except Exception as e:
                             extracted_text = f"[Erreur lecture PDF: {str(e)}]"
-                    
                     elif ext in ['docx', 'odt']:
                         try:
                             import zipfile as zf_doc
@@ -320,7 +323,6 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
                                 extracted_text = "".join(tree.itertext())
                         except Exception as e:
                             extracted_text = f"[Erreur lecture document {ext}: {str(e)}]"
-
                     elif ext in ['xls', 'xlsx', 'xlsm', 'xlsb']:
                         try:
                             import openpyxl
@@ -361,7 +363,7 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
     
     history = db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
     settings = db.query(SystemSettings).first()
-    conf = message.config.dict() if message.config else {"workers": ["gemini-3.5-flash-lite"]} 
+    conf = message.config.dict() if message.config else {"workers": ["Qwen/Qwen2.5-Coder-32B-Instruct"]} 
     
     ai_resp = await run_orchestrator(db, history, settings, conf, extracted_files_data)
     

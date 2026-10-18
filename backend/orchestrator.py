@@ -2,6 +2,7 @@ import asyncio
 import httpx
 import urllib.parse
 import traceback
+import base64
 from openai import AsyncOpenAI
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -22,16 +23,60 @@ def log_activity(msg: str):
     system_logger.info(msg)
 # --------------------------------------
 
-def determine_domain(model_id: str) -> str:
+ALLOWED_WORKER_PROVIDERS = {"openrouter", "cloudflare", "huggingface"}
+
+def determine_domain(model_id: str, pipeline_tag: str = "") -> str:
     if not model_id: return "Texte Polyvalent"
     mid = model_id.lower()
+    ptag = (pipeline_tag or "").lower()
+
+    if ptag in ["text-to-video", "image-to-video"] or any(k in mid for k in ["t2v", "text-to-video", "wan2.1", "ltx-video", "hunyuanvideo", "cogvideo", "svd", "video"]):
+        return "Génération Vidéo"
+    if ptag in ["text-to-image", "image-to-image"] or any(k in mid for k in ["flux", "stable-diffusion", "sdxl", "dall-e", "dreamshaper", "midjourney", "imagen", "playground-v2"]):
+        return "Génération Image"
     if any(k in mid for k in ["vision", "vl", "omni", "pixtral", "gemini-1.5", "gemini-2", "gemini-3", "gpt-4o", "claude-3"]):
         return "Vision & Texte"
-    if any(k in mid for k in ["coder", "code", "codestral", "deepseek-r1", "math", "qwen2.5-coder"]):
+    if any(k in mid for k in ["coder", "code", "codestral", "deepseek-r1", "math", "qwen2.5-coder", "starcoder"]):
         return "Code & Logique"
-    if "audio" in mid or "whisper" in mid:
+    if "audio" in mid or "whisper" in mid or ptag.startswith("audio"):
         return "Audio"
     return "Texte Polyvalent"
+
+def resolve_gemini_model_id(db: Session, requested_id: str) -> str:
+    """Point 2 : Adapte dynamiquement le nom du modèle Gemini aux vrais identifiants présents en BDD."""
+    if not requested_id:
+        requested_id = "gemini-3.5-flash-lite"
+    req_low = requested_id.lower()
+
+    gemini_models = db.query(AIModel).filter(AIModel.provider == "gemini").all()
+    if not gemini_models:
+        return requested_id
+
+    # 1. Correspondance exacte
+    for m in gemini_models:
+        if m.model_id.lower() == req_low or (m.name and m.name.lower() == req_low):
+            return m.model_id
+
+    # 2. Recherche par famille (3.5 flash-lite, 3.8 flash, 3.1 pro)
+    if "3.5" in req_low and "lite" in req_low:
+        for m in gemini_models:
+            if "3.5" in m.model_id.lower() and "lite" in m.model_id.lower():
+                return m.model_id
+    elif "3.8" in req_low and "flash" in req_low:
+        for m in gemini_models:
+            if "3.8" in m.model_id.lower() and "flash" in m.model_id.lower():
+                return m.model_id
+    elif "3.1" in req_low and "pro" in req_low:
+        for m in gemini_models:
+            if "3.1" in m.model_id.lower() and "pro" in m.model_id.lower():
+                return m.model_id
+
+    # 3. Correspondance partielle
+    for m in gemini_models:
+        if req_low in m.model_id.lower():
+            return m.model_id
+
+    return gemini_models[0].model_id
 
 async def translate_en_to_fr(client: httpx.AsyncClient, text: str) -> str:
     if not text: return "Aucune description fournie."
@@ -74,19 +119,8 @@ async def sync_finances(db: Session, settings: SystemSettings):
             except Exception as e:
                 print(f"Erreur Finance OR: {e}")
             
-        if settings.groq_api_key: update_finance_db(db, "Groq", 999.0, 0.0)
-        if settings.deepseek_api_key:
-            try:
-                resp = await client.get("https://api.deepseek.com/user/balance", headers={"Authorization": f"Bearer {settings.deepseek_api_key}"})
-                ds_json = resp.json() if resp.status_code == 200 else {}
-                if ds_json and isinstance(ds_json, dict):
-                    balance_infos = ds_json.get("balance_infos") or []
-                    if balance_infos and len(balance_infos) > 0 and balance_infos[0]:
-                        infos = balance_infos[0]
-                        update_finance_db(db, "DeepSeek", float(infos.get("total_balance") or 0.0), 0.0)
-            except Exception:
-                pass
-        if settings.mistral_api_key: update_finance_db(db, "Mistral", 0.0, 0.0)
+        if settings.cloudflare_api_token: update_finance_db(db, "Cloudflare", 0.0, 0.0)
+        if settings.huggingface_api_key: update_finance_db(db, "HuggingFace", 0.0, 0.0)
         if settings.gemini_api_key: update_finance_db(db, "Gemini", 0.0, 0.0)
 
     try: db.commit()
@@ -107,7 +141,9 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
     log_activity(f"Lancement de la synchronisation des modèles ({sync_type})...")
     added = 0
     models_to_process = {}
+
     async with httpx.AsyncClient(timeout=90.0) as client:
+        # 1. OPENROUTER (Travailleur + Image/Vidéo)
         if settings.openrouter_api_key:
             try:
                 resp = await client.get("https://openrouter.ai/api/v1/models")
@@ -122,52 +158,13 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
                             pc = float(pricing.get("completion") or 0.0) * 1000000
                             is_free = (pp == 0.0 and pc == 0.0)
                             desc_en = item.get("description") or "Generic AI Model."
-                            models_to_process[m_id] = {"provider": "openrouter", "name": item.get("name") or "Inconnu", "desc_en": desc_en, "domain": determine_domain(m_id), "is_free": is_free, "ctx": item.get("context_length") or 8192, "pp": pp, "pc": pc}
+                            arch = (item.get("architecture") or {}).get("modality") or ""
+                            dom = "Génération Image" if "->image" in arch else determine_domain(m_id)
+                            models_to_process[m_id] = {"provider": "openrouter", "name": item.get("name") or m_id, "desc_en": desc_en, "domain": dom, "is_free": is_free, "ctx": item.get("context_length") or 8192, "pp": pp, "pc": pc}
                         except: pass
             except Exception as e: print(f"Erreur OR Models: {e}")
-            
-        if settings.groq_api_key:
-            try:
-                resp = await client.get("https://api.groq.com/openai/v1/models", headers={"Authorization": f"Bearer {settings.groq_api_key}"})
-                if resp.status_code == 200 and resp.json():
-                    for item in (resp.json().get("data") or []):
-                        if not item or "id" not in item: continue
-                        m_id = item["id"]
-                        ctx_len = item.get("context_window") or 8192
-                        models_to_process[m_id] = {"provider": "groq", "name": m_id.capitalize(), "desc": "Modèle très rapide hébergé sur LPU Groq.", "domain": determine_domain(m_id), "is_free": True, "ctx": ctx_len, "pp": 0.0, "pc": 0.0}
-            except Exception: pass
 
-        if settings.deepseek_api_key:
-            try:
-                resp = await client.get("https://api.deepseek.com/models", headers={"Authorization": f"Bearer {settings.deepseek_api_key}"})
-                if resp.status_code == 200 and resp.json():
-                    for item in (resp.json().get("data") or []):
-                        if not item or "id" not in item: continue
-                        m_id = item["id"]
-                        models_to_process[m_id] = {"provider": "deepseek", "name": m_id.capitalize(), "desc": "Modèle officiel du fournisseur DeepSeek.", "domain": determine_domain(m_id), "is_free": False, "ctx": 64000, "pp": 0.14, "pc": 0.28}
-            except Exception: pass
-
-        if settings.mistral_api_key:
-            try:
-                resp = await client.get("https://api.mistral.ai/v1/models", headers={"Authorization": f"Bearer {settings.mistral_api_key}"})
-                if resp.status_code == 200 and resp.json():
-                    for item in (resp.json().get("data") or []):
-                        if not item or "id" not in item: continue
-                        m_id = item["id"]
-                        ctx_len = item.get("max_context_length") or 32000
-                        models_to_process[m_id] = {"provider": "mistral", "name": m_id.capitalize(), "desc": "Modèle officiel développé par Mistral AI.", "domain": determine_domain(m_id), "is_free": False, "ctx": ctx_len, "pp": 0.2, "pc": 0.6}
-            except Exception: pass
-
-        if settings.gemini_api_key:
-            try:
-                resp = await client.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={settings.gemini_api_key}")
-                if resp.status_code == 200 and resp.json():
-                    for item in (resp.json().get("models") or []):
-                        if not item or "name" not in item: continue
-                        m_id = item["name"].replace("models/", "")
-                        models_to_process[m_id] = {"provider": "gemini", "name": item.get("displayName") or m_id, "desc": "Modèle natif de l'écosystème Google Gemini.", "domain": determine_domain(m_id), "is_free": True, "ctx": item.get("inputTokenLimit") or 32000, "pp": 0.0, "pc": 0.0}
-            except Exception: pass
-
+        # 2. CLOUDFLARE WORKERS AI (Travailleur + Image)
         if settings.cloudflare_account_id and settings.cloudflare_api_token:
             try:
                 url = f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/models/search"
@@ -176,7 +173,71 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
                     for item in (resp.json().get("result") or []):
                         if not item or not item.get("name"): continue
                         m_id = item.get("name")
-                        models_to_process[m_id] = {"provider": "cloudflare", "name": m_id.split("/")[-1], "desc": "Modèle Serverless Cloudflare Workers AI.", "domain": determine_domain(m_id), "is_free": True, "ctx": 4096, "pp": 0.0, "pc": 0.0}
+                        task_name = ((item.get("task") or {}).get("name") or "").lower()
+                        dom = determine_domain(m_id, task_name)
+                        models_to_process[m_id] = {"provider": "cloudflare", "name": m_id.split("/")[-1], "desc": item.get("description") or "Modèle Serverless Cloudflare Workers AI.", "domain": dom, "is_free": True, "ctx": 16384, "pp": 0.0, "pc": 0.0}
+            except Exception: pass
+
+        # 3. HUGGING FACE (Travailleur + Studio Image & Vidéo)
+        hf_curated = [
+            ("Qwen/Qwen2.5-Coder-32B-Instruct", "Qwen 2.5 Coder 32B (HF)", "Code & Logique", True, 32768),
+            ("Qwen/Qwen2.5-72B-Instruct", "Qwen 2.5 72B Instruct (HF)", "Texte Polyvalent", True, 32768),
+            ("meta-llama/Llama-3.3-70B-Instruct", "Llama 3.3 70B Instruct (HF)", "Texte Polyvalent", True, 32768),
+            ("deepseek-ai/DeepSeek-R1-Distill-Qwen-32B", "DeepSeek R1 Distill 32B (HF)", "Code & Logique", True, 32768),
+            ("meta-llama/Llama-3.2-11B-Vision-Instruct", "Llama 3.2 11B Vision (HF)", "Vision & Texte", True, 16384),
+            ("black-forest-labs/FLUX.1-schnell", "FLUX.1 Schnell (Image HF)", "Génération Image", True, 4096),
+            ("black-forest-labs/FLUX.1-dev", "FLUX.1 Dev (Image HF Pro)", "Génération Image", False, 4096),
+            ("stabilityai/stable-diffusion-xl-base-1.0", "Stable Diffusion XL 1.0 (Image HF)", "Génération Image", True, 4096),
+            ("ByteDance/SDXL-Lightning", "SDXL Lightning (Image Rapide HF)", "Génération Image", True, 4096),
+            ("Wan-AI/Wan2.1-T2V-14B", "Wan 2.1 Text-to-Video 14B (Vidéo HF)", "Génération Vidéo", False, 4096),
+            ("Lightricks/LTX-Video", "LTX-Video Temps Réel (Vidéo HF)", "Génération Vidéo", True, 4096),
+            ("tencent/HunyuanVideo", "HunyuanVideo HD (Vidéo HF)", "Génération Vidéo", False, 4096),
+            ("ali-vilab/text-to-video-ms-1.7b", "ModelScope Text-to-Video (Vidéo HF)", "Génération Vidéo", True, 4096),
+        ]
+        for m_id, name, dom, is_free, ctx in hf_curated:
+            models_to_process[m_id] = {
+                "provider": "huggingface",
+                "name": name,
+                "desc": f"Modèle Hugging Face Inference ({dom}).",
+                "domain": dom,
+                "is_free": is_free,
+                "ctx": ctx,
+                "pp": 0.0 if is_free else 0.5,
+                "pc": 0.0 if is_free else 1.0
+            }
+
+        if settings.huggingface_api_key:
+            try:
+                hf_headers = {"Authorization": f"Bearer {settings.huggingface_api_key}"}
+                for ptag in ["text-generation", "text-to-image", "text-to-video"]:
+                    hf_resp = await client.get(f"https://huggingface.co/api/models?pipeline_tag={ptag}&inference=warm&sort=downloads&direction=-1&limit=15", headers=hf_headers, timeout=15.0)
+                    if hf_resp.status_code == 200 and isinstance(hf_resp.json(), list):
+                        for item in hf_resp.json():
+                            m_id = item.get("id")
+                            if not m_id or m_id in models_to_process: continue
+                            dom = determine_domain(m_id, ptag)
+                            models_to_process[m_id] = {
+                                "provider": "huggingface",
+                                "name": m_id.split("/")[-1],
+                                "desc": f"Modèle Hugging Face Hub ({dom}).",
+                                "domain": dom,
+                                "is_free": True,
+                                "ctx": 16384,
+                                "pp": 0.0,
+                                "pc": 0.0
+                            }
+            except Exception as e:
+                print(f"Erreur HF Models: {e}")
+
+        # 4. GOOGLE GEMINI (Exclusivement pour Prompteur & Concaténeur - Point 2)
+        if settings.gemini_api_key:
+            try:
+                resp = await client.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={settings.gemini_api_key}")
+                if resp.status_code == 200 and resp.json():
+                    for item in (resp.json().get("models") or []):
+                        if not item or "name" not in item: continue
+                        m_id = item["name"].replace("models/", "")
+                        models_to_process[m_id] = {"provider": "gemini", "name": item.get("displayName") or m_id, "desc": "Modèle natif Google Gemini (Prompteur / Concaténeur).", "domain": determine_domain(m_id), "is_free": True, "ctx": item.get("inputTokenLimit") or 1000000, "pp": 0.0, "pc": 0.0}
             except Exception: pass
 
     sem = asyncio.Semaphore(15)
@@ -194,7 +255,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
         try:
             existing = db.query(AIModel).filter(AIModel.model_id == m_id).first()
             if existing:
-                existing.pricing_prompt = data["pp"]; existing.pricing_completion = data["pc"]; existing.is_free = data["is_free"]; existing.description_fr = data["desc"]; existing.domain = data["domain"]; existing.context_length = data["ctx"]; existing.last_updated = datetime.now(timezone.utc)
+                existing.provider = data["provider"]; existing.name = data["name"]; existing.pricing_prompt = data["pp"]; existing.pricing_completion = data["pc"]; existing.is_free = data["is_free"]; existing.description_fr = data["desc"]; existing.domain = data["domain"]; existing.context_length = data["ctx"]; existing.last_updated = datetime.now(timezone.utc)
             else:
                 db.add(AIModel(provider=data["provider"], model_id=m_id, name=data["name"], description_fr=data["desc"], domain=data["domain"], is_free=data["is_free"], context_length=data["ctx"], pricing_prompt=data["pp"], pricing_completion=data["pc"]))
             added += 1
@@ -213,25 +274,27 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
     log_activity(f"Synchronisation terminée : {added} modèles analysés.")
     return {"status": "success", "models_processed": added}
 
-def get_client_for_model(db: Session, model_id: str, settings: SystemSettings):
+def get_client_for_model(db: Session, model_id: str, settings: SystemSettings, is_worker: bool = False):
     model_db = db.query(AIModel).filter(AIModel.model_id == model_id).first()
-    provider = model_db.provider if model_db else "openrouter"
+    provider = (model_db.provider or "openrouter").lower() if model_db else "openrouter"
+
+    # Point 1 : Si c'est un travailleur, on force uniquement HuggingFace, Cloudflare ou OpenRouter
+    if is_worker and provider not in ALLOWED_WORKER_PROVIDERS:
+        if model_id.startswith("@cf/"):
+            provider = "cloudflare"
+        else:
+            provider = "openrouter"
 
     if provider == "gemini" and settings.gemini_api_key:
         return AsyncOpenAI(base_url="https://generativelanguage.googleapis.com/v1beta/openai/", api_key=settings.gemini_api_key), "gemini"
-    elif provider == "groq" and settings.groq_api_key:
-        return AsyncOpenAI(base_url="https://api.groq.com/openai/v1", api_key=settings.groq_api_key), "groq"
-    elif provider == "deepseek" and settings.deepseek_api_key:
-        return AsyncOpenAI(base_url="https://api.deepseek.com/v1", api_key=settings.deepseek_api_key), "deepseek"
-    elif provider == "mistral" and settings.mistral_api_key:
-        return AsyncOpenAI(base_url="https://api.mistral.ai/v1", api_key=settings.mistral_api_key), "mistral"
     elif provider == "cloudflare" and settings.cloudflare_account_id and settings.cloudflare_api_token:
         return AsyncOpenAI(base_url=f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/v1", api_key=settings.cloudflare_api_token), "cloudflare"
+    elif provider == "huggingface" and settings.huggingface_api_key:
+        return AsyncOpenAI(base_url="https://router.huggingface.co/hf-inference/v1", api_key=settings.huggingface_api_key), "huggingface"
     
     return AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=settings.openrouter_api_key), "openrouter"
 
 def compute_dynamic_chunk_size(db: Session, active_model_ids: list) -> int:
-    """Point 9 : Adapte la taille des chunks au modèle ayant le contexte le plus restrictif."""
     valid_ids = [m for m in active_model_ids if m and m.strip()]
     if not valid_ids:
         return 60000
@@ -239,7 +302,6 @@ def compute_dynamic_chunk_size(db: Session, active_model_ids: list) -> int:
     contexts = [m.context_length for m in models_db if m.context_length and m.context_length > 0]
     min_ctx = min(contexts) if contexts else 8192
 
-    # 1 token ~ 3.5 caractères. On réserve 50% du contexte pour le prompt système et la réponse.
     calculated_chars = int(min_ctx * 0.5 * 3.5)
     chunk_size = max(6000, min(calculated_chars, 150000))
     log_activity(f"Contexte le plus restrictif : {min_ctx} tokens -> Chunk dynamique fixé à {chunk_size} caractères.")
@@ -287,6 +349,92 @@ async def ask_agent(client, model_id, messages, provider="openrouter", enable_we
         resp = await client.chat.completions.create(**kwargs)
         return extract_safe_content(resp)
 
+# --- POINT 6 : GÉNÉRATION D'IMAGE ET DE VIDÉO ---
+async def generate_media(db: Session, settings: SystemSettings, prompt: str, media_type: str, model_id: str, prompter_id: str = "gemini-3.5-flash-lite", optimize_prompt: bool = True) -> dict:
+    log_activity(f"[Studio {media_type.upper()}] Préparation avec le modèle {model_id}...")
+    final_prompt = prompt
+
+    # Optimisation visuelle via l'un des 3 modèles Gemini du Prompteur
+    if optimize_prompt and settings.gemini_api_key:
+        try:
+            real_prompter = resolve_gemini_model_id(db, prompter_id)
+            p_client, p_prov = get_client_for_model(db, real_prompter, settings, is_worker=False)
+            sys_msg = (
+                f"You are an expert visual prompt engineer for AI {media_type} generation. "
+                "Translate the user's French description into a rich, detailed, cinematic English prompt. "
+                "Output ONLY the final English prompt without quotes or explanations."
+            )
+            final_prompt = await ask_agent(p_client, real_prompter, [{"role": "system", "content": sys_msg}, {"role": "user", "content": prompt}], p_prov, enable_web=False)
+            log_activity(f"[Studio {media_type.upper()}] Prompt optimisé par {real_prompter}.")
+        except Exception as e:
+            log_activity(f"[Studio] Optimisation ignorée ({str(e)[:50]}), utilisation du prompt brut.")
+
+    model_db = db.query(AIModel).filter(AIModel.model_id == model_id).first()
+    provider = (model_db.provider or "huggingface").lower() if model_db else ("cloudflare" if model_id.startswith("@cf/") else "huggingface")
+
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        # 1. HUGGING FACE INFERENCE API (Image & Vidéo)
+        if provider == "huggingface":
+            if not settings.huggingface_api_key:
+                raise HTTPException(status_code=400, detail="Clé API HuggingFace manquante dans Super-Admin.")
+            headers = {"Authorization": f"Bearer {settings.huggingface_api_key}"}
+            hf_url = f"https://router.huggingface.co/hf-inference/models/{model_id}"
+            resp = await client.post(hf_url, headers=headers, json={"inputs": final_prompt})
+            if resp.status_code != 200:
+                # Repli sur l'URL classique api-inference
+                resp = await client.post(f"https://api-inference.huggingface.co/models/{model_id}", headers=headers, json={"inputs": final_prompt})
+            if resp.status_code != 200:
+                raise HTTPException(status_code=resp.status_code, detail=f"Erreur HuggingFace: {resp.text[:200]}")
+            
+            mime = "video/mp4" if media_type == "video" else (resp.headers.get("content-type") or "image/png")
+            b64 = base64.b64encode(resp.content).decode("utf-8")
+            log_activity(f"[Studio {media_type.upper()}] Média généré avec succès via HuggingFace ({model_id}).")
+            return {"media_url": f"data:{mime};base64,{b64}", "media_type": media_type, "optimized_prompt": final_prompt, "model_used": model_id}
+
+        # 2. CLOUDFLARE WORKERS AI
+        elif provider == "cloudflare":
+            if not settings.cloudflare_account_id or not settings.cloudflare_api_token:
+                raise HTTPException(status_code=400, detail="Identifiants Cloudflare manquants dans Super-Admin.")
+            cf_url = f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/run/{model_id}"
+            headers = {"Authorization": f"Bearer {settings.cloudflare_api_token}"}
+            resp = await client.post(cf_url, headers=headers, json={"prompt": final_prompt})
+            if resp.status_code != 200:
+                raise HTTPException(status_code=resp.status_code, detail=f"Erreur Cloudflare AI: {resp.text[:200]}")
+            
+            ctype = resp.headers.get("content-type", "")
+            if "application/json" in ctype:
+                b64 = (resp.json().get("result") or {}).get("image")
+                if not b64:
+                    raise HTTPException(status_code=500, detail="Réponse image Cloudflare invalide.")
+            else:
+                b64 = base64.b64encode(resp.content).decode("utf-8")
+            log_activity(f"[Studio {media_type.upper()}] Média généré avec succès via Cloudflare ({model_id}).")
+            return {"media_url": f"data:image/png;base64,{b64}", "media_type": media_type, "optimized_prompt": final_prompt, "model_used": model_id}
+
+        # 3. OPENROUTER
+        else:
+            if not settings.openrouter_api_key:
+                raise HTTPException(status_code=400, detail="Clé API OpenRouter manquante dans Super-Admin.")
+            headers = {"Authorization": f"Bearer {settings.openrouter_api_key}", "HTTP-Referer": "https://aethas38.duckdns.org"}
+            resp = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json={"model": model_id, "messages": [{"role": "user", "content": final_prompt}], "modalities": ["image", "text"]}
+            )
+            if resp.status_code != 200:
+                raise HTTPException(status_code=resp.status_code, detail=f"Erreur OpenRouter Media: {resp.text[:200]}")
+            data = resp.json()
+            msg = ((data.get("choices") or [{}])[0]).get("message") or {}
+            images = msg.get("images") or []
+            if images and isinstance(images[0], dict):
+                img_url = (images[0].get("image_url") or {}).get("url") or images[0].get("url")
+                if img_url:
+                    return {"media_url": img_url, "media_type": media_type, "optimized_prompt": final_prompt, "model_used": model_id}
+            content = msg.get("content") or ""
+            if "data:image" in content or "http" in content:
+                return {"media_url": content.strip(), "media_type": media_type, "optimized_prompt": final_prompt, "model_used": model_id}
+            raise HTTPException(status_code=400, detail="Ce modèle OpenRouter n'a pas renvoyé de flux média direct. Privilégiez un modèle HuggingFace ou Cloudflare pour le Studio.")
+
 async def run_orchestrator(db: Session, history: list, settings: SystemSettings, config: dict, extracted_files: list = None) -> str:
     if not config: config = {}
     mode = config.get("mode", "multi")
@@ -294,18 +442,18 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
     enable_web = config.get("enable_web", True)
     workers = [w for w in (config.get("workers") or []) if w and w.strip()]
     if not workers:
-        workers = ["gemini-3.5-flash-lite"]
+        workers = ["Qwen/Qwen2.5-Coder-32B-Instruct"]
     if mode == "mono":
-        workers = [workers[0]]  # Point 2 : En mode Mono-IA, 1 seul travailleur
+        workers = [workers[0]]
 
-    p_mod = config.get("prompter") or "gemini-3.5-flash-lite"
-    c_mod = config.get("concatenator") or "gemini-3.5-flash-lite"
+    # Point 2 : Résolution automatique des 3 modèles Gemini pour Prompteur et Concaténeur
+    p_mod = resolve_gemini_model_id(db, config.get("prompter") or "gemini-3.5-flash-lite")
+    c_mod = resolve_gemini_model_id(db, config.get("concatenator") or "gemini-3.8-flash")
 
     user_prompt = (history[-1].content or "") if history else ""
     original_user_text = user_prompt.split("\n\n[Fichiers joints")[0] if "[Fichiers joints" in user_prompt else user_prompt
     formatted_history = [{"role": msg.role, "content": msg.content or ""} for msg in history[:-1]] if len(history) > 1 else []
 
-    # Point 9 : Calcul dynamique de la taille de chunk selon les modèles actifs
     all_involved_models = [p_mod] + workers + ([c_mod] if mode == "multi" and len(workers) > 1 else [])
     chunk_size = compute_dynamic_chunk_size(db, all_involved_models)
 
@@ -313,10 +461,9 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
     final_response = ""
 
     try:
-        log_activity(f"Orchestration [{mode.upper()} | Thème: {theme} | Web: {'ON' if enable_web else 'OFF'}]. Prompteur: {p_mod}")
-        p_client, p_prov = get_client_for_model(db, p_mod, settings)
+        log_activity(f"Orchestration [{mode.upper()} | Thème: {theme} | Web: {'ON' if enable_web else 'OFF'}]. Prompteur Gemini: {p_mod}")
+        p_client, p_prov = get_client_for_model(db, p_mod, settings, is_worker=False)
 
-        # --- PRÉ-TRAITEMENT DES FICHIERS & IMAGES ---
         files_context = ""
         if extracted_files:
             log_activity(f"Traitement Map-Reduce de {len(extracted_files)} fichier(s) joint(s).")
@@ -326,7 +473,6 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                 content = f.get('content') or ''
                 is_image = f.get('is_image', False)
 
-                # Point 1 : Règles strictes pour l'OCR CE2 de Céline
                 if is_ocr_ce2:
                     file_sys = (
                         "Tu es un système d'OCR scolaire ultra-précis pour une classe de CE2 (enseignante : Céline). "
@@ -350,7 +496,7 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                         return f"\n\n--- Transcription exacte du fichier {fname} ---\n{analysis}"
                     except Exception as e:
                         log_activity(f"Erreur OCR Vision sur {fname}: {str(e)}")
-                        return f"\n\n--- Erreur de lecture image sur {fname} (Assurez-vous que le Prompteur supporte la Vision, ex: gemini-2.5-flash) ---\n{str(e)}"
+                        return f"\n\n--- Erreur de lecture image sur {fname} ---\n{str(e)}"
 
                 if len(content) > chunk_size:
                     chunks = [content[i:i+chunk_size] for i in range(0, len(content), chunk_size)]
@@ -392,7 +538,6 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
             files_context = "".join(file_analyses)
             user_prompt = f"{original_user_text}\n\nVoici les données extraites des fichiers joints :\n{files_context}"
 
-        # --- ÉTAPE PROMPTEUR ---
         if is_ocr_ce2:
             log_activity("Structuration de la tâche de correction CE2 (Français strict conservé)...")
             prompt_system = (
@@ -402,11 +547,10 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
             )
             optimized = await ask_agent(p_client, p_mod, [{"role": "system", "content": prompt_system}, {"role": "user", "content": user_prompt}], p_prov, enable_web=False)
         else:
-            log_activity("Optimisation de la requête via le Prompteur...")
+            log_activity("Optimisation de la requête via le Prompteur Gemini...")
             prompt_system = "You are an expert prompt engineer. Translate and optimize the user request and any file context into clear, precise English tailored for AI execution. Keep all code blocks and exact data intact."
             optimized = await ask_agent(p_client, p_mod, [{"role": "system", "content": prompt_system}, {"role": "user", "content": user_prompt}], p_prov, enable_web=False)
 
-        # --- ÉTAPE TRAVAILLEUR(S) ---
         worker_sys_prompt = None
         if is_ocr_ce2:
             worker_sys_prompt = (
@@ -426,10 +570,10 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                 "Ne traduis jamais la syntaxe du code source à l'intérieur des blocs de code."
             )
 
-        log_activity(f"Exécution sur {len(workers)} travailleur(s) (Recherche Web: {'Active' if enable_web else 'Inactive'})...")
+        log_activity(f"Exécution sur {len(workers)} travailleur(s) [HF/Cloudflare/OpenRouter]...")
         if len(workers) == 1:
             w_mod = workers[0]
-            client, provider = get_client_for_model(db, w_mod, settings)
+            client, provider = get_client_for_model(db, w_mod, settings, is_worker=True)
             msgs = formatted_history.copy()
             if worker_sys_prompt:
                 msgs.insert(0, {"role": "system", "content": worker_sys_prompt})
@@ -440,7 +584,7 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
         else:
             w_tasks = []
             for w in workers:
-                w_client, w_prov = get_client_for_model(db, w, settings)
+                w_client, w_prov = get_client_for_model(db, w, settings, is_worker=True)
                 msgs = formatted_history.copy()
                 if worker_sys_prompt:
                     msgs.insert(0, {"role": "system", "content": worker_sys_prompt})
@@ -449,13 +593,12 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
             responses = await asyncio.gather(*w_tasks, return_exceptions=True)
             log_activity("Tous les travailleurs ont terminé leur analyse.")
 
-        # --- ÉTAPE CONCATÉNEUR (Ignorée en mode Mono-IA) ---
         if mode == "mono" and len(responses) == 1:
             log_activity("Mode Mono-IA : restitution directe sans concaténeur.")
             final_response = str(responses[0])
         else:
-            c_client, c_prov = get_client_for_model(db, c_mod, settings)
-            log_activity(f"Synthèse finale via Concaténeur ({c_mod})...")
+            c_client, c_prov = get_client_for_model(db, c_mod, settings, is_worker=False)
+            log_activity(f"Synthèse finale via Concaténeur Gemini ({c_mod})...")
             if is_ocr_ce2:
                 concat_system = (
                     "Tu es le coordinateur pédagogique de Céline (classe de CE2). "
