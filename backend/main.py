@@ -1,10 +1,10 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request, Response, UploadFile, File
-from fastapi.responses import RedirectResponse, FileResponse
+from fastapi.responses import RedirectResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import List
-import os, json, asyncio, shutil, base64, io, csv, zipfile
+import os, json, asyncio, shutil, base64, io, csv, zipfile, traceback
 from datetime import datetime, timedelta, timezone
 import pytz
 
@@ -19,9 +19,9 @@ from .schemas import (
 from .models import User, Project, Message, SystemSettings, AIModel, FinancialLog
 from .orchestrator import (
     run_orchestrator, sync_providers_models, sync_finances, activity_logs,
-    log_activity, generate_media, resolve_gemini_model_id, is_worker_eligible
+    log_activity, generate_media, resolve_gemini_model_id, is_worker_eligible, find_quota_fallback_model
 )
-from .logger import log_file, cleanup_old_logs
+from .logger import log_file, cleanup_old_logs, system_logger
 
 Base.metadata.create_all(bind=engine)
 
@@ -36,6 +36,17 @@ except Exception:
         pass
 
 app = FastAPI(title="AETHAS38")
+
+# Point 1 : Intercepteur global qui garantit une réponse JSON valide même en cas d'erreur 500
+@app.exception_handler(Exception)
+async def global_json_exception_handler(request: Request, exc: Exception):
+    tb = traceback.format_exc()
+    system_logger.error(f"Exception non gérée sur {request.url.path} :\n{tb}")
+    log_activity(f"[Erreur Serveur] {str(exc)[:100]}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Erreur interne du serveur : {str(exc)}"}
+    )
 
 assets_path = os.path.join(os.getcwd(), "frontend", "assets")
 avatars_path = os.path.join(assets_path, "avatars")
@@ -161,34 +172,11 @@ async def api_generate_media(req: MediaGenerateRequest, db: Session = Depends(ge
 
 @app.post("/api/models/suggest_replacement")
 async def suggest_replacement(req: ModelReplacementRequest, db: Session = Depends(get_db)):
-    log_activity(f"⚠️ Modèle travailleur indisponible: {req.missing_model}. Demande de suggestion à Gemini...")
-    settings = db.query(SystemSettings).first()
-    all_models = db.query(AIModel).all()
-    available = [m.model_id for m in all_models if is_worker_eligible(m)]
-    default_worker = available[0] if available else "Qwen/Qwen2.5-Coder-32B-Instruct"
-
-    if not settings or not settings.gemini_api_key:
-        return {"suggestion": default_worker, "reason": "Clé API Gemini non configurée."}
-
-    prompt = f"Le modèle IA '{req.missing_model}' n'est plus disponible. Voici les modèles disponibles : {', '.join(available[:250])}. Trouve le modèle le plus proche techniquement. Réponds UNIQUEMENT avec ce format strict : ID_DU_MODELE | Brève explication en français de 10 mots max."
-    
-    try:
-        from openai import AsyncOpenAI
-        helper_mod = resolve_gemini_model_id(db, "gemini-3.5-flash-lite")
-        client = AsyncOpenAI(base_url="https://generativelanguage.googleapis.com/v1beta/openai/", api_key=settings.gemini_api_key)
-        resp = await client.chat.completions.create(model=helper_mod, messages=[{"role": "user", "content": prompt}], max_tokens=50)
-        res = resp.choices[0].message.content.strip()
-        if "|" in res:
-            parts = res.split("|")
-            sugg, reason = parts[0].strip(), parts[1].strip()
-        else:
-            sugg, reason = res.strip(), "Sélectionné par Gemini."
-        if sugg not in available:
-            sugg, reason = default_worker, "Repli sur travailleur autorisé."
-        log_activity(f"✅ Remplacement trouvé : {req.missing_model} -> {sugg}")
-        return {"suggestion": sugg, "reason": reason}
-    except Exception:
-        return {"suggestion": default_worker, "reason": "Fallback par défaut."}
+    log_activity(f"⚠️ Modèle travailleur indisponible: {req.missing_model}. Recherche de remplacement de même niveau tarifaire...")
+    fallback = find_quota_fallback_model(db, req.missing_model, {req.missing_model}, is_worker=True)
+    if fallback:
+        return {"suggestion": fallback, "reason": "Remplacement automatique respectant le mode Gratuit/Payant."}
+    return {"suggestion": "Qwen/Qwen2.5-Coder-32B-Instruct", "reason": "Repli par défaut."}
 
 @app.get("/api/users/me")
 def get_me(current_user: User = Depends(get_current_user)):

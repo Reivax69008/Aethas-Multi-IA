@@ -17,10 +17,10 @@ jobs:
       - name: Checkout du dépôt
         uses: actions/checkout@v4
 
-      - name: Validation syntaxique Backend Python & Frontend HTML (Point 1)
+      - name: Validation syntaxique Backend Python & Frontend HTML
         run: |
           python3 -m py_compile backend/*.py
-          python3 -c "import glob, sys; files = glob.glob('frontend/*.html'); [sys.exit(f'Erreur HTML dans {f}: balise <{t}> non équilibrée') for f in files for c in [open(f, encoding='utf-8').read()] for t in ['html','head','body','script','style','div','main','aside','header','table','select','textarea'] if c.count(f'<{t}') != c.count(f'</{t}>')]"
+          python3 -c "import glob, re, sys; files = glob.glob('frontend/*.html'); tags = ['html','head','body','script','style','div','main','aside','header','table','select','textarea']; [sys.exit(f'Erreur HTML dans {f}: balise <{t}> non équilibrée') for f in files for c in [open(f, encoding='utf-8').read()] for t in tags if len(re.findall(rf'<{t}(?=[\s>])', c)) != len(re.findall(rf'</{t}\s*>', c))]"
           echo "✅ Code Backend (.py) et Frontend (.html) 100% valides !"
 
       - name: Compilation incrémentale sur le serveur hôte (Cache Docker actif)
