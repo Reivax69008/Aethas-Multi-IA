@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, Request, Response, 
 from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from typing import List
 import os, json, asyncio, shutil, base64, io, csv, zipfile
 from datetime import datetime, timedelta, timezone
@@ -9,11 +10,28 @@ import pytz
 
 from .database import engine, Base, get_db, SessionLocal
 from .auth import get_password_hash, generate_totp_secret, get_totp_uri, verify_password, verify_totp, create_access_token, verify_token
-from .schemas import AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, ProjectRename, MessageCreate, MessageResponse, PasswordChange, ModelReplacementRequest, LogRequest, SystemSettingsUpdate, SystemSettingsResponse
+from .schemas import (
+    AdminCreate, LoginRequest, ProjectCreate, ProjectResponse, ProjectRename,
+    ProjectConfigUpdate, MessageCreate, MessageResponse, PasswordChange,
+    ModelReplacementRequest, LogRequest, SystemSettingsUpdate, SystemSettingsResponse
+)
 from .models import User, Project, Message, SystemSettings, AIModel, FinancialLog
 from .orchestrator import run_orchestrator, sync_providers_models, sync_finances, activity_logs, log_activity
+from .logger import log_file, cleanup_old_logs
 
 Base.metadata.create_all(bind=engine)
+
+# Migration automatique sécurisée pour PostgreSQL / SQLite (Point 4)
+try:
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS config_json TEXT;"))
+except Exception:
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE projects ADD COLUMN config_json TEXT;"))
+    except Exception:
+        pass
+
 app = FastAPI(title="AETHAS38")
 
 assets_path = os.path.join(os.getcwd(), "frontend", "assets")
@@ -34,13 +52,17 @@ async def scheduler_task():
                     try: await sync_providers_models(db, settings, "Automatique")
                     except: pass
                 
+                # Suppression des discussions > 7 jours non épinglées
                 cutoff = datetime.now(timezone.utc) - timedelta(days=7)
                 old_projects = db.query(Project).filter(Project.is_pinned == False, Project.created_at < cutoff).all()
                 if old_projects:
-                    log_activity(f"[Nettoyage] Suppression de {len(old_projects)} discussion(s) de plus de 7 jours.")
+                    log_activity(f"[Nettoyage BDD] Suppression de {len(old_projects)} discussion(s) > 7 jours.")
                     for op in old_projects:
                         db.delete(op)
                     db.commit()
+
+                # Point 10 : Suppression automatique des fichiers de logs de plus de 30 jours
+                cleanup_old_logs(30)
             except Exception as e:
                 db.rollback()
                 log_activity(f"[Erreur Nettoyage] {str(e)}")
@@ -51,7 +73,9 @@ async def scheduler_task():
         await asyncio.sleep(30)
 
 @app.on_event("startup")
-async def startup_event(): asyncio.create_task(scheduler_task())
+async def startup_event():
+    cleanup_old_logs(30)
+    asyncio.create_task(scheduler_task())
 
 def is_setup_required(db: Session) -> bool: return db.query(User).filter(User.is_superadmin == True).first() is None
 
@@ -87,8 +111,6 @@ def login(login_data: LoginRequest, response: Response, db: Session = Depends(ge
     user = db.query(User).filter(User.username == login_data.username).first()
     if not user or not verify_password(login_data.password, user.hashed_password): raise HTTPException(status_code=401, detail="Identifiants incorrects.")
     if not verify_totp(user.totp_secret, login_data.totp_code): raise HTTPException(status_code=401, detail="2FA invalide.")
-    
-    # Session valide 8 heures (28800 secondes)
     response.set_cookie(key="session_token", value=create_access_token(data={"sub": user.username}), httponly=True, max_age=28800, samesite="lax")
     return {"message": "Connexion réussie"}
 
@@ -99,50 +121,58 @@ def dashboard(request: Request):
     return FileResponse(os.path.join(os.getcwd(), "frontend", "dashboard.html"))
 
 @app.get("/api/logs")
-def get_logs():
+def get_logs(current_user: User = Depends(get_current_user)):
     return {"logs": activity_logs}
 
 @app.post("/api/logs")
-def add_frontend_log(req: LogRequest):
+def add_frontend_log(req: LogRequest, current_user: User = Depends(get_current_user)):
     log_activity(f"[Système UI] {req.message}")
     return {"status": "ok"}
+
+# Point 11 : Extraction directe des logs en cours depuis le site
+@app.get("/api/logs/download")
+def download_current_logs(current_user: User = Depends(get_current_user)):
+    filename = f"aethas38_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    if os.path.exists(log_file):
+        return FileResponse(
+            path=log_file,
+            media_type="text/plain;charset=utf-8",
+            filename=filename
+        )
+    content = "\n".join(activity_logs) if activity_logs else "Aucun log enregistré."
+    return Response(
+        content=content,
+        media_type="text/plain;charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 @app.post("/api/models/suggest_replacement")
 async def suggest_replacement(req: ModelReplacementRequest, db: Session = Depends(get_db)):
     log_activity(f"⚠️ Modèle indisponible: {req.missing_model}. Demande de suggestion à Gemini...")
     settings = db.query(SystemSettings).first()
     if not settings or not settings.gemini_api_key:
-        log_activity("Clé Gemini non trouvée. Fallback forcé sur gemini-3.5-flash-lite.")
-        return {"suggestion": "gemini-3.5-flash-lite", "reason": "Clé API Gemini non configurée dans le système."}
+        return {"suggestion": "gemini-3.5-flash-lite", "reason": "Clé API Gemini non configurée."}
 
     models = db.query(AIModel).all()
     available = [m.model_id for m in models]
-    
-    prompt = f"Le modèle IA '{req.missing_model}' n'est plus disponible. Voici les modèles disponibles : {', '.join(available)}. Trouve le modèle le plus proche techniquement. Réponds UNIQUEMENT avec ce format strict : ID_DU_MODELE | Brève explication en français de 10 mots max. Si aucun ne correspond, renvoie gemini-3.5-flash-lite | Par défaut."
+    prompt = f"Le modèle IA '{req.missing_model}' n'est plus disponible. Voici les modèles disponibles : {', '.join(available[:300])}. Trouve le modèle le plus proche techniquement. Réponds UNIQUEMENT avec ce format strict : ID_DU_MODELE | Brève explication en français de 10 mots max."
     
     try:
         from openai import AsyncOpenAI
         client = AsyncOpenAI(base_url="https://generativelanguage.googleapis.com/v1beta/openai/", api_key=settings.gemini_api_key)
         resp = await client.chat.completions.create(model="gemini-3.5-flash-lite", messages=[{"role": "user", "content": prompt}], max_tokens=50)
         res = resp.choices[0].message.content.strip()
-        
         if "|" in res:
             parts = res.split("|")
-            sugg = parts[0].strip()
-            reason = parts[1].strip()
+            sugg, reason = parts[0].strip(), parts[1].strip()
         else:
-            sugg = res.strip()
-            reason = "Sélectionné par Gemini."
-            
+            sugg, reason = res.strip(), "Sélectionné par Gemini."
         if sugg not in available and sugg != "gemini-3.5-flash-lite":
-            sugg = "gemini-3.5-flash-lite"
-            reason = "Gemini a suggéré un modèle invalide. Fallback par défaut."
-
+            sugg, reason = "gemini-3.5-flash-lite", "Fallback par défaut."
         log_activity(f"✅ Remplacement trouvé : {req.missing_model} -> {sugg}")
         return {"suggestion": sugg, "reason": reason}
     except Exception as e:
-        log_activity(f"Erreur d'interrogation Gemini: {str(e)}. Fallback par défaut.")
-        return {"suggestion": "gemini-3.5-flash-lite", "reason": f"Erreur API."}
+        return {"suggestion": "gemini-3.5-flash-lite", "reason": "Fallback par défaut."}
 
 @app.get("/api/users/me")
 def get_me(current_user: User = Depends(get_current_user)):
@@ -164,7 +194,6 @@ async def upload_avatar(file: UploadFile = File(...), db: Session = Depends(get_
     db.commit()
     return {"message": "Avatar mis à jour", "avatar_path": current_user.avatar_path}
 
-# --- ROUTES SUPER-ADMIN ---
 @app.get("/api/settings", response_model=SystemSettingsResponse)
 def get_settings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if not current_user.is_superadmin: raise HTTPException(status_code=403, detail="Super-Admin requis.")
@@ -182,11 +211,23 @@ def update_settings(settings_data: SystemSettingsUpdate, db: Session = Depends(g
     return {"message": "Paramètres mis à jour avec succès."}
 
 @app.get("/api/projects", response_model=List[ProjectResponse])
-def get_projects(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)): return db.query(Project).filter(Project.user_id == current_user.id).order_by(Project.created_at.desc()).all()
+def get_projects(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return db.query(Project).filter(Project.user_id == current_user.id).order_by(Project.created_at.desc()).all()
 
 @app.post("/api/projects", response_model=ProjectResponse)
 def create_project(project: ProjectCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    p = Project(title=project.title, user_id=current_user.id); db.add(p); db.commit(); db.refresh(p); return p
+    p = Project(title=project.title, user_id=current_user.id)
+    db.add(p); db.commit(); db.refresh(p)
+    return p
+
+# Point 4 : Sauvegarde de la configuration IA du projet dans PostgreSQL
+@app.put("/api/projects/{project_id}/config", response_model=ProjectResponse)
+def update_project_config(project_id: int, cfg: ProjectConfigUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    p = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not p: raise HTTPException(status_code=404)
+    p.config_json = cfg.config_json
+    db.commit(); db.refresh(p)
+    return p
 
 @app.put("/api/projects/{project_id}/rename", response_model=ProjectResponse)
 def rename_project(project_id: int, project_data: ProjectRename, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -213,22 +254,30 @@ def export_project(project_id: int, format: str = "txt", db: Session = Depends(g
     if format == "json":
         data = [{"role": m.role, "content": m.content, "date": m.created_at.isoformat()} for m in messages]
         return Response(content=json.dumps(data, indent=2), media_type="application/json", headers={"Content-Disposition": f"attachment; filename=export_{project_id}.json"})
-    text = f"--- HISTORIQUE : {p.title} ---\n\n"
-    for m in messages: text += f"[{m.created_at.strftime('%Y-%m-%d %H:%M:%S')}] {'VOUS' if m.role == 'user' else 'AETHAS38'}:\n{m.content}\n\n{'-'*50}\n\n"
-    return Response(content=text, media_type="text/plain;charset=utf-8", headers={"Content-Disposition": f"attachment; filename=export_{project_id}.txt"})
+    text_out = f"--- HISTORIQUE : {p.title} ---\n\n"
+    for m in messages: text_out += f"[{m.created_at.strftime('%Y-%m-%d %H:%M:%S')}] {'VOUS' if m.role == 'user' else 'AETHAS38'}:\n{m.content}\n\n{'-'*50}\n\n"
+    return Response(content=text_out, media_type="text/plain;charset=utf-8", headers={"Content-Disposition": f"attachment; filename=export_{project_id}.txt"})
 
 @app.get("/api/projects/{project_id}/messages", response_model=List[MessageResponse])
-def get_messages(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)): return db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
+def get_messages(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
 
 @app.post("/api/projects/{project_id}/messages", response_model=List[MessageResponse])
 async def create_message(project_id: int, message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    p = db.query(Project).filter(Project.id == project_id).first()
-    if p and p.title == "Nouvelle discussion":
+    p = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not p: raise HTTPException(status_code=404, detail="Projet introuvable.")
+
+    # Sauvegarde centrale de la configuration IA du projet en BDD (Point 4)
+    if message.config:
+        p.config_json = json.dumps(message.config.dict())
+        db.commit()
+
+    # Auto-renommage à la 2ème requête
+    if p.title == "Nouvelle discussion":
         user_msgs = db.query(Message).filter(Message.project_id == project_id, Message.role == "user").order_by(Message.created_at.asc()).all()
         if len(user_msgs) == 1:
             first_content = user_msgs[0].content.split("\n\n[Fichiers joints")[0].strip()
-            new_title = first_content.split('\n')[0][:35].strip()
-            if not new_title: new_title = "Discussion"
+            new_title = first_content.split('\n')[0][:35].strip() or "Discussion"
             p.title = new_title + ("..." if len(first_content) > 35 else "")
             db.commit()
 
@@ -239,11 +288,17 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
         for f in message.files:
             files_names.append(f.name)
             content = f.content
+            ext = f.name.split('.')[-1].lower() if '.' in f.name else ''
+
             if content.startswith("data:"):
+                # Point 1 : Conservation native des images en Base64 pour l'OCR Vision
+                if ext in ['png', 'jpg', 'jpeg', 'webp', 'gif'] or content.startswith("data:image/"):
+                    extracted_files_data.append({"name": f.name, "content": content, "is_image": True})
+                    continue
+
                 try:
                     header, b64data = content.split(",", 1)
                     file_bytes = base64.b64decode(b64data)
-                    ext = f.name.split('.')[-1].lower()
                     extracted_text = ""
 
                     if ext == 'pdf':
@@ -251,9 +306,21 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
                             import PyPDF2
                             reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
                             extracted_text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
-                        except ImportError:
-                            extracted_text = "[Erreur: L'administrateur doit exécuter 'pip install PyPDF2' sur le serveur pour lire les PDF.]"
+                        except Exception as e:
+                            extracted_text = f"[Erreur lecture PDF: {str(e)}]"
                     
+                    elif ext in ['docx', 'odt']:
+                        try:
+                            import zipfile as zf_doc
+                            import xml.etree.ElementTree as ET
+                            with zf_doc.ZipFile(io.BytesIO(file_bytes)) as dz:
+                                xml_file = "word/document.xml" if ext == "docx" else "content.xml"
+                                xml_content = dz.read(xml_file)
+                                tree = ET.fromstring(xml_content)
+                                extracted_text = "".join(tree.itertext())
+                        except Exception as e:
+                            extracted_text = f"[Erreur lecture document {ext}: {str(e)}]"
+
                     elif ext in ['xls', 'xlsx', 'xlsm', 'xlsb']:
                         try:
                             import openpyxl
@@ -265,30 +332,25 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
                                     row_vals = [str(cell) if cell is not None else "" for cell in row]
                                     if any(row_vals):
                                         extracted_text += "\t".join(row_vals) + "\n"
-                            
                             if ext in ['xlsm', 'xlsb', 'xls']:
                                 try:
                                     from oletools.olevba import VBA_Parser
                                     vbaparser = VBA_Parser("filename", data=file_bytes)
                                     if vbaparser.detect_vba_macros():
                                         extracted_text += "\n\n--- MACROS VBA DETECTEES ---\n"
-                                        for (filename, stream_path, vba_filename, vba_code) in vbaparser.extract_macros():
+                                        for (_, _, vba_filename, vba_code) in vbaparser.extract_macros():
                                             extracted_text += f"\n// Module: {vba_filename}\n{vba_code}\n"
-                                except ImportError:
-                                    extracted_text += "\n[Extraction VBA impossible: L'administrateur doit exécuter 'pip install oletools' sur le serveur.]\n"
-                                except Exception as e:
-                                    extracted_text += f"\n[Erreur de lecture VBA interne: {str(e)}]\n"
-
-                        except ImportError:
-                            extracted_text = "[Erreur: L'administrateur doit exécuter 'pip install openpyxl' sur le serveur pour lire Excel.]"
+                                except Exception: pass
+                        except Exception as e:
+                            extracted_text = f"[Erreur lecture Excel: {str(e)}]"
                     else:
                         extracted_text = file_bytes.decode('utf-8', errors='replace')
                     
-                    extracted_files_data.append({"name": f.name, "content": extracted_text})
+                    extracted_files_data.append({"name": f.name, "content": extracted_text, "is_image": False})
                 except Exception as e:
-                    extracted_files_data.append({"name": f.name, "content": f"[ERREUR DE DECODAGE: {str(e)}]"})
+                    extracted_files_data.append({"name": f.name, "content": f"[ERREUR DE DECODAGE: {str(e)}]", "is_image": False})
             else:
-                extracted_files_data.append({"name": f.name, "content": content})
+                extracted_files_data.append({"name": f.name, "content": content, "is_image": False})
 
     db_content = message.content
     if files_names:
@@ -307,7 +369,6 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
     db.commit()
     return db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
 
-# --- ROUTES MODÈLES & FINANCES ---
 @app.get("/api/models/info")
 def get_models_info(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     settings = db.query(SystemSettings).first()
@@ -346,7 +407,7 @@ def export_models(db: Session = Depends(get_db), current_user: User = Depends(ge
         prov_models = [m for m in models if m.provider == prov]
         for m in prov_models:
             price_info = "**GRATUIT**" if m.is_free else f"In: ${m.pricing_prompt:.2f} / Out: ${m.pricing_completion:.2f}"
-            ctx_info = f"{int(m.context_length/1000)}k"
+            ctx_info = f"{int((m.context_length or 0)/1000)}k"
             desc = m.description_fr.replace('\n', ' ') if m.description_fr else ""
             md_content += f"- **{m.name or m.model_id}** (`{m.model_id}`)\n"
             md_content += f"  - *Domaine :* {m.domain}\n"

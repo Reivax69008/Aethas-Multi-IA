@@ -19,16 +19,18 @@ def log_activity(msg: str):
     activity_logs.append(formatted_msg)
     if len(activity_logs) > 100:
         activity_logs.pop(0)
-    # Écriture effective dans le fichier de log (logs/aethas38_system.log)
     system_logger.info(msg)
 # --------------------------------------
 
 def determine_domain(model_id: str) -> str:
     if not model_id: return "Texte Polyvalent"
     mid = model_id.lower()
-    if "vision" in mid or "vl" in mid or "omni" in mid: return "Vision & Texte"
-    if "coder" in mid or "code" in mid or "math" in mid: return "Code & Logique"
-    if "audio" in mid or "whisper" in mid: return "Audio"
+    if any(k in mid for k in ["vision", "vl", "omni", "pixtral", "gemini-1.5", "gemini-2", "gemini-3", "gpt-4o", "claude-3"]):
+        return "Vision & Texte"
+    if any(k in mid for k in ["coder", "code", "codestral", "deepseek-r1", "math", "qwen2.5-coder"]):
+        return "Code & Logique"
+    if "audio" in mid or "whisper" in mid:
+        return "Audio"
     return "Texte Polyvalent"
 
 async def translate_en_to_fr(client: httpx.AsyncClient, text: str) -> str:
@@ -69,7 +71,8 @@ async def sync_finances(db: Session, settings: SystemSettings):
                         usage = float(data.get("usage") or 0.0)
                         balance = (float(limit) - usage) if limit is not None else -usage
                 update_finance_db(db, "OpenRouter", balance, usage)
-            except Exception as e: print(f"Erreur Finance OR: {e}")
+            except Exception as e:
+                print(f"Erreur Finance OR: {e}")
             
         if settings.groq_api_key: update_finance_db(db, "Groq", 999.0, 0.0)
         if settings.deepseek_api_key:
@@ -81,7 +84,8 @@ async def sync_finances(db: Session, settings: SystemSettings):
                     if balance_infos and len(balance_infos) > 0 and balance_infos[0]:
                         infos = balance_infos[0]
                         update_finance_db(db, "DeepSeek", float(infos.get("total_balance") or 0.0), 0.0)
-            except Exception: pass
+            except Exception:
+                pass
         if settings.mistral_api_key: update_finance_db(db, "Mistral", 0.0, 0.0)
         if settings.gemini_api_key: update_finance_db(db, "Gemini", 0.0, 0.0)
 
@@ -95,7 +99,8 @@ def update_finance_db(db, provider, balance, usage):
             log.balance = balance; log.total_usage = usage; log.checked_at = datetime.now(timezone.utc)
         else:
             db.add(FinancialLog(provider=provider, balance=balance, total_usage=usage))
-    except Exception as e: print(f"Finance DB Error: {e}")
+    except Exception as e:
+        print(f"Finance DB Error: {e}")
 
 async def sync_providers_models(db: Session, settings: SystemSettings, sync_type: str = "Automatique"):
     if not settings: return {"status": "error", "models_processed": 0}
@@ -117,7 +122,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
                             pc = float(pricing.get("completion") or 0.0) * 1000000
                             is_free = (pp == 0.0 and pc == 0.0)
                             desc_en = item.get("description") or "Generic AI Model."
-                            models_to_process[m_id] = {"provider": "openrouter", "name": item.get("name") or "Inconnu", "desc_en": desc_en, "domain": determine_domain(m_id), "is_free": is_free, "ctx": item.get("context_length") or 0, "pp": pp, "pc": pc}
+                            models_to_process[m_id] = {"provider": "openrouter", "name": item.get("name") or "Inconnu", "desc_en": desc_en, "domain": determine_domain(m_id), "is_free": is_free, "ctx": item.get("context_length") or 8192, "pp": pp, "pc": pc}
                         except: pass
             except Exception as e: print(f"Erreur OR Models: {e}")
             
@@ -128,7 +133,8 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
                     for item in (resp.json().get("data") or []):
                         if not item or "id" not in item: continue
                         m_id = item["id"]
-                        models_to_process[m_id] = {"provider": "groq", "name": m_id.capitalize(), "desc": "Modèle très rapide hébergé sur LPU Groq.", "domain": determine_domain(m_id), "is_free": True, "ctx": 8192, "pp": 0.0, "pc": 0.0}
+                        ctx_len = item.get("context_window") or 8192
+                        models_to_process[m_id] = {"provider": "groq", "name": m_id.capitalize(), "desc": "Modèle très rapide hébergé sur LPU Groq.", "domain": determine_domain(m_id), "is_free": True, "ctx": ctx_len, "pp": 0.0, "pc": 0.0}
             except Exception: pass
 
         if settings.deepseek_api_key:
@@ -148,7 +154,8 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
                     for item in (resp.json().get("data") or []):
                         if not item or "id" not in item: continue
                         m_id = item["id"]
-                        models_to_process[m_id] = {"provider": "mistral", "name": m_id.capitalize(), "desc": "Modèle officiel développé par Mistral AI.", "domain": determine_domain(m_id), "is_free": False, "ctx": 32000, "pp": 0.2, "pc": 0.6}
+                        ctx_len = item.get("max_context_length") or 32000
+                        models_to_process[m_id] = {"provider": "mistral", "name": m_id.capitalize(), "desc": "Modèle officiel développé par Mistral AI.", "domain": determine_domain(m_id), "is_free": False, "ctx": ctx_len, "pp": 0.2, "pc": 0.6}
             except Exception: pass
 
         if settings.gemini_api_key:
@@ -187,7 +194,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
         try:
             existing = db.query(AIModel).filter(AIModel.model_id == m_id).first()
             if existing:
-                existing.pricing_prompt = data["pp"]; existing.pricing_completion = data["pc"]; existing.is_free = data["is_free"]; existing.description_fr = data["desc"]; existing.last_updated = datetime.now(timezone.utc)
+                existing.pricing_prompt = data["pp"]; existing.pricing_completion = data["pc"]; existing.is_free = data["is_free"]; existing.description_fr = data["desc"]; existing.domain = data["domain"]; existing.context_length = data["ctx"]; existing.last_updated = datetime.now(timezone.utc)
             else:
                 db.add(AIModel(provider=data["provider"], model_id=m_id, name=data["name"], description_fr=data["desc"], domain=data["domain"], is_free=data["is_free"], context_length=data["ctx"], pricing_prompt=data["pp"], pricing_completion=data["pc"]))
             added += 1
@@ -199,7 +206,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
         settings.last_sync_date = datetime.now(timezone.utc)
         settings.last_sync_type = sync_type
         db.commit()
-    except Exception as e:
+    except Exception:
         db.rollback()
         
     await sync_finances(db, settings)
@@ -223,8 +230,22 @@ def get_client_for_model(db: Session, model_id: str, settings: SystemSettings):
     
     return AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=settings.openrouter_api_key), "openrouter"
 
+def compute_dynamic_chunk_size(db: Session, active_model_ids: list) -> int:
+    """Point 9 : Adapte la taille des chunks au modèle ayant le contexte le plus restrictif."""
+    valid_ids = [m for m in active_model_ids if m and m.strip()]
+    if not valid_ids:
+        return 60000
+    models_db = db.query(AIModel).filter(AIModel.model_id.in_(valid_ids)).all()
+    contexts = [m.context_length for m in models_db if m.context_length and m.context_length > 0]
+    min_ctx = min(contexts) if contexts else 8192
+
+    # 1 token ~ 3.5 caractères. On réserve 50% du contexte pour le prompt système et la réponse.
+    calculated_chars = int(min_ctx * 0.5 * 3.5)
+    chunk_size = max(6000, min(calculated_chars, 150000))
+    log_activity(f"Contexte le plus restrictif : {min_ctx} tokens -> Chunk dynamique fixé à {chunk_size} caractères.")
+    return chunk_size
+
 def extract_safe_content(resp) -> str:
-    """Extrait le texte de la réponse OpenAI/OpenRouter en évitant toute erreur NoneType."""
     if not resp:
         raise ValueError("Réponse API vide (None).")
     if getattr(resp, "error", None):
@@ -268,19 +289,34 @@ async def ask_agent(client, model_id, messages, provider="openrouter", enable_we
 
 async def run_orchestrator(db: Session, history: list, settings: SystemSettings, config: dict, extracted_files: list = None) -> str:
     if not config: config = {}
-    workers = config.get("workers") or ["gemini-3.5-flash-lite"]
+    mode = config.get("mode", "multi")
+    theme = config.get("theme", "general")
+    enable_web = config.get("enable_web", True)
+    workers = [w for w in (config.get("workers") or []) if w and w.strip()]
+    if not workers:
+        workers = ["gemini-3.5-flash-lite"]
+    if mode == "mono":
+        workers = [workers[0]]  # Point 2 : En mode Mono-IA, 1 seul travailleur
+
+    p_mod = config.get("prompter") or "gemini-3.5-flash-lite"
+    c_mod = config.get("concatenator") or "gemini-3.5-flash-lite"
+
     user_prompt = (history[-1].content or "") if history else ""
     original_user_text = user_prompt.split("\n\n[Fichiers joints")[0] if "[Fichiers joints" in user_prompt else user_prompt
     formatted_history = [{"role": msg.role, "content": msg.content or ""} for msg in history[:-1]] if len(history) > 1 else []
 
+    # Point 9 : Calcul dynamique de la taille de chunk selon les modèles actifs
+    all_involved_models = [p_mod] + workers + ([c_mod] if mode == "multi" and len(workers) > 1 else [])
+    chunk_size = compute_dynamic_chunk_size(db, all_involved_models)
+
+    is_ocr_ce2 = (theme == "ocr_ce2")
     final_response = ""
+
     try:
-        p_mod = config.get("prompter")
-        if not p_mod: p_mod = "gemini-3.5-flash-lite"
-        
-        log_activity(f"Démarrage de l'orchestration. Modèle Prompteur: {p_mod}")
+        log_activity(f"Orchestration [{mode.upper()} | Thème: {theme} | Web: {'ON' if enable_web else 'OFF'}]. Prompteur: {p_mod}")
         p_client, p_prov = get_client_for_model(db, p_mod, settings)
 
+        # --- PRÉ-TRAITEMENT DES FICHIERS & IMAGES ---
         files_context = ""
         if extracted_files:
             log_activity(f"Traitement Map-Reduce de {len(extracted_files)} fichier(s) joint(s).")
@@ -288,28 +324,57 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                 if not f or not isinstance(f, dict): return ""
                 fname = f.get('name') or 'Fichier_inconnu'
                 content = f.get('content') or ''
-                file_sys = "You are an expert data analyst and senior developer. Extract the most important technical information from the file without losing critical code syntax."
-                chunk_size = 150000 
-                
+                is_image = f.get('is_image', False)
+
+                # Point 1 : Règles strictes pour l'OCR CE2 de Céline
+                if is_ocr_ce2:
+                    file_sys = (
+                        "Tu es un système d'OCR scolaire ultra-précis pour une classe de CE2 (enseignante : Céline). "
+                        "RÈGLE ABSOLUE ET CRITIQUE : Tu dois transcrire les copies d'élèves À L'IDENTIQUE, mot pour mot, lettre par lettre, chiffre par chiffre. "
+                        "NE CORRIGE JAMAIS les fautes d'orthographe, de grammaire, de conjugaison ou les erreurs de calcul mathématique de l'élève lors de la transcription ! "
+                        "Si un élève a écrit une erreur, reproduis exactement son erreur. "
+                        "Si le fichier est le corrigé de l'enseignante, indique clairement [DOCUMENT CORRIGÉ DE RÉFÉRENCE] et retranscris-le fidèlement."
+                    )
+                else:
+                    file_sys = "You are an expert data analyst and senior developer. Extract the most important technical information from the file without losing critical code syntax."
+
+                if is_image:
+                    log_activity(f"Analyse Vision / OCR de l'image {fname}...")
+                    user_msg_content = [
+                        {"type": "text", "text": f"Demande : '{original_user_text}'.\nFichier image : '{fname}'. Transcris intégralement et littéralement le contenu visible (sans corriger aucune faute si c'est une copie d'élève)."},
+                        {"type": "image_url", "image_url": {"url": content}}
+                    ]
+                    try:
+                        analysis = await ask_agent(p_client, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": user_msg_content}], p_prov, enable_web=False)
+                        log_activity(f"OCR Vision de {fname} réussi.")
+                        return f"\n\n--- Transcription exacte du fichier {fname} ---\n{analysis}"
+                    except Exception as e:
+                        log_activity(f"Erreur OCR Vision sur {fname}: {str(e)}")
+                        return f"\n\n--- Erreur de lecture image sur {fname} (Assurez-vous que le Prompteur supporte la Vision, ex: gemini-2.5-flash) ---\n{str(e)}"
+
                 if len(content) > chunk_size:
                     chunks = [content[i:i+chunk_size] for i in range(0, len(content), chunk_size)]
                     chunk_analyses = []
-                    log_activity(f"Fichier lourd ({fname}): Chunking en {len(chunks)} morceaux.")
+                    log_activity(f"Fichier lourd ({fname}): Découpage en {len(chunks)} chunks de {chunk_size} car.")
                     for idx, chunk in enumerate(chunks):
-                        file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nPartie {idx+1}/{len(chunks)} du fichier '{fname}'. Analysez, extrayez et résumez le code, VBA, SQL ou les données pertinentes.\n\nContenu :\n```\n{chunk}\n```"
+                        if is_ocr_ce2:
+                            file_prompt = f"Demande : '{original_user_text}'.\nPartie {idx+1}/{len(chunks)} du fichier '{fname}'. Restitue le contenu EXACTEMENT à l'identique sans corriger aucune erreur d'élève :\n```\n{chunk}\n```"
+                        else:
+                            file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nPartie {idx+1}/{len(chunks)} du fichier '{fname}'. Analysez, extrayez et résumez le code, VBA, SQL ou les données pertinentes.\n\nContenu :\n```\n{chunk}\n```"
                         try:
                             analysis = await ask_agent(p_client, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}], p_prov, enable_web=False)
                             chunk_analyses.append(analysis or "[ Analyse vide ]")
-                            log_activity(f"Analyse chunk {idx+1}/{len(chunks)} pour {fname} réussie.")
+                            log_activity(f"Chunk {idx+1}/{len(chunks)} de {fname} traité.")
                         except Exception as e:
                             chunk_analyses.append(f"[Erreur sur la partie {idx+1}: {str(e)}]")
                             log_activity(f"Erreur chunk {idx+1}/{len(chunks)} pour {fname}: {str(e)}")
-                        
-                        await asyncio.sleep(1.5) 
-                    
+                        await asyncio.sleep(1.5)
                     return f"\n\n--- Extraction du fichier {fname} (en {len(chunks)} parties) ---\n" + "\n".join(chunk_analyses)
                 else:
-                    file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nAnalysez le fichier ci-dessous. Extrayez, résumez et conservez méticuleusement tout le code, les macros VBA, les requêtes SQL, ou les données métier pertinentes pour répondre à la demande.\n\nFichier : {fname}\nContenu :\n```\n{content}\n```"
+                    if is_ocr_ce2:
+                        file_prompt = f"Demande : '{original_user_text}'.\nFichier : '{fname}'. Restitue intégralement et À L'IDENTIQUE (sans corriger les erreurs des élèves) le contenu ci-dessous :\n```\n{content}\n```"
+                    else:
+                        file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nAnalysez le fichier ci-dessous. Extrayez, résumez et conservez méticuleusement tout le code, les macros VBA, les requêtes SQL, ou les données métier pertinentes.\n\nFichier : {fname}\nContenu :\n```\n{content}\n```"
                     try:
                         analysis = await ask_agent(p_client, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}], p_prov, enable_web=False)
                         log_activity(f"Analyse intégrale de {fname} réussie.")
@@ -325,44 +390,89 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                 await asyncio.sleep(1.5)
             
             files_context = "".join(file_analyses)
-            user_prompt = f"{original_user_text}\n\nVoici les données pré-traitées des fichiers joints :\n{files_context}"
+            user_prompt = f"{original_user_text}\n\nVoici les données extraites des fichiers joints :\n{files_context}"
 
-        log_activity(f"Optimisation/Traduction de la requête via Prompteur...")
-        prompt_system = "You are an expert prompt engineer. Translate and optimize the user request and any file context into clear, precise English tailored for AI execution. Keep all code blocks intact."
-        optimized = await ask_agent(p_client, p_mod, [{"role": "system", "content": prompt_system}, {"role": "user", "content": user_prompt}], p_prov, enable_web=False)
+        # --- ÉTAPE PROMPTEUR ---
+        if is_ocr_ce2:
+            log_activity("Structuration de la tâche de correction CE2 (Français strict conservé)...")
+            prompt_system = (
+                "Tu es un ingénieur pédagogique assistant Céline, professeure des écoles en CE2. "
+                "Ne traduis RIEN en anglais. Prépare la consigne complète en français pour le correcteur IA en conservant "
+                "STRICTEMENT à l'identique les transcriptions brutes des copies d'élèves (avec toutes leurs fautes d'origine) ainsi que le corrigé de référence."
+            )
+            optimized = await ask_agent(p_client, p_mod, [{"role": "system", "content": prompt_system}, {"role": "user", "content": user_prompt}], p_prov, enable_web=False)
+        else:
+            log_activity("Optimisation de la requête via le Prompteur...")
+            prompt_system = "You are an expert prompt engineer. Translate and optimize the user request and any file context into clear, precise English tailored for AI execution. Keep all code blocks and exact data intact."
+            optimized = await ask_agent(p_client, p_mod, [{"role": "system", "content": prompt_system}, {"role": "user", "content": user_prompt}], p_prov, enable_web=False)
 
-        log_activity(f"Lancement de {len(workers)} travailleur(s) en parallèle...")
+        # --- ÉTAPE TRAVAILLEUR(S) ---
+        worker_sys_prompt = None
+        if is_ocr_ce2:
+            worker_sys_prompt = (
+                "Tu es l'assistant de correction de Céline pour ses élèves de CE2. "
+                "RÈGLES IMPÉRATIVES :\n"
+                "1. Ne corrige JAMAIS les erreurs (français, mathématiques, autres) dans la version initiale de l'élève : elle doit refléter exactement ce que l'élève a écrit.\n"
+                "2. Appuie-toi strictement sur le corrigé fourni pour établir la version corrigée.\n"
+                "3. Pour CHAQUE élève, génère un retour structuré contenant :\n"
+                "   - **1. Version initiale de l'élève (Transcription exacte non corrigée)**\n"
+                "   - **2. Version corrigée (Selon le corrigé officiel)**\n"
+                "   - **3. Analyse des erreurs et appréciation bienveillante adaptée au niveau CE2**\n"
+                "4. Enveloppe également le bilan complet de chaque élève dans un bloc de code markdown (ex: ```eleve_prenom.md ... ```) pour permettre à Céline de télécharger un fichier par élève en un clic."
+            )
+        elif mode == "mono":
+            worker_sys_prompt = (
+                "Tu es un expert technique principal. Réponds directement et de manière complète en FRANÇAIS naturel. "
+                "Ne traduis jamais la syntaxe du code source à l'intérieur des blocs de code."
+            )
+
+        log_activity(f"Exécution sur {len(workers)} travailleur(s) (Recherche Web: {'Active' if enable_web else 'Inactive'})...")
         if len(workers) == 1:
             w_mod = workers[0]
             client, provider = get_client_for_model(db, w_mod, settings)
-            worker_response = await ask_agent(client, w_mod, formatted_history + [{"role": "user", "content": optimized}], provider, enable_web=True)
+            msgs = formatted_history.copy()
+            if worker_sys_prompt:
+                msgs.insert(0, {"role": "system", "content": worker_sys_prompt})
+            msgs.append({"role": "user", "content": optimized})
+            worker_response = await ask_agent(client, w_mod, msgs, provider, enable_web=enable_web)
             responses = [worker_response]
-            log_activity(f"Travailleur 1 ({w_mod}) a terminé.")
+            log_activity(f"Travailleur ({w_mod}) a terminé.")
         else:
             w_tasks = []
             for w in workers:
                 w_client, w_prov = get_client_for_model(db, w, settings)
-                w_tasks.append(ask_agent(w_client, w, formatted_history + [{"role": "user", "content": optimized}], w_prov, enable_web=True))
+                msgs = formatted_history.copy()
+                if worker_sys_prompt:
+                    msgs.insert(0, {"role": "system", "content": worker_sys_prompt})
+                msgs.append({"role": "user", "content": optimized})
+                w_tasks.append(ask_agent(w_client, w, msgs, w_prov, enable_web=enable_web))
             responses = await asyncio.gather(*w_tasks, return_exceptions=True)
             log_activity("Tous les travailleurs ont terminé leur analyse.")
 
-        c_mod = config.get("concatenator")
-        if not c_mod: c_mod = "gemini-3.5-flash-lite"
-        
-        c_client, c_prov = get_client_for_model(db, c_mod, settings)
-        
-        log_activity(f"Synthèse et traduction finale via Concaténeur ({c_mod})...")
-        concat_system = (
-            "You are a master lead developer and technical synthesizer. "
-            "Synthesize the provided expert responses into a single cohesive response. "
-            "Translate all explanatory text, descriptions, and user-facing prose into natural French. "
-            "CRITICAL: Do NOT translate code blocks, programming keywords, or source code contents. "
-            "You may translate code comments into French if appropriate, but leave code syntax strictly intact."
-        )
-        
-        synth = f"User Request: {original_user_text}\n\n" + "\n".join([f"--- EXPERT {i+1} ---\n{str(r)}" for i, r in enumerate(responses)])
-        final_response = await ask_agent(c_client, c_mod, [{"role": "system", "content": concat_system}, {"role": "user", "content": synth}], c_prov, enable_web=False)
-        
+        # --- ÉTAPE CONCATÉNEUR (Ignorée en mode Mono-IA) ---
+        if mode == "mono" and len(responses) == 1:
+            log_activity("Mode Mono-IA : restitution directe sans concaténeur.")
+            final_response = str(responses[0])
+        else:
+            c_client, c_prov = get_client_for_model(db, c_mod, settings)
+            log_activity(f"Synthèse finale via Concaténeur ({c_mod})...")
+            if is_ocr_ce2:
+                concat_system = (
+                    "Tu es le coordinateur pédagogique de Céline (classe de CE2). "
+                    "Fusionne les analyses des experts pour produire le dossier final de correction en français. "
+                    "Vérifie que pour CHAQUE élève figurent bien : 1) La version initiale brute (AVEC toutes les fautes d'origine de l'élève intactes), "
+                    "2) La version corrigée basée sur le corrigé, et 3) Le retour pédagogique CE2, ainsi qu'un bloc téléchargeable par élève."
+                )
+            else:
+                concat_system = (
+                    "You are a master lead developer and technical synthesizer. "
+                    "Synthesize the provided expert responses into a single cohesive response. "
+                    "Translate all explanatory text, descriptions, and user-facing prose into natural French. "
+                    "CRITICAL: Do NOT translate code blocks, programming keywords, or source code contents."
+                )
+            synth = f"User Request: {original_user_text}\n\n" + "\n".join([f"--- EXPERT {i+1} ---\n{str(r)}" for i, r in enumerate(responses)])
+            final_response = await ask_agent(c_client, c_mod, [{"role": "system", "content": concat_system}, {"role": "user", "content": synth}], c_prov, enable_web=False)
+
         log_activity("Orchestration terminée avec succès.")
 
     except Exception as e:

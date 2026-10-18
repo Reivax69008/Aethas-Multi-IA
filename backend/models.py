@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Float
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Float, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from .database import Base
@@ -21,6 +21,7 @@ class Project(Base):
     title = Column(String, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     is_pinned = Column(Boolean, default=False)
+    config_json = Column(Text, nullable=True)  # Sauvegarde centrale en BDD (Point 4)
     user_id = Column(Integer, ForeignKey("users.id"))
     owner = relationship("User", back_populates="projects")
     messages = relationship("Message", back_populates="project", cascade="all, delete-orphan")
@@ -29,7 +30,7 @@ class Message(Base):
     __tablename__ = "messages"
     id = Column(Integer, primary_key=True, index=True)
     role = Column(String)
-    content = Column(String)
+    content = Column(Text)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     project_id = Column(Integer, ForeignKey("projects.id"))
     project = relationship("Project", back_populates="messages")
@@ -59,7 +60,7 @@ class AIModel(Base):
     provider = Column(String, index=True)
     model_id = Column(String, unique=True, index=True)
     name = Column(String)
-    description_fr = Column(String, nullable=True)
+    description_fr = Column(Text, nullable=True)
     domain = Column(String, default="Texte")
     is_free = Column(Boolean, default=False)
     context_length = Column(Integer)

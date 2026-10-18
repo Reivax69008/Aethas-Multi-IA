@@ -54,12 +54,19 @@ class ProjectResponse(ProjectBase):
     id: int
     created_at: datetime
     is_pinned: bool
+    config_json: Optional[str] = None
     class Config: from_attributes = True
 
 class ProjectRename(BaseModel):
     title: str
 
+class ProjectConfigUpdate(BaseModel):
+    config_json: str
+
 class OrchestratorConfig(BaseModel):
+    mode: Optional[str] = "multi"          # "mono" ou "multi" (Point 2)
+    theme: Optional[str] = "general"       # "general", "code", "ocr_ce2", "web", "math" (Points 1 & 3)
+    enable_web: Optional[bool] = True      # Activation recherche web (Point 5)
     workers: List[str]
     prompter: Optional[str] = "gemini-3.5-flash-lite"
     concatenator: Optional[str] = "gemini-3.5-flash-lite"

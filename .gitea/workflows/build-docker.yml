@@ -1,4 +1,4 @@
-name: Build Local AETHAS38
+name: Test, Build & Deploy Local AETHAS38
 
 on:
   push:
@@ -17,23 +17,24 @@ jobs:
       - name: Checkout du dépôt
         uses: actions/checkout@v4
 
-      - name: Compilation directe sur le serveur hôte (sans cache)
+      - name: Validation syntaxique locale Python (Point 6 - Test pré-build)
         run: |
-          # Détermination dynamique du tag (version Git ou 'latest')
+          python3 -m py_compile backend/*.py
+          echo "✅ Tous les fichiers Python sont valides."
+
+      - name: Compilation incrémentale sur le serveur hôte (Cache Docker actif - Point 8)
+        run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             VERSION="${GITHUB_REF#refs/tags/}"
-            docker build --no-cache -t ${{ env.IMAGE_NAME }}:${VERSION} -t ${{ env.IMAGE_NAME }}:latest .
+            docker build -t ${{ env.IMAGE_NAME }}:${VERSION} -t ${{ env.IMAGE_NAME }}:latest .
           else
-            docker build --no-cache -t ${{ env.IMAGE_NAME }}:latest .
+            docker build -t ${{ env.IMAGE_NAME }}:latest .
           fi
 
       - name: Redéploiement automatique du conteneur
         run: |
-          # Si le chemin de votre stack est sur le RAID, met à jour et recrée le service
           if [ -d "/mnt/stockage_raid/AppData/MULTI-IA-AETHAS38" ]; then
             cd /mnt/stockage_raid/AppData/MULTI-IA-AETHAS38
-            docker compose up -d --force-recreate
+            docker compose up -d --force-recreate aethas38-core
           fi
-          
-          # Nettoyage des images orphelines
           docker image prune -f
