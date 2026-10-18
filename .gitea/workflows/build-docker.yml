@@ -8,7 +8,7 @@ on:
       - 'v*'
 
 env:
-  REGISTRY: 192.168.1.20:3000
+  REGISTRY: gitea.aethas38.duckdns.org
   IMAGE_NAME: xavier/multi-ia-codage
 
 jobs:
@@ -22,12 +22,12 @@ jobs:
         run: |
           python3 validate_project.py
 
-      - name: Connexion au registre Gitea et Publication du Paquet
+      - name: Connexion au registre Gitea (HTTPS) et Publication du Paquet
         run: |
-          # Connexion au registre Gitea local en HTTP explicite
-          echo "${{ secrets.GITEA_TOKEN || gitea.token }}" | docker login http://${{ env.REGISTRY }} -u ${{ gitea.actor }} --password-stdin
+          # 1. Connexion au registre Gitea via son URL HTTPS officielle
+          echo "${{ secrets.GITEA_TOKEN || gitea.token }}" | docker login ${{ env.REGISTRY }} -u ${{ gitea.actor }} --password-stdin
 
-          # Construction, Tag et Push avec gestion du registre HTTP
+          # 2. Construction, Tag et Push des images (version et latest)
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             VERSION="${GITHUB_REF#refs/tags/}"
             TAGGED_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
@@ -42,7 +42,7 @@ jobs:
             docker push ${LATEST_IMAGE}
           fi
 
-      - name: Mise à jour locale sur le serveur hôte
+      - name: Mise à jour automatique de l'instance sur le serveur hôte
         run: |
           if [ -d "/mnt/stockage_raid/AppData/MULTI-IA-AETHAS38" ]; then
             cd /mnt/stockage_raid/AppData/MULTI-IA-AETHAS38
