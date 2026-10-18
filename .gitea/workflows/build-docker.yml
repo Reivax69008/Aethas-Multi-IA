@@ -17,12 +17,13 @@ jobs:
       - name: Checkout du dépôt
         uses: actions/checkout@v4
 
-      - name: Validation syntaxique locale Python (Point 6 - Test pré-build)
+      - name: Validation syntaxique Backend Python & Frontend HTML (Point 1)
         run: |
           python3 -m py_compile backend/*.py
-          echo "✅ Tous les fichiers Python sont valides."
+          python3 -c "import glob, sys; files = glob.glob('frontend/*.html'); [sys.exit(f'Erreur HTML dans {f}: balise <{t}> non équilibrée') for f in files for c in [open(f, encoding='utf-8').read()] for t in ['html','head','body','script','style','div','main','aside','header','table','select','textarea'] if c.count(f'<{t}') != c.count(f'</{t}>')]"
+          echo "✅ Code Backend (.py) et Frontend (.html) 100% valides !"
 
-      - name: Compilation incrémentale sur le serveur hôte (Cache Docker actif - Point 8)
+      - name: Compilation incrémentale sur le serveur hôte (Cache Docker actif)
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             VERSION="${GITHUB_REF#refs/tags/}"

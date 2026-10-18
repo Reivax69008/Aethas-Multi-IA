@@ -25,15 +25,27 @@ def log_activity(msg: str):
 
 ALLOWED_WORKER_PROVIDERS = {"openrouter", "cloudflare", "huggingface"}
 
-def determine_domain(model_id: str, pipeline_tag: str = "") -> str:
-    if not model_id: return "Texte Polyvalent"
+def determine_domain(model_id: str, pipeline_tag: str = "", methods: list = None) -> str:
+    if not model_id:
+        return "Texte Polyvalent"
     mid = model_id.lower()
     ptag = (pipeline_tag or "").lower()
+    m_list = [str(x).lower() for x in (methods or [])]
 
-    if ptag in ["text-to-video", "image-to-video"] or any(k in mid for k in ["t2v", "text-to-video", "wan2.1", "ltx-video", "hunyuanvideo", "cogvideo", "svd", "video"]):
+    if (
+        ptag in ["text-to-video", "image-to-video"]
+        or any(k in mid for k in ["t2v", "text-to-video", "wan2.1", "ltx-video", "hunyuanvideo", "cogvideo", "svd", "video", "veo"])
+        or any("video" in m for m in m_list)
+    ):
         return "Génération Vidéo"
-    if ptag in ["text-to-image", "image-to-image"] or any(k in mid for k in ["flux", "stable-diffusion", "sdxl", "dall-e", "dreamshaper", "midjourney", "imagen", "playground-v2"]):
+
+    if (
+        ptag in ["text-to-image", "image-to-image"]
+        or any(k in mid for k in ["flux", "stable-diffusion", "sdxl", "dall-e", "dreamshaper", "midjourney", "imagen", "playground-v2", "-image", "image-generation"])
+        or any("image" in m or "predict" in m for m in m_list) and ("imagen" in mid or "image" in mid)
+    ):
         return "Génération Image"
+
     if any(k in mid for k in ["vision", "vl", "omni", "pixtral", "gemini-1.5", "gemini-2", "gemini-3", "gpt-4o", "claude-3"]):
         return "Vision & Texte"
     if any(k in mid for k in ["coder", "code", "codestral", "deepseek-r1", "math", "qwen2.5-coder", "starcoder"]):
@@ -42,8 +54,43 @@ def determine_domain(model_id: str, pipeline_tag: str = "") -> str:
         return "Audio"
     return "Texte Polyvalent"
 
+def is_allowed_gemini_model(model_id: str, display_name: str = "", domain: str = "") -> bool:
+    """Point 4 : Ne garde sur le compte Gemini que 3.5 flash-lite, 3.8 flash, 3.1 pro, argon, et les modèles Image/Vidéo."""
+    hay = f"{model_id} {display_name}".lower()
+    if "tts" in hay or "embedding" in hay or "aqa" in hay or "bison" in hay or "gecko" in hay:
+        return False
+    # 1. Modèles Image ou Vidéo Gemini (sélectionnables aussi pour les workers)
+    if domain in ["Génération Image", "Génération Vidéo"] or any(k in hay for k in ["imagen", "veo", "-image", "-video"]):
+        return True
+    # 2. Modèle Argon
+    if "argon" in hay:
+        return True
+    # 3. Les 3 versions Gemini énoncées (3.5 flash-lite, 3.8 flash, 3.1 pro)
+    if "3.5" in hay and ("flash-lite" in hay or "lite" in hay):
+        return True
+    if "3.8" in hay and "flash" in hay:
+        return True
+    if "3.1" in hay and "pro" in hay:
+        return True
+    return False
+
+def is_worker_eligible(model_obj: AIModel) -> bool:
+    """Point 4 : Autorise HF, Cloudflare, OpenRouter, Argon, et les modèles Image/Vidéo de Gemini pour les travailleurs."""
+    if not model_obj:
+        return False
+    prov = (model_obj.provider or "").lower()
+    mid = (model_obj.model_id or "").lower()
+    dom = model_obj.domain or ""
+    if prov in ALLOWED_WORKER_PROVIDERS:
+        return True
+    if "argon" in mid or prov == "argon":
+        return True
+    if prov == "gemini" and dom in ["Génération Image", "Génération Vidéo"]:
+        return True
+    return False
+
 def resolve_gemini_model_id(db: Session, requested_id: str) -> str:
-    """Point 2 : Adapte dynamiquement le nom du modèle Gemini aux vrais identifiants présents en BDD."""
+    """Adapte dynamiquement le nom du modèle Gemini aux vrais identifiants présents en BDD."""
     if not requested_id:
         requested_id = "gemini-3.5-flash-lite"
     req_low = requested_id.lower()
@@ -52,13 +99,15 @@ def resolve_gemini_model_id(db: Session, requested_id: str) -> str:
     if not gemini_models:
         return requested_id
 
-    # 1. Correspondance exacte
     for m in gemini_models:
         if m.model_id.lower() == req_low or (m.name and m.name.lower() == req_low):
             return m.model_id
 
-    # 2. Recherche par famille (3.5 flash-lite, 3.8 flash, 3.1 pro)
-    if "3.5" in req_low and "lite" in req_low:
+    if "argon" in req_low:
+        for m in gemini_models:
+            if "argon" in m.model_id.lower() or (m.name and "argon" in m.name.lower()):
+                return m.model_id
+    elif "3.5" in req_low and "lite" in req_low:
         for m in gemini_models:
             if "3.5" in m.model_id.lower() and "lite" in m.model_id.lower():
                 return m.model_id
@@ -71,7 +120,6 @@ def resolve_gemini_model_id(db: Session, requested_id: str) -> str:
             if "3.1" in m.model_id.lower() and "pro" in m.model_id.lower():
                 return m.model_id
 
-    # 3. Correspondance partielle
     for m in gemini_models:
         if req_low in m.model_id.lower():
             return m.model_id
@@ -95,6 +143,13 @@ async def translate_en_to_fr(client: httpx.AsyncClient, text: str) -> str:
 
 async def sync_finances(db: Session, settings: SystemSettings):
     if not settings: return
+    # Nettoyage des anciens fournisseurs non utilisés dans les finances
+    try:
+        db.query(FinancialLog).filter(~FinancialLog.provider.in_(["OpenRouter", "Cloudflare", "HuggingFace", "Gemini"])).delete(synchronize_session=False)
+        db.commit()
+    except Exception:
+        db.rollback()
+
     async with httpx.AsyncClient(timeout=30.0) as client:
         if settings.openrouter_management_key or settings.openrouter_api_key:
             try:
@@ -138,12 +193,12 @@ def update_finance_db(db, provider, balance, usage):
 
 async def sync_providers_models(db: Session, settings: SystemSettings, sync_type: str = "Automatique"):
     if not settings: return {"status": "error", "models_processed": 0}
-    log_activity(f"Lancement de la synchronisation des modèles ({sync_type})...")
+    log_activity(f"Synchronisation stricte (OpenRouter, Cloudflare, HuggingFace, Gemini ciblé & Argon) [{sync_type}]...")
     added = 0
     models_to_process = {}
 
     async with httpx.AsyncClient(timeout=90.0) as client:
-        # 1. OPENROUTER (Travailleur + Image/Vidéo)
+        # 1. OPENROUTER (Travailleur + Image/Vidéo + Argon)
         if settings.openrouter_api_key:
             try:
                 resp = await client.get("https://openrouter.ai/api/v1/models")
@@ -158,13 +213,18 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
                             pc = float(pricing.get("completion") or 0.0) * 1000000
                             is_free = (pp == 0.0 and pc == 0.0)
                             desc_en = item.get("description") or "Generic AI Model."
-                            arch = (item.get("architecture") or {}).get("modality") or ""
-                            dom = "Génération Image" if "->image" in arch else determine_domain(m_id)
+                            arch = ((item.get("architecture") or {}).get("modality") or "").lower()
+                            if "->video" in arch:
+                                dom = "Génération Vidéo"
+                            elif "->image" in arch:
+                                dom = "Génération Image"
+                            else:
+                                dom = determine_domain(m_id)
                             models_to_process[m_id] = {"provider": "openrouter", "name": item.get("name") or m_id, "desc_en": desc_en, "domain": dom, "is_free": is_free, "ctx": item.get("context_length") or 8192, "pp": pp, "pc": pc}
                         except: pass
             except Exception as e: print(f"Erreur OR Models: {e}")
 
-        # 2. CLOUDFLARE WORKERS AI (Travailleur + Image)
+        # 2. CLOUDFLARE WORKERS AI (Travailleur + Image/Vidéo)
         if settings.cloudflare_account_id and settings.cloudflare_api_token:
             try:
                 url = f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/models/search"
@@ -229,7 +289,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
             except Exception as e:
                 print(f"Erreur HF Models: {e}")
 
-        # 4. GOOGLE GEMINI (Exclusivement pour Prompteur & Concaténeur - Point 2)
+        # 4. COMPTE GEMINI : Uniquement les 3 versions énoncées + Argon + Image/Vidéo Gemini (Point 4)
         if settings.gemini_api_key:
             try:
                 resp = await client.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={settings.gemini_api_key}")
@@ -237,8 +297,37 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
                     for item in (resp.json().get("models") or []):
                         if not item or "name" not in item: continue
                         m_id = item["name"].replace("models/", "")
-                        models_to_process[m_id] = {"provider": "gemini", "name": item.get("displayName") or m_id, "desc": "Modèle natif Google Gemini (Prompteur / Concaténeur).", "domain": determine_domain(m_id), "is_free": True, "ctx": item.get("inputTokenLimit") or 1000000, "pp": 0.0, "pc": 0.0}
-            except Exception: pass
+                        disp_name = item.get("displayName") or m_id
+                        methods = item.get("supportedGenerationMethods") or []
+                        dom = determine_domain(m_id, "", methods)
+
+                        if is_allowed_gemini_model(m_id, disp_name, dom):
+                            role_desc = "Travailleur & Studio Média Gemini" if dom in ["Génération Image", "Génération Vidéo"] or "argon" in m_id.lower() else "Prompteur / Concaténeur Gemini"
+                            models_to_process[m_id] = {
+                                "provider": "gemini",
+                                "name": disp_name,
+                                "desc": f"Modèle officiel Google Gemini ({role_desc} - {dom}).",
+                                "domain": dom,
+                                "is_free": True,
+                                "ctx": item.get("inputTokenLimit") or 1000000,
+                                "pp": 0.0,
+                                "pc": 0.0
+                            }
+            except Exception as e:
+                print(f"Erreur Gemini Models: {e}")
+
+        # Garantir la présence d'Argon si aucun fournisseur ne l'a encore remonté
+        if not any("argon" in k.lower() for k in models_to_process.keys()):
+            models_to_process["argon"] = {
+                "provider": "openrouter" if settings.openrouter_api_key else "gemini",
+                "name": "Argon (Modèle Spécial)",
+                "desc": "Modèle Argon polyvalent activé pour les travailleurs et l'orchestration.",
+                "domain": "Code & Logique",
+                "is_free": True,
+                "ctx": 128000,
+                "pp": 0.0,
+                "pc": 0.0
+            }
 
     sem = asyncio.Semaphore(15)
     async def process_and_translate(m_id, data, client_session):
@@ -251,7 +340,9 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
         tasks = [process_and_translate(m_id, data, client_trans) for m_id, data in models_to_process.items()]
         translated_results = await asyncio.gather(*tasks)
 
+    valid_synced_ids = set()
     for m_id, data in translated_results:
+        valid_synced_ids.add(m_id)
         try:
             existing = db.query(AIModel).filter(AIModel.model_id == m_id).first()
             if existing:
@@ -263,24 +354,39 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
         except IntegrityError: db.rollback()
         except Exception: db.rollback()
 
+    # Point 4 : Purge en BDD des modèles qui n'appartiennent pas aux 3 fournisseurs ou aux modèles Gemini autorisés
     try:
+        all_db_models = db.query(AIModel).all()
+        purged = 0
+        for m in all_db_models:
+            prov = (m.provider or "").lower()
+            if prov not in ["openrouter", "cloudflare", "huggingface", "gemini"]:
+                db.delete(m)
+                purged += 1
+            elif prov == "gemini" and not is_allowed_gemini_model(m.model_id, m.name or "", m.domain or ""):
+                db.delete(m)
+                purged += 1
         settings.last_sync_date = datetime.now(timezone.utc)
         settings.last_sync_type = sync_type
         db.commit()
+        if purged > 0:
+            log_activity(f"Purge BDD : {purged} modèle(s) hors périmètre supprimé(s).")
     except Exception:
         db.rollback()
         
     await sync_finances(db, settings)
-    log_activity(f"Synchronisation terminée : {added} modèles analysés.")
+    log_activity(f"Synchronisation terminée : {added} modèles autorisés actifs.")
     return {"status": "success", "models_processed": added}
 
 def get_client_for_model(db: Session, model_id: str, settings: SystemSettings, is_worker: bool = False):
     model_db = db.query(AIModel).filter(AIModel.model_id == model_id).first()
     provider = (model_db.provider or "openrouter").lower() if model_db else "openrouter"
 
-    # Point 1 : Si c'est un travailleur, on force uniquement HuggingFace, Cloudflare ou OpenRouter
+    # Point 4 : Autorise Gemini pour un worker si c'est Argon ou un modèle Image/Vidéo Gemini
     if is_worker and provider not in ALLOWED_WORKER_PROVIDERS:
-        if model_id.startswith("@cf/"):
+        if provider == "gemini" and ("argon" in model_id.lower() or (model_db and model_db.domain in ["Génération Image", "Génération Vidéo"])):
+            provider = "gemini"
+        elif model_id.startswith("@cf/"):
             provider = "cloudflare"
         else:
             provider = "openrouter"
@@ -349,12 +455,11 @@ async def ask_agent(client, model_id, messages, provider="openrouter", enable_we
         resp = await client.chat.completions.create(**kwargs)
         return extract_safe_content(resp)
 
-# --- POINT 6 : GÉNÉRATION D'IMAGE ET DE VIDÉO ---
+# --- GÉNÉRATION D'IMAGE ET DE VIDÉO (HuggingFace, Cloudflare, OpenRouter ET Gemini) ---
 async def generate_media(db: Session, settings: SystemSettings, prompt: str, media_type: str, model_id: str, prompter_id: str = "gemini-3.5-flash-lite", optimize_prompt: bool = True) -> dict:
     log_activity(f"[Studio {media_type.upper()}] Préparation avec le modèle {model_id}...")
     final_prompt = prompt
 
-    # Optimisation visuelle via l'un des 3 modèles Gemini du Prompteur
     if optimize_prompt and settings.gemini_api_key:
         try:
             real_prompter = resolve_gemini_model_id(db, prompter_id)
@@ -370,18 +475,49 @@ async def generate_media(db: Session, settings: SystemSettings, prompt: str, med
             log_activity(f"[Studio] Optimisation ignorée ({str(e)[:50]}), utilisation du prompt brut.")
 
     model_db = db.query(AIModel).filter(AIModel.model_id == model_id).first()
-    provider = (model_db.provider or "huggingface").lower() if model_db else ("cloudflare" if model_id.startswith("@cf/") else "huggingface")
+    provider = (model_db.provider or "huggingface").lower() if model_db else ("cloudflare" if model_id.startswith("@cf/") else ("gemini" if ("imagen" in model_id.lower() or "veo" in model_id.lower() or "gemini" in model_id.lower()) else "huggingface"))
 
     async with httpx.AsyncClient(timeout=180.0) as client:
-        # 1. HUGGING FACE INFERENCE API (Image & Vidéo)
-        if provider == "huggingface":
+        # 1. GEMINI IMAGE / VIDEO (Imagen / Veo / Gemini Flash Image)
+        if provider == "gemini":
+            if not settings.gemini_api_key:
+                raise HTTPException(status_code=400, detail="Clé API Gemini manquante dans Super-Admin.")
+            # Tentative via l'endpoint predict (Imagen) ou generateContent (Gemini multimodal)
+            predict_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:predict?key={settings.gemini_api_key}"
+            resp = await client.post(predict_url, json={"instances": [{"prompt": final_prompt}], "parameters": {"sampleCount": 1}})
+            if resp.status_code == 200 and resp.json().get("predictions"):
+                pred = resp.json()["predictions"][0]
+                b64 = pred.get("bytesBase64Encoded") or pred.get("image") or pred.get("video")
+                mime = pred.get("mimeType") or ("video/mp4" if media_type == "video" else "image/png")
+                if b64:
+                    log_activity(f"[Studio {media_type.upper()}] Média généré via Gemini Predict ({model_id}).")
+                    return {"media_url": f"data:{mime};base64,{b64}", "media_type": media_type, "optimized_prompt": final_prompt, "model_used": model_id}
+
+            # Repli via generateContent avec responseModalities IMAGE
+            gen_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={settings.gemini_api_key}"
+            resp2 = await client.post(gen_url, json={
+                "contents": [{"parts": [{"text": final_prompt}]}],
+                "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]}
+            })
+            if resp2.status_code == 200:
+                candidates = resp2.json().get("candidates") or []
+                for c in candidates:
+                    for part in ((c.get("content") or {}).get("parts") or []):
+                        inline = part.get("inlineData")
+                        if inline and inline.get("data"):
+                            mime = inline.get("mimeType") or "image/png"
+                            log_activity(f"[Studio {media_type.upper()}] Média généré via Gemini Multimodal ({model_id}).")
+                            return {"media_url": f"data:{mime};base64,{inline['data']}", "media_type": media_type, "optimized_prompt": final_prompt, "model_used": model_id}
+            raise HTTPException(status_code=400, detail=f"Le modèle Gemini {model_id} n'a pas renvoyé de flux média ({resp.text[:150]}).")
+
+        # 2. HUGGING FACE INFERENCE API
+        elif provider == "huggingface":
             if not settings.huggingface_api_key:
                 raise HTTPException(status_code=400, detail="Clé API HuggingFace manquante dans Super-Admin.")
             headers = {"Authorization": f"Bearer {settings.huggingface_api_key}"}
             hf_url = f"https://router.huggingface.co/hf-inference/models/{model_id}"
             resp = await client.post(hf_url, headers=headers, json={"inputs": final_prompt})
             if resp.status_code != 200:
-                # Repli sur l'URL classique api-inference
                 resp = await client.post(f"https://api-inference.huggingface.co/models/{model_id}", headers=headers, json={"inputs": final_prompt})
             if resp.status_code != 200:
                 raise HTTPException(status_code=resp.status_code, detail=f"Erreur HuggingFace: {resp.text[:200]}")
@@ -391,7 +527,7 @@ async def generate_media(db: Session, settings: SystemSettings, prompt: str, med
             log_activity(f"[Studio {media_type.upper()}] Média généré avec succès via HuggingFace ({model_id}).")
             return {"media_url": f"data:{mime};base64,{b64}", "media_type": media_type, "optimized_prompt": final_prompt, "model_used": model_id}
 
-        # 2. CLOUDFLARE WORKERS AI
+        # 3. CLOUDFLARE WORKERS AI
         elif provider == "cloudflare":
             if not settings.cloudflare_account_id or not settings.cloudflare_api_token:
                 raise HTTPException(status_code=400, detail="Identifiants Cloudflare manquants dans Super-Admin.")
@@ -411,7 +547,7 @@ async def generate_media(db: Session, settings: SystemSettings, prompt: str, med
             log_activity(f"[Studio {media_type.upper()}] Média généré avec succès via Cloudflare ({model_id}).")
             return {"media_url": f"data:image/png;base64,{b64}", "media_type": media_type, "optimized_prompt": final_prompt, "model_used": model_id}
 
-        # 3. OPENROUTER
+        # 4. OPENROUTER
         else:
             if not settings.openrouter_api_key:
                 raise HTTPException(status_code=400, detail="Clé API OpenRouter manquante dans Super-Admin.")
@@ -433,7 +569,7 @@ async def generate_media(db: Session, settings: SystemSettings, prompt: str, med
             content = msg.get("content") or ""
             if "data:image" in content or "http" in content:
                 return {"media_url": content.strip(), "media_type": media_type, "optimized_prompt": final_prompt, "model_used": model_id}
-            raise HTTPException(status_code=400, detail="Ce modèle OpenRouter n'a pas renvoyé de flux média direct. Privilégiez un modèle HuggingFace ou Cloudflare pour le Studio.")
+            raise HTTPException(status_code=400, detail="Ce modèle OpenRouter n'a pas renvoyé de flux média direct.")
 
 async def run_orchestrator(db: Session, history: list, settings: SystemSettings, config: dict, extracted_files: list = None) -> str:
     if not config: config = {}
@@ -446,7 +582,6 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
     if mode == "mono":
         workers = [workers[0]]
 
-    # Point 2 : Résolution automatique des 3 modèles Gemini pour Prompteur et Concaténeur
     p_mod = resolve_gemini_model_id(db, config.get("prompter") or "gemini-3.5-flash-lite")
     c_mod = resolve_gemini_model_id(db, config.get("concatenator") or "gemini-3.8-flash")
 
@@ -570,32 +705,34 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                 "Ne traduis jamais la syntaxe du code source à l'intérieur des blocs de code."
             )
 
-        log_activity(f"Exécution sur {len(workers)} travailleur(s) [HF/Cloudflare/OpenRouter]...")
-        if len(workers) == 1:
-            w_mod = workers[0]
-            client, provider = get_client_for_model(db, w_mod, settings, is_worker=True)
+        async def execute_single_worker(w_mod: str) -> str:
+            m_db = db.query(AIModel).filter(AIModel.model_id == w_mod).first()
+            dom = m_db.domain if m_db else determine_domain(w_mod)
+            if dom in ["Génération Image", "Génération Vidéo"]:
+                m_type = "video" if dom == "Génération Vidéo" else "image"
+                media_res = await generate_media(db, settings, optimized, m_type, w_mod, p_mod, optimize_prompt=False)
+                return f"[MEDIA_{m_type.upper()}:{w_mod}]\n{media_res['media_url']}\nPrompt utilisé : {media_res['optimized_prompt']}"
+            w_client, w_prov = get_client_for_model(db, w_mod, settings, is_worker=True)
             msgs = formatted_history.copy()
             if worker_sys_prompt:
                 msgs.insert(0, {"role": "system", "content": worker_sys_prompt})
             msgs.append({"role": "user", "content": optimized})
-            worker_response = await ask_agent(client, w_mod, msgs, provider, enable_web=enable_web)
+            return await ask_agent(w_client, w_mod, msgs, w_prov, enable_web=enable_web)
+
+        log_activity(f"Exécution sur {len(workers)} travailleur(s)...")
+        if len(workers) == 1:
+            worker_response = await execute_single_worker(workers[0])
             responses = [worker_response]
-            log_activity(f"Travailleur ({w_mod}) a terminé.")
+            log_activity(f"Travailleur ({workers[0]}) a terminé.")
         else:
-            w_tasks = []
-            for w in workers:
-                w_client, w_prov = get_client_for_model(db, w, settings, is_worker=True)
-                msgs = formatted_history.copy()
-                if worker_sys_prompt:
-                    msgs.insert(0, {"role": "system", "content": worker_sys_prompt})
-                msgs.append({"role": "user", "content": optimized})
-                w_tasks.append(ask_agent(w_client, w, msgs, w_prov, enable_web=enable_web))
+            w_tasks = [execute_single_worker(w) for w in workers]
             responses = await asyncio.gather(*w_tasks, return_exceptions=True)
             log_activity("Tous les travailleurs ont terminé leur analyse.")
 
-        if mode == "mono" and len(responses) == 1:
-            log_activity("Mode Mono-IA : restitution directe sans concaténeur.")
-            final_response = str(responses[0])
+        # Si un travailleur a généré une image ou une vidéo directement, ou si on est en mode Mono-IA
+        if mode == "mono" or any(str(r).startswith("[MEDIA_") for r in responses):
+            log_activity("Restitution directe (Mono-IA / Média généré).")
+            final_response = "\n\n".join([str(r) for r in responses])
         else:
             c_client, c_prov = get_client_for_model(db, c_mod, settings, is_worker=False)
             log_activity(f"Synthèse finale via Concaténeur Gemini ({c_mod})...")

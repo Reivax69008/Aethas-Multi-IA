@@ -80,7 +80,6 @@
                 <button @click="createNewProject" :disabled="isLoading" class="w-full bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 rounded-lg py-2 px-3 flex items-center justify-center gap-2 shadow-md text-sm">
                     <i data-lucide="plus" class="w-4 h-4 text-aethas-cyan"></i> Nouveau Projet Chat
                 </button>
-                <!-- Point 6 : Bouton Studio Image & Vidéo -->
                 <button @click="activeView = 'media'" :class="['w-full border rounded-lg py-2 px-3 flex items-center justify-center gap-2 transition-colors text-sm font-medium', activeView === 'media' ? 'bg-aethas-purple/20 border-aethas-purple text-purple-300' : 'bg-aethas-dark hover:bg-gray-800 text-gray-300 border-gray-700']">
                     <i data-lucide="film" class="w-4 h-4 text-aethas-purple"></i> Studio Image & Vidéo
                 </button>
@@ -121,14 +120,14 @@
                 </div>
             </div>
 
-            <!-- TERMINAL SYSTEME + BOUTON EXTRACTION LOGS (Point 5 & 11) -->
-            <div class="h-40 border-t border-gray-700 bg-black flex flex-col font-mono text-[9px] flex-shrink-0 shadow-inner">
+            <!-- TERMINAL SYSTEME + BOUTON EXTRACTION LOGS (Point 2) -->
+            <div class="h-44 border-t border-gray-700 bg-black flex flex-col font-mono text-[9px] flex-shrink-0 shadow-inner">
                 <div class="p-1.5 bg-gray-900 border-b border-gray-700 text-aethas-cyan font-bold flex items-center justify-between">
-                    <div class="flex items-center gap-1"><i data-lucide="terminal" class="w-3 h-3"></i> SYSTEM LOGS (30j)</div>
+                    <div class="flex items-center gap-1"><span>&gt;_ SYSTEM LOGS</span></div>
                     <div class="flex items-center gap-2">
-                        <a href="/api/logs/download" target="_blank" class="text-gray-200 hover:text-white bg-gray-800 hover:bg-gray-700 px-1.5 py-0.5 rounded border border-aethas-cyan/50 flex items-center gap-1" title="Télécharger le fichier de logs complet">
-                            <i data-lucide="download" class="w-2.5 h-2.5 text-aethas-cyan"></i> .LOG
-                        </a>
+                        <button @click="downloadLogs" class="bg-aethas-cyan text-black hover:bg-cyan-400 font-bold px-2 py-0.5 rounded text-[9px] transition-colors shadow">
+                            ⬇ Extraire .LOG
+                        </button>
                         <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
                     </div>
                 </div>
@@ -163,7 +162,7 @@
         </aside>
     </div>
 
-    <!-- ZONE PRINCIPALE PLEINE LARGEUR ADAPTATIVE (Point 4) -->
+    <!-- ZONE PRINCIPALE PLEINE LARGEUR ADAPTATIVE -->
     <main class="flex-1 flex flex-col min-w-0 w-full h-full z-10 transition-all duration-300 bg-aethas-dark relative overflow-hidden">
         
         <header class="flex items-center justify-between px-4 py-3 border-b border-gray-700 bg-aethas-panel h-[64px] w-full flex-shrink-0">
@@ -174,16 +173,19 @@
                     <span class="font-bold text-lg neon-text">AETHAS38</span>
                 </div>
             </div>
-            <div v-if="activeView === 'chat' && activeProject" class="text-sm font-medium text-gray-300 flex items-center gap-4">
-                <span class="truncate max-w-[250px] md:max-w-xl">{{ activeProject.title }}</span>
-                <div class="flex items-center gap-2 border-l border-gray-600 pl-4">
-                    <button @click="exportProject('txt')" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="download" class="w-3 h-3"></i> TXT</button>
-                    <button @click="exportProject('json')" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600 px-2 py-1 rounded flex items-center gap-1"><i data-lucide="file-json" class="w-3 h-3"></i> JSON</button>
+            <div class="flex items-center gap-3">
+                <button @click="downloadLogs" class="text-xs bg-gray-800 hover:bg-gray-700 text-aethas-cyan border border-aethas-cyan/50 px-2.5 py-1 rounded flex items-center gap-1 font-semibold">
+                    ⬇ Logs (.log)
+                </button>
+                <div v-if="activeView === 'chat' && activeProject" class="text-sm font-medium text-gray-300 flex items-center gap-3 border-l border-gray-600 pl-3">
+                    <span class="truncate max-w-[200px] md:max-w-lg">{{ activeProject.title }}</span>
+                    <button @click="exportProject('txt')" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600 px-2 py-1 rounded flex items-center gap-1">TXT</button>
+                    <button @click="exportProject('json')" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600 px-2 py-1 rounded flex items-center gap-1">JSON</button>
                 </div>
             </div>
         </header>
 
-        <!-- VUE : STUDIO IMAGE & VIDÉO (Point 6) -->
+        <!-- VUE : STUDIO IMAGE & VIDÉO (Points 3 & 4) -->
         <div v-if="activeView === 'media'" class="flex-1 w-full overflow-y-auto p-4 md:p-6 space-y-6 custom-scrollbar">
             <div class="w-full space-y-6">
                 <div class="flex flex-wrap justify-between items-center border-b border-gray-700 pb-4 gap-4">
@@ -191,15 +193,25 @@
                         <h2 class="text-2xl font-bold text-white flex items-center gap-2">
                             <i data-lucide="film" class="w-6 h-6 text-aethas-purple"></i> Studio Génération Image & Vidéo
                         </h2>
-                        <p class="text-xs text-gray-400 mt-1">Générez des visuels et vidéos via HuggingFace, Cloudflare Workers AI et OpenRouter avec optimisation de prompt par Gemini.</p>
+                        <p class="text-xs text-gray-400 mt-1">Sélectionnez une catégorie (Image ou Vidéo) ou utilisez l'aide au choix (Gratuit / Mixte / Payant) sur HuggingFace, Cloudflare, OpenRouter et Gemini.</p>
                     </div>
-                    <div class="inline-flex rounded-xl border border-gray-600 overflow-hidden text-sm font-bold">
-                        <button @click="mediaType = 'image'" :class="['px-4 py-2 flex items-center gap-2 transition-colors', mediaType === 'image' ? 'bg-aethas-cyan text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700']">
-                            🎨 Mode Image
-                        </button>
-                        <button @click="mediaType = 'video'" :class="['px-4 py-2 flex items-center gap-2 transition-colors', mediaType === 'video' ? 'bg-aethas-purple text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700']">
-                            🎬 Mode Vidéo
-                        </button>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <!-- Point 3 : Aide à la sélection par catégorie Image/Vidéo et Gratuit/Mixte/Payant -->
+                        <div class="inline-flex items-center bg-gray-800 border border-gray-600 rounded-xl p-1 text-xs">
+                            <span class="px-2 text-[10px] text-gray-400 font-bold uppercase">Aide au choix ({{ mediaType.toUpperCase() }}) :</span>
+                            <button @click="applyMediaRecommendation('free')" class="px-2.5 py-1 rounded-lg hover:bg-green-600/30 text-green-400 font-bold transition-colors">⚡ Gratuit</button>
+                            <button @click="applyMediaRecommendation('mixed')" class="px-2.5 py-1 rounded-lg hover:bg-cyan-600/30 text-aethas-cyan font-bold transition-colors">⚖️ Mixte</button>
+                            <button @click="applyMediaRecommendation('paid')" class="px-2.5 py-1 rounded-lg hover:bg-purple-600/30 text-purple-300 font-bold transition-colors">💎 Payant</button>
+                        </div>
+
+                        <div class="inline-flex rounded-xl border border-gray-600 overflow-hidden text-sm font-bold">
+                            <button @click="mediaType = 'image'" :class="['px-4 py-2 flex items-center gap-2 transition-colors', mediaType === 'image' ? 'bg-aethas-cyan text-black' : 'bg-gray-800 text-gray-300 hover:bg-gray-700']">
+                                🎨 Image
+                            </button>
+                            <button @click="mediaType = 'video'" :class="['px-4 py-2 flex items-center gap-2 transition-colors', mediaType === 'video' ? 'bg-aethas-purple text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700']">
+                                🎬 Vidéo
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -217,10 +229,11 @@
                     <div>
                         <label class="block text-xs font-bold text-gray-400 uppercase mb-1">2. Fournisseur</label>
                         <select v-model="mediaProvider" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-aethas-cyan">
-                            <option value="">Tous (HF, Cloudflare, OpenRouter)</option>
+                            <option value="">Tous (HF, Cloudflare, OpenRouter, Gemini)</option>
                             <option value="huggingface">HUGGING FACE</option>
                             <option value="cloudflare">CLOUDFLARE</option>
                             <option value="openrouter">OPENROUTER</option>
+                            <option value="gemini">GEMINI (Imagen / Veo)</option>
                         </select>
                     </div>
 
@@ -243,13 +256,12 @@
 
                 <!-- Zone de prompt Média -->
                 <div class="bg-gray-800 border border-gray-600 rounded-2xl p-4 shadow-lg space-y-3">
-                    <textarea v-model="mediaPrompt" rows="3" class="w-full bg-aethas-dark border border-gray-700 rounded-xl p-3 text-sm text-gray-200 focus:border-aethas-cyan outline-none resize-none" :placeholder="mediaType === 'image' ? 'Décrivez l\'image souhaitée en français (ex: Un logo de club de fléchettes style biker noir et blanc très détaillé)...' : 'Décrivez la scène vidéo souhaitée en français (ex: Vue aérienne cinématique d\'un récif corallien sous-marin avec des plongeurs)...'"></textarea>
+                    <textarea v-model="mediaPrompt" rows="3" class="w-full bg-aethas-dark border border-gray-700 rounded-xl p-3 text-sm text-gray-200 focus:border-aethas-cyan outline-none resize-none" :placeholder="mediaType === 'image' ? 'Décrivez l\'image souhaitée en français...' : 'Décrivez la scène vidéo souhaitée en français...'"></textarea>
                     <div class="flex justify-between items-center">
                         <span class="text-xs text-gray-400">Le Prompteur Gemini traduira et enrichira automatiquement votre description pour le moteur {{ mediaType }}.</span>
                         <button @click="generateMediaAction" :disabled="isGeneratingMedia || !mediaPrompt.trim() || !selectedMediaModel" class="bg-gradient-to-r from-aethas-cyan to-aethas-purple hover:opacity-90 text-white font-bold px-6 py-2.5 rounded-xl text-sm flex items-center gap-2 disabled:opacity-50">
-                            <i data-lucide="sparkles" class="w-4 h-4"></i>
                             <span v-if="isGeneratingMedia">Génération en cours...</span>
-                            <span v-else>Générer {{ mediaType === 'image' ? 'l\'Image' : 'la Vidéo' }}</span>
+                            <span v-else>✨ Générer {{ mediaType === 'image' ? 'l\'Image' : 'la Vidéo' }}</span>
                         </button>
                     </div>
                 </div>
@@ -268,7 +280,7 @@
                             </div>
                             <div class="pt-3 border-t border-gray-700 flex justify-end">
                                 <a :href="item.media_url" :download="'aethas38_' + item.media_type + '_' + Date.now() + (item.media_type === 'video' ? '.mp4' : '.png')" class="text-xs bg-gray-800 hover:bg-gray-700 text-aethas-cyan border border-gray-600 px-3 py-1.5 rounded flex items-center gap-1">
-                                    <i data-lucide="download" class="w-3.5 h-3.5"></i> Télécharger
+                                    ⬇ Télécharger
                                 </a>
                             </div>
                         </div>
@@ -296,7 +308,7 @@
                             <div v-else class="w-20 h-20 rounded-full bg-gradient-to-tr from-aethas-cyan to-aethas-purple flex items-center justify-center text-2xl font-bold shadow-lg">{{ user.username.charAt(0).toUpperCase() }}</div>
                             <div class="flex-1">
                                 <label class="bg-aethas-panel hover:bg-gray-700 text-white border border-gray-600 px-4 py-2 rounded-lg cursor-pointer transition-colors text-sm inline-block">
-                                    <i data-lucide="upload" class="w-4 h-4 inline mr-1"></i> Uploader un nouvel Avatar
+                                    Uploader un nouvel Avatar
                                     <input type="file" accept="image/*" @change="uploadAvatar" class="hidden">
                                 </label>
                             </div>
@@ -314,13 +326,20 @@
                     </div>
                 </div>
 
+                <!-- Point 2 : Outils Administrateur avec bouton Logs bien visible -->
                 <div v-if="settingsTab === 'admin' && user.is_admin" class="space-y-6">
                     <div class="bg-gray-800 p-6 rounded-xl border border-gray-700">
-                        <h3 class="text-lg font-semibold text-red-400 mb-4">Outils Administrateur & Journaux</h3>
+                        <h3 class="text-lg font-semibold text-red-400 mb-4">Outils Administrateur & Journaux Système</h3>
                         <div class="flex flex-wrap gap-4">
-                            <button @click="activeView = 'models'" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600">Ouvrir le panneau Modèles IA</button>
-                            <a href="/api/models/export" target="_blank" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm border border-gray-600">Exporter DB Modèles (ZIP CSV/MD)</a>
-                            <a href="/api/logs/download" target="_blank" class="bg-aethas-cyan/20 hover:bg-aethas-cyan/30 text-aethas-cyan px-4 py-2 rounded-lg text-sm border border-aethas-cyan">Télécharger les Logs Système (.log)</a>
+                            <button @click="activeView = 'models'" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2.5 rounded-lg text-sm border border-gray-600 font-medium">
+                                Ouvrir le panneau Modèles IA
+                            </button>
+                            <a href="/api/models/export" target="_blank" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2.5 rounded-lg text-sm border border-gray-600 font-medium">
+                                Exporter DB Modèles (ZIP CSV/MD)
+                            </a>
+                            <button @click="downloadLogs" class="bg-aethas-cyan hover:bg-cyan-400 text-black font-bold px-4 py-2.5 rounded-lg text-sm shadow-md">
+                                ⬇ Télécharger les Logs Système (.log)
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -335,7 +354,7 @@
                             <div><label class="block text-xs text-gray-400 mb-1">HuggingFace API Key (Travailleur & Média)</label><input v-model="adminSettings.huggingface_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
                             <div><label class="block text-xs text-gray-400 mb-1">Cloudflare Account ID (Travailleur & Média)</label><input v-model="adminSettings.cloudflare_account_id" type="text" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
                             <div><label class="block text-xs text-gray-400 mb-1">Cloudflare API Token (Travailleur & Média)</label><input v-model="adminSettings.cloudflare_api_token" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
-                            <div><label class="block text-xs text-gray-400 mb-1">Gemini API Key (Prompteur & Concaténeur)</label><input v-model="adminSettings.gemini_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
+                            <div><label class="block text-xs text-gray-400 mb-1">Gemini API Key (3 versions + Image/Vidéo + Argon)</label><input v-model="adminSettings.gemini_api_key" type="password" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
                             <div class="col-span-1 md:col-span-2 mt-2 border-t border-gray-700 pt-4"><h4 class="text-sm font-semibold text-gray-300 mb-2">Configuration SMTP</h4></div>
                             <div><label class="block text-xs text-gray-400 mb-1">SMTP Host</label><input v-model="adminSettings.smtp_host" type="text" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
                             <div><label class="block text-xs text-gray-400 mb-1">SMTP Port</label><input v-model.number="adminSettings.smtp_port" type="number" class="w-full bg-aethas-dark border border-gray-600 rounded p-2 text-sm text-gray-200 focus:border-aethas-purple outline-none"></div>
@@ -355,9 +374,9 @@
             <div class="flex justify-between items-end border-b border-gray-700 pb-4">
                 <div>
                     <h2 class="text-2xl font-bold text-white flex items-center gap-2"><i data-lucide="cpu" class="w-6 h-6 text-aethas-cyan"></i> Modèles & Finances API</h2>
-                    <p class="text-sm text-gray-400 mt-1">Dernière extraction : <span class="text-gray-200 font-mono">{{ formatDate(modelInfo.last_sync_date) }}</span> <span class="text-xs bg-gray-800 px-2 py-0.5 rounded border border-gray-600 ml-2 uppercase">{{ modelInfo.last_sync_type || 'Aucune' }}</span></p>
+                    <p class="text-sm text-gray-400 mt-1">Dernière extraction (HF, Cloudflare, OpenRouter, Gemini ciblé & Argon) : <span class="text-gray-200 font-mono">{{ formatDate(modelInfo.last_sync_date) }}</span> <span class="text-xs bg-gray-800 px-2 py-0.5 rounded border border-gray-600 ml-2 uppercase">{{ modelInfo.last_sync_type || 'Aucune' }}</span></p>
                 </div>
-                <button @click="syncModels" :disabled="isSyncing" class="bg-aethas-cyan hover:bg-cyan-600 text-aethas-dark font-semibold py-2 px-4 rounded flex items-center gap-2 text-sm disabled:opacity-50"><i data-lucide="refresh-cw" :class="{'animate-spin': isSyncing}" class="w-4 h-4"></i> Forcer Extraction</button>
+                <button @click="syncModels" :disabled="isSyncing" class="bg-aethas-cyan hover:bg-cyan-600 text-aethas-dark font-semibold py-2 px-4 rounded flex items-center gap-2 text-sm disabled:opacity-50"><i data-lucide="refresh-cw" :class="{'animate-spin': isSyncing}" class="w-4 h-4"></i> Forcer Extraction & Purge</button>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -372,13 +391,13 @@
 
             <div class="bg-aethas-panel border border-gray-700 rounded-xl overflow-hidden flex flex-col w-full">
                 <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex flex-wrap gap-4 items-center">
-                    <input v-model="filterSearch" type="text" placeholder="Rechercher..." class="bg-gray-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 w-full md:w-64 focus:border-aethas-cyan focus:outline-none">
+                    <input v-model="filterSearch" type="text" placeholder="Rechercher (ex: argon, flux, qwen)..." class="bg-gray-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 w-full md:w-64 focus:border-aethas-cyan focus:outline-none">
                     <select v-model="filterProvider" class="bg-gray-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:outline-none">
-                        <option value="">Fournisseurs Travailleurs (HF / CF / OR)</option>
+                        <option value="">Tous les fournisseurs actifs</option>
                         <option value="openrouter">OPENROUTER</option>
                         <option value="cloudflare">CLOUDFLARE</option>
                         <option value="huggingface">HUGGINGFACE</option>
-                        <option value="gemini">GEMINI (Prompteur/Concaténeur)</option>
+                        <option value="gemini">GEMINI (3 versions + Image/Vidéo + Argon)</option>
                     </select>
                     <select v-model="filterDomain" class="bg-gray-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:outline-none">
                         <option value="">Tous les domaines</option>
@@ -395,14 +414,14 @@
                         <option value="paid">Payants</option>
                     </select>
                     <button @click="exportCSV" class="bg-aethas-panel border border-gray-600 hover:border-aethas-cyan text-gray-300 hover:text-white px-3 py-1.5 rounded flex items-center gap-2 text-sm transition-colors md:ml-auto">
-                        <i data-lucide="download" class="w-4 h-4 text-green-500"></i> Export CSV
+                        ⬇ Export CSV
                     </button>
                 </div>
                 <div class="overflow-x-auto max-h-[550px] custom-scrollbar w-full">
                     <table class="w-full text-left text-sm text-gray-300">
                         <thead class="text-xs uppercase bg-gray-800 text-gray-400 sticky top-0">
                             <tr>
-                                <th class="px-4 py-3 text-center">Assigner</th>
+                                <th class="px-4 py-3 text-center">Assigner Worker</th>
                                 <th class="px-4 py-3">Modèle</th>
                                 <th class="px-4 py-3">Fournisseur</th>
                                 <th class="px-4 py-3">Domaine</th>
@@ -414,8 +433,8 @@
                         <tbody>
                             <tr v-for="model in filteredModels" :key="model.model_id" class="border-b border-gray-700 hover:bg-gray-800/50 transition-colors">
                                 <td class="px-4 py-3 text-center">
-                                    <input v-if="['openrouter', 'cloudflare', 'huggingface'].includes(model.provider)" type="radio" name="modelSelect" @click.prevent="openAssignModal(model.model_id)" class="w-4 h-4 text-aethas-cyan bg-gray-900 border-gray-600 focus:ring-aethas-cyan cursor-pointer">
-                                    <span v-else class="text-[10px] text-amber-400 font-semibold">Système</span>
+                                    <input v-if="isModelWorkerSelectable(model)" type="radio" name="modelSelect" @click.prevent="openAssignModal(model.model_id)" class="w-4 h-4 text-aethas-cyan bg-gray-900 border-gray-600 focus:ring-aethas-cyan cursor-pointer">
+                                    <span v-else class="text-[10px] text-amber-400 font-semibold">Prompteur</span>
                                 </td>
                                 <td class="px-4 py-3 font-mono text-xs text-aethas-cyan break-all">{{ model.model_id }}</td>
                                 <td class="px-4 py-3 uppercase text-xs font-bold">{{ model.provider }}</td>
@@ -430,7 +449,7 @@
             </div>
         </div>
 
-        <!-- VUE : CHAT PLEINE LARGEUR ADAPTATIVE (Point 4) -->
+        <!-- VUE : CHAT PLEINE LARGEUR ADAPTATIVE -->
         <div v-show="activeView === 'chat'" class="flex-1 flex flex-col min-h-0 w-full overflow-hidden">
             <div v-if="!activeProject" class="flex-1 w-full overflow-y-auto p-4 flex flex-col items-center justify-center">
                 <img src="/assets/logo.png" class="w-24 h-24 mb-6 rounded-full border-2 border-aethas-cyan shadow-[0_0_15px_rgba(6,182,212,0.5)]">
@@ -439,7 +458,6 @@
             </div>
 
             <template v-else>
-                <!-- Conteneur de messages 100% de la largeur disponible -->
                 <div class="flex-1 w-full overflow-y-auto px-4 md:px-8 py-6 space-y-6 flex flex-col custom-scrollbar" id="chat-container">
                     <div v-if="messages.length === 0" class="flex-1 flex items-center justify-center text-gray-500 italic">Démarrez la conversation ci-dessous.</div>
                     
@@ -452,12 +470,20 @@
                         <div class="text-gray-200 text-sm leading-relaxed w-full">
                             <template v-for="(part, index) in parseMessage(msg.content)" :key="index">
                                 <div v-if="part.type === 'text'" class="whitespace-pre-wrap font-sans w-full">{{ part.content }}</div>
+                                <div v-if="part.type === 'media'" class="my-4 bg-black rounded-xl border border-aethas-purple/50 p-3 flex flex-col items-center">
+                                    <img v-if="part.mediaType === 'IMAGE'" :src="part.url" class="max-h-[420px] rounded-lg object-contain">
+                                    <video v-else :src="part.url" controls autoplay loop class="max-h-[420px] rounded-lg object-contain"></video>
+                                    <div class="mt-2 flex items-center justify-between w-full text-xs text-gray-400">
+                                        <span>Modèle : {{ part.model }} | {{ part.caption }}</span>
+                                        <a :href="part.url" :download="'media_' + Date.now() + (part.mediaType === 'VIDEO' ? '.mp4' : '.png')" class="bg-gray-800 hover:bg-gray-700 text-aethas-cyan px-2.5 py-1 rounded border border-gray-600">⬇ Télécharger</a>
+                                    </div>
+                                </div>
                                 <div v-if="part.type === 'code'" class="my-4 bg-gray-900 rounded-lg border border-gray-700 overflow-hidden shadow-inner w-full">
                                     <div class="flex justify-between items-center px-4 py-2 bg-gray-800 border-b border-gray-700">
-                                        <span class="text-xs text-gray-400 font-mono flex items-center gap-2"><i data-lucide="file-code-2" class="w-4 h-4"></i> {{ part.language || 'code' }}</span>
+                                        <span class="text-xs text-gray-400 font-mono flex items-center gap-2">{{ part.language || 'code' }}</span>
                                         <div class="flex items-center">
-                                            <button @click="copyToClipboard(part.content)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded mr-2"><i data-lucide="copy" class="w-3 h-3"></i> Copier Code</button>
-                                            <button @click="downloadFile(part.content, part.language)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded"><i data-lucide="download" class="w-3 h-3"></i> Fichier</button>
+                                            <button @click="copyToClipboard(part.content)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded mr-2">Copier Code</button>
+                                            <button @click="downloadFile(part.content, part.language)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">⬇ Fichier</button>
                                         </div>
                                     </div>
                                     <pre class="p-4 text-xs font-mono text-gray-300 overflow-x-auto custom-scrollbar w-full"><code>{{ part.content }}</code></pre>
@@ -466,8 +492,8 @@
                         </div>
 
                         <div class="mt-3 flex items-center gap-3 border-t border-gray-700/50 pt-2 opacity-60 hover:opacity-100 transition-opacity">
-                            <button @click="copyToClipboard(msg.content)" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1"><i data-lucide="copy" class="w-3 h-3"></i> Copier Message</button>
-                            <button @click="downloadMessage(msg.content, msg.created_at || new Date().toISOString())" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1"><i data-lucide="file-down" class="w-3 h-3"></i> Extraire Message</button>
+                            <button @click="copyToClipboard(msg.content)" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1">Copier Message</button>
+                            <button @click="downloadMessage(msg.content, msg.created_at || new Date().toISOString())" class="text-xs text-gray-400 hover:text-aethas-cyan flex items-center gap-1">Extraire Message</button>
                         </div>
                     </div>
 
@@ -480,7 +506,7 @@
                     </div>
                 </div>
 
-                <!-- ZONE DE PILOTAGE IA PLEINE LARGEUR (S'adapte à la fenêtre disponible) -->
+                <!-- ZONE DE PILOTAGE IA PLEINE LARGEUR (Points 3 & 4) -->
                 <div class="px-4 md:px-8 pt-3 pb-3 w-full flex-shrink-0 border-t border-gray-800 bg-aethas-dark/95">
                     
                     <div v-if="selectedTheme === 'ocr_ce2'" class="mb-2 px-3 py-1.5 rounded-lg bg-amber-950/60 border border-amber-500/60 text-amber-200 text-xs flex items-center justify-between">
@@ -496,36 +522,45 @@
                                 <button @click="orchestratorMode = 'multi'" :class="['px-2.5 py-1 transition-colors', orchestratorMode === 'multi' ? 'bg-aethas-purple text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700']">Multi-IA</button>
                             </div>
 
+                            <!-- Point 3 : Thèmes incluant Image et Vidéo -->
                             <select v-model="selectedTheme" class="bg-gray-800 border border-gray-600 rounded-lg px-2.5 py-1 text-xs text-gray-200 focus:border-aethas-cyan outline-none font-semibold">
                                 <option value="general">🎯 Thème : Polyvalent / Standard</option>
                                 <option value="code">💻 Thème : Codage & Architecture</option>
                                 <option value="ocr_ce2">🏫 Thème : OCR & Correction CE2 (Céline)</option>
+                                <option value="image">🎨 Thème : Génération d'Image</option>
+                                <option value="video">🎬 Thème : Génération de Vidéo</option>
                                 <option value="web">🌐 Thème : Recherche Web & Synthèse</option>
                                 <option value="math">🧮 Thème : Mathématiques & Logique</option>
                             </select>
 
+                            <!-- Point 3 : Aide à la sélection par catégorie et Gratuit / Mixte / Payant -->
                             <div class="inline-flex items-center bg-gray-800 border border-gray-600 rounded-lg p-0.5 text-xs">
-                                <span class="px-2 text-[10px] text-gray-400 font-semibold uppercase">Auto-Choix (HF/CF/OR) :</span>
+                                <span class="px-2 text-[10px] text-gray-400 font-semibold uppercase">Aide Sélection :</span>
                                 <button @click="applyThemeRecommendation('free')" class="px-2 py-0.5 rounded hover:bg-green-600/30 text-green-400 font-semibold transition-colors">Gratuit</button>
                                 <button @click="applyThemeRecommendation('mixed')" class="px-2 py-0.5 rounded hover:bg-cyan-600/30 text-aethas-cyan font-semibold transition-colors">Mixte</button>
                                 <button @click="applyThemeRecommendation('paid')" class="px-2 py-0.5 rounded hover:bg-purple-600/30 text-purple-300 font-semibold transition-colors">Payant</button>
                             </div>
 
+                            <!-- Point 4 : Bouton d'activation Argon en plus -->
+                            <button @click="toggleArgonMode" :class="['text-xs px-2.5 py-1 rounded-lg border font-semibold transition-colors', includeArgon ? 'bg-purple-900/60 border-aethas-purple text-purple-200' : 'bg-gray-800 border-gray-600 text-gray-400']" title="Inclure et charger Argon dans la sélection">
+                                ⚛️ Argon : {{ includeArgon ? 'ACTIF' : 'OPTION' }}
+                            </button>
+
                             <button @click="enableWebSearch = !enableWebSearch" :class="['text-xs px-2.5 py-1 rounded-lg border font-semibold flex items-center gap-1 transition-colors', enableWebSearch ? 'bg-emerald-900/50 border-emerald-500 text-emerald-300' : 'bg-gray-800 border-gray-600 text-gray-400']">
-                                <i data-lucide="globe" class="w-3.5 h-3.5"></i> Web : {{ enableWebSearch ? 'ON' : 'OFF' }}
+                                🌐 Web : {{ enableWebSearch ? 'ON' : 'OFF' }}
                             </button>
                         </div>
 
                         <div class="flex gap-2">
-                            <button @click="downloadTemplate" class="text-xs bg-gray-800 hover:bg-gray-700 text-aethas-cyan border border-gray-600 px-2 py-1 rounded flex items-center gap-1 transition-colors"><i data-lucide="download" class="w-3 h-3"></i> Template MD</button>
+                            <button @click="downloadTemplate" class="text-xs bg-gray-800 hover:bg-gray-700 text-aethas-cyan border border-gray-600 px-2 py-1 rounded flex items-center gap-1 transition-colors">⬇ Template MD</button>
                             <label class="text-xs bg-gray-800 hover:bg-gray-700 text-aethas-cyan border border-gray-600 px-2 py-1 rounded flex items-center gap-1 transition-colors cursor-pointer">
-                                <i data-lucide="upload" class="w-3 h-3"></i> Importer
+                                ⬆ Importer
                                 <input type="file" accept=".md" @change="handleConfigImport" class="hidden">
                             </label>
                         </div>
                     </div>
 
-                    <!-- GRILLE DE SÉLECTION ADAPTATIVE (Point 1 & Point 2) -->
+                    <!-- GRILLE DE SÉLECTION ADAPTATIVE -->
                     <div :class="['grid border border-black bg-gray-900 rounded-lg overflow-hidden text-center text-xs font-bold shadow-lg mb-3 w-full', orchestratorMode === 'mono' ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-5 lg:grid-cols-10']">
                         <div class="border-r border-b lg:border-b-0 border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-gray-400 mb-1">PRIX</label>
@@ -539,24 +574,26 @@
                         <div class="border-r border-b lg:border-b-0 border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-gray-400 mb-1">FOURNISSEUR</label>
                             <select v-model="colProvider" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none">
-                                <option value="">HF / CF / OR</option>
+                                <option value="">HF / CF / OR / GEM-MEDIA</option>
                                 <option value="openrouter">OPENROUTER</option>
                                 <option value="cloudflare">CLOUDFLARE</option>
                                 <option value="huggingface">HUGGINGFACE</option>
+                                <option value="gemini">GEMINI (Image/Vidéo/Argon)</option>
                             </select>
                         </div>
 
                         <div class="border-r border-b lg:border-b-0 border-black p-1.5 bg-gray-800 flex flex-col justify-center">
-                            <label class="block text-[9px] text-gray-400 mb-1">TYPE</label>
+                            <label class="block text-[9px] text-gray-400 mb-1">CATÉGORIE</label>
                             <select v-model="colDomain" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none">
-                                <option value="">TOUS</option>
+                                <option value="">TOUTES</option>
                                 <option value="Texte Polyvalent">Texte</option>
                                 <option value="Code & Logique">Codage</option>
                                 <option value="Vision & Texte">Vision / OCR</option>
+                                <option value="Génération Image">Image</option>
+                                <option value="Génération Vidéo">Vidéo</option>
                             </select>
                         </div>
 
-                        <!-- Point 2 : Prompteur verrouillé sur les 3 modèles Gemini -->
                         <div class="border-r border-b lg:border-b-0 border-black p-1.5 bg-gray-800 flex flex-col justify-center">
                             <label class="block text-[9px] text-amber-400 mb-1">PROMPTEUR (GEMINI)</label>
                             <select v-model="selectedPrompter" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
@@ -564,12 +601,11 @@
                             </select>
                         </div>
 
-                        <!-- Point 1 : Travailleurs verrouillés sur HF, Cloudflare et OpenRouter -->
                         <div :class="[orchestratorMode === 'multi' ? 'border-r border-black' : '', 'p-1.5 bg-gray-800 flex flex-col justify-center']">
                             <label class="block text-[9px] text-aethas-cyan mb-1">{{ orchestratorMode === 'mono' ? 'IA TRAVAILLEUR (MONO)' : 'TRAVAILLEUR 1' }}</label>
                             <select v-model="workers[0]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
                                 <option value="">(Aucun)</option>
-                                <option v-for="m in getFilteredWorkerModels(colPricing, colDomain, colProvider, workers[0])" :key="m.model_id" :value="m.model_id">[{{ m.provider.slice(0,2).toUpperCase() }}] {{ m.name || m.model_id }}</option>
+                                <option v-for="m in getFilteredWorkerModels(colPricing, colDomain, colProvider, workers[0])" :key="m.model_id" :value="m.model_id">[{{ m.provider.slice(0,3).toUpperCase() }}] {{ m.name || m.model_id }}</option>
                             </select>
                         </div>
 
@@ -578,7 +614,7 @@
                                 <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 2</label>
                                 <select v-model="workers[1]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
                                     <option value="">(Aucun)</option>
-                                    <option v-for="m in getFilteredWorkerModels(colPricing, colDomain, colProvider, workers[1])" :key="m.model_id" :value="m.model_id">[{{ m.provider.slice(0,2).toUpperCase() }}] {{ m.name || m.model_id }}</option>
+                                    <option v-for="m in getFilteredWorkerModels(colPricing, colDomain, colProvider, workers[1])" :key="m.model_id" :value="m.model_id">[{{ m.provider.slice(0,3).toUpperCase() }}] {{ m.name || m.model_id }}</option>
                                 </select>
                             </div>
 
@@ -586,7 +622,7 @@
                                 <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 3</label>
                                 <select v-model="workers[2]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
                                     <option value="">(Aucun)</option>
-                                    <option v-for="m in getFilteredWorkerModels(colPricing, colDomain, colProvider, workers[2])" :key="m.model_id" :value="m.model_id">[{{ m.provider.slice(0,2).toUpperCase() }}] {{ m.name || m.model_id }}</option>
+                                    <option v-for="m in getFilteredWorkerModels(colPricing, colDomain, colProvider, workers[2])" :key="m.model_id" :value="m.model_id">[{{ m.provider.slice(0,3).toUpperCase() }}] {{ m.name || m.model_id }}</option>
                                 </select>
                             </div>
 
@@ -594,7 +630,7 @@
                                 <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 4</label>
                                 <select v-model="workers[3]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
                                     <option value="">(Aucun)</option>
-                                    <option v-for="m in getFilteredWorkerModels(colPricing, colDomain, colProvider, workers[3])" :key="m.model_id" :value="m.model_id">[{{ m.provider.slice(0,2).toUpperCase() }}] {{ m.name || m.model_id }}</option>
+                                    <option v-for="m in getFilteredWorkerModels(colPricing, colDomain, colProvider, workers[3])" :key="m.model_id" :value="m.model_id">[{{ m.provider.slice(0,3).toUpperCase() }}] {{ m.name || m.model_id }}</option>
                                 </select>
                             </div>
 
@@ -602,11 +638,10 @@
                                 <label class="block text-[9px] text-aethas-cyan mb-1">TRAVAILLEUR 5</label>
                                 <select v-model="workers[4]" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
                                     <option value="">(Aucun)</option>
-                                    <option v-for="m in getFilteredWorkerModels(colPricing, colDomain, colProvider, workers[4])" :key="m.model_id" :value="m.model_id">[{{ m.provider.slice(0,2).toUpperCase() }}] {{ m.name || m.model_id }}</option>
+                                    <option v-for="m in getFilteredWorkerModels(colPricing, colDomain, colProvider, workers[4])" :key="m.model_id" :value="m.model_id">[{{ m.provider.slice(0,3).toUpperCase() }}] {{ m.name || m.model_id }}</option>
                                 </select>
                             </div>
 
-                            <!-- Point 2 : Concaténeur verrouillé sur les 3 modèles Gemini -->
                             <div class="p-1.5 bg-gray-800 flex flex-col justify-center">
                                 <label class="block text-[9px] text-aethas-purple mb-1">CONCATENEUR (GEMINI)</label>
                                 <select v-model="selectedConcatenator" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
@@ -620,9 +655,8 @@
                     <div class="relative flex items-end bg-gray-800 border border-gray-600 rounded-2xl p-2 shadow-lg focus-within:border-aethas-cyan flex-col gap-2 w-full">
                         <div v-if="attachedFiles.length > 0" class="w-full flex flex-wrap gap-2 px-2 pt-2">
                             <div v-for="(file, index) in attachedFiles" :key="index" class="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 flex items-center gap-2">
-                                <i data-lucide="file" class="w-3.5 h-3.5 text-aethas-cyan"></i>
-                                <span class="truncate max-w-[180px]">{{ file.name }}</span>
-                                <button @click="removeFile(index)" class="text-red-400 hover:text-red-300"><i data-lucide="x" class="w-3 h-3"></i></button>
+                                <span class="truncate max-w-[180px]">📎 {{ file.name }}</span>
+                                <button @click="removeFile(index)" class="text-red-400 hover:text-red-300">✕</button>
                             </div>
                         </div>
 
@@ -697,12 +731,12 @@
             const orchestratorMode = ref("multi");
             const selectedTheme = ref("general");
             const enableWebSearch = ref(true);
+            const includeArgon = ref(false);
 
             const workers = ref(["", "", "", "", ""]);
             const selectedPrompter = ref("gemini-3.5-flash-lite");
             const selectedConcatenator = ref("gemini-3.8-flash");
 
-            // Point 6 : États du Studio Image & Vidéo
             const mediaType = ref("image");
             const mediaPricing = ref("");
             const mediaProvider = ref("");
@@ -722,7 +756,18 @@
             const pinnedProjects = computed(() => projects.value.filter(p => p.is_pinned));
             const recentProjects = computed(() => projects.value.filter(p => !p.is_pinned));
 
-            // Point 2 : Les 3 modèles Gemini exclusifs pour le Prompteur et le Concaténeur (avec adaptation au vrai nom en BDD)
+            // Point 4 : Vérifie si un modèle est sélectionnable comme Travailleur (3 fournisseurs + Argon + Gemini Image/Vidéo)
+            const isModelWorkerSelectable = (m) => {
+                if (!m) return false;
+                const prov = (m.provider || '').toLowerCase();
+                const mid = (m.model_id || '').toLowerCase();
+                if (ALLOWED_WORKER_PROVIDERS.includes(prov)) return true;
+                if (mid.includes('argon') || prov === 'argon') return true;
+                if (prov === 'gemini' && (m.domain === 'Génération Image' || m.domain === 'Génération Vidéo')) return true;
+                return false;
+            };
+
+            // Point 2 & 4 : Les 3 versions Gemini pour Prompteur / Concaténeur (+ Argon si activé)
             const prompterConcatModels = computed(() => {
                 const geminiDb = modelInfo.models.filter(m => (m.provider || '').toLowerCase() === 'gemini');
                 const findExactOrMatch = (tokens, fallbackId, fallbackName) => {
@@ -732,18 +777,35 @@
                     });
                     return found ? { model_id: found.model_id, name: found.name || found.model_id } : { model_id: fallbackId, name: fallbackName };
                 };
-                return [
+                const list = [
                     findExactOrMatch(['3.5', 'lite'], 'gemini-3.5-flash-lite', 'Gemini 3.5 Flash-Lite'),
                     findExactOrMatch(['3.8', 'flash'], 'gemini-3.8-flash', 'Gemini 3.8 Flash'),
                     findExactOrMatch(['3.1', 'pro'], 'gemini-3.1-pro-preview', 'Gemini 3.1 Pro Preview')
                 ];
+                if (includeArgon.value) {
+                    const argonMod = modelInfo.models.find(m => (m.model_id || '').toLowerCase().includes('argon'));
+                    list.push(argonMod ? { model_id: argonMod.model_id, name: argonMod.name || argonMod.model_id } : { model_id: 'argon', name: 'Argon (Spécial)' });
+                }
+                return list;
             });
 
-            // Point 1 : Filtrage strict des Travailleurs (uniquement HuggingFace, Cloudflare, OpenRouter)
+            const toggleArgonMode = () => {
+                includeArgon.value = !includeArgon.value;
+                if (includeArgon.value) {
+                    const argonMod = modelInfo.models.find(m => (m.model_id || '').toLowerCase().includes('argon'));
+                    const argonId = argonMod ? argonMod.model_id : 'argon';
+                    workers.value[0] = argonId;
+                    showToast(`Modèle Argon (${argonId}) chargé sur Travailleur 1 et ajouté aux sélecteurs.`);
+                } else {
+                    showToast("Option Argon désactivée.");
+                }
+            };
+
+            // Point 4 : Filtrage des Travailleurs (3 fournisseurs + Gemini Image/Vidéo + Argon)
             const getFilteredWorkerModels = (pricingFilter, domainFilter, providerFilter, currentSelectedId) => {
                 let filtered = modelInfo.models.filter(m => {
+                    if (!isModelWorkerSelectable(m)) return false;
                     const prov = (m.provider || '').toLowerCase();
-                    if (!ALLOWED_WORKER_PROVIDERS.includes(prov)) return false;
                     if (providerFilter && prov !== providerFilter) return false;
                     if (domainFilter && m.domain !== domainFilter) return false;
                     if (pricingFilter === 'free' && !m.is_free) return false;
@@ -751,22 +813,26 @@
                     return true;
                 });
 
+                if (includeArgon.value && !filtered.some(m => m.model_id.toLowerCase().includes('argon'))) {
+                    filtered.unshift({ model_id: 'argon', name: 'Argon', provider: 'argon', domain: 'Code & Logique', is_free: true });
+                }
+
                 if (currentSelectedId && currentSelectedId.trim() !== "") {
                     const exists = filtered.find(m => m.model_id === currentSelectedId);
                     if (!exists) {
-                        const original = modelInfo.models.find(m => m.model_id === currentSelectedId && ALLOWED_WORKER_PROVIDERS.includes((m.provider || '').toLowerCase()));
+                        const original = modelInfo.models.find(m => m.model_id === currentSelectedId && isModelWorkerSelectable(m));
                         if (original) filtered.unshift(original);
                     }
                 }
                 return filtered;
             };
 
-            // Point 6 : Filtrage des modèles pour le Studio Image & Vidéo
+            // Point 3 & 4 : Modèles Image & Vidéo (HF, Cloudflare, OpenRouter ET Gemini Image/Vidéo)
             const filteredMediaModels = computed(() => {
                 const targetDomain = mediaType.value === 'video' ? 'Génération Vidéo' : 'Génération Image';
                 let list = modelInfo.models.filter(m => {
+                    if (!isModelWorkerSelectable(m)) return false;
                     const prov = (m.provider || '').toLowerCase();
-                    if (!ALLOWED_WORKER_PROVIDERS.includes(prov)) return false;
                     if (m.domain !== targetDomain) return false;
                     if (mediaProvider.value && prov !== mediaProvider.value) return false;
                     if (mediaPricing.value === 'free' && !m.is_free) return false;
@@ -774,19 +840,22 @@
                     return true;
                 });
 
-                // Modèles par défaut si la BDD n'a pas encore été synchronisée
                 if (list.length === 0) {
                     if (mediaType.value === 'image') {
                         list = [
                             { model_id: 'black-forest-labs/FLUX.1-schnell', name: 'FLUX.1 Schnell', provider: 'huggingface', is_free: true },
+                            { model_id: 'black-forest-labs/FLUX.1-dev', name: 'FLUX.1 Dev Pro', provider: 'huggingface', is_free: false },
                             { model_id: 'stabilityai/stable-diffusion-xl-base-1.0', name: 'Stable Diffusion XL 1.0', provider: 'huggingface', is_free: true },
-                            { model_id: '@cf/black-forest-labs/flux-1-schnell', name: 'CF FLUX.1 Schnell', provider: 'cloudflare', is_free: true }
+                            { model_id: '@cf/black-forest-labs/flux-1-schnell', name: 'CF FLUX.1 Schnell', provider: 'cloudflare', is_free: true },
+                            { model_id: 'imagen-3.0-generate-002', name: 'Google Imagen 3 (Gemini)', provider: 'gemini', is_free: true }
                         ];
                     } else {
                         list = [
-                            { model_id: 'Lightricks/LTX-Video', name: 'LTX-Video', provider: 'huggingface', is_free: true },
+                            { model_id: 'Lightricks/LTX-Video', name: 'LTX-Video Temps Réel', provider: 'huggingface', is_free: true },
                             { model_id: 'Wan-AI/Wan2.1-T2V-14B', name: 'Wan 2.1 Text-to-Video 14B', provider: 'huggingface', is_free: false },
-                            { model_id: 'ali-vilab/text-to-video-ms-1.7b', name: 'ModelScope Text-to-Video', provider: 'huggingface', is_free: true }
+                            { model_id: 'tencent/HunyuanVideo', name: 'HunyuanVideo HD', provider: 'huggingface', is_free: false },
+                            { model_id: 'ali-vilab/text-to-video-ms-1.7b', name: 'ModelScope Text-to-Video', provider: 'huggingface', is_free: true },
+                            { model_id: 'veo-2.0-generate-001', name: 'Google Veo 2 (Gemini Vidéo)', provider: 'gemini', is_free: true }
                         ];
                     }
                 }
@@ -799,9 +868,38 @@
                 }
             }, { immediate: true });
 
+            // Point 3 : Fonction d'aide à la sélection de modèle dans le Studio Image & Vidéo (Gratuit / Mixte / Payant)
+            const applyMediaRecommendation = (budgetMode) => {
+                mediaPricing.value = budgetMode === 'mixed' ? '' : budgetMode;
+                nextTick(() => {
+                    const candidates = filteredMediaModels.value;
+                    if (!candidates || candidates.length === 0) {
+                        showToast("Aucun modèle disponible pour ce filtre.");
+                        return;
+                    }
+                    const preferOrder = mediaType.value === 'image'
+                        ? (budgetMode === 'paid' ? ['flux.1-dev', 'imagen', 'dall-e', 'flux', 'sdxl'] : ['flux.1-schnell', 'imagen', 'sdxl-lightning', 'sdxl'])
+                        : (budgetMode === 'paid' ? ['wan2.1', 'hunyuan', 'veo', 'ltx'] : ['ltx-video', 'veo', 'modelscope', 'text-to-video']);
+
+                    let best = candidates[0];
+                    for (const kw of preferOrder) {
+                        const match = candidates.find(m => m.model_id.toLowerCase().includes(kw));
+                        if (match) { best = match; break; }
+                    }
+                    selectedMediaModel.value = best.model_id;
+
+                    const gemList = prompterConcatModels.value;
+                    selectedMediaPrompter.value = budgetMode === 'paid'
+                        ? gemList[2].model_id
+                        : (budgetMode === 'mixed' ? gemList[1].model_id : gemList[0].model_id);
+
+                    showToast(`Aide Sélection [${mediaType.value.toUpperCase()} - ${budgetMode.toUpperCase()}] : ${best.name || best.model_id} sélectionné.`);
+                });
+            };
+
             const filteredModels = computed(() => {
                 return modelInfo.models.filter(m => {
-                    const matchSearch = (m.model_id.toLowerCase().includes(filterSearch.value.toLowerCase()) || m.provider.toLowerCase().includes(filterSearch.value.toLowerCase()));
+                    const matchSearch = (m.model_id.toLowerCase().includes(filterSearch.value.toLowerCase()) || m.provider.toLowerCase().includes(filterSearch.value.toLowerCase()) || (m.name || '').toLowerCase().includes(filterSearch.value.toLowerCase()));
                     const matchDomain = filterDomain.value === "" || m.domain === filterDomain.value;
                     const matchProvider = filterProvider.value === "" || m.provider === filterProvider.value;
                     let matchPrice = true;
@@ -811,11 +909,16 @@
                 });
             });
 
-            // Point 3 : Auto-Choix IA (uniquement HF/Cloudflare/OpenRouter pour les travailleurs, et les 3 Gemini pour Prompteur/Concaténeur)
+            // Point 3 : Auto-Choix IA dans le Chat (inclut désormais Image, Vidéo, Argon, et Gratuit/Mixte/Payant)
             const applyThemeRecommendation = (budgetMode) => {
+                if (selectedTheme.value === 'image' || selectedTheme.value === 'video') {
+                    colDomain.value = selectedTheme.value === 'video' ? 'Génération Vidéo' : 'Génération Image';
+                } else {
+                    colDomain.value = "";
+                }
+
                 const workerPool = modelInfo.models.filter(m => {
-                    const prov = (m.provider || '').toLowerCase();
-                    if (!ALLOWED_WORKER_PROVIDERS.includes(prov)) return false;
+                    if (!isModelWorkerSelectable(m)) return false;
                     if (budgetMode === 'free') return m.is_free;
                     if (budgetMode === 'paid') return !m.is_free;
                     return true;
@@ -829,25 +932,33 @@
                 const scoreModel = (m, targetKeywords, preferDomain) => {
                     let s = 0;
                     const id = m.model_id.toLowerCase();
-                    if (preferDomain && m.domain === preferDomain) s += 50;
+                    if (preferDomain && m.domain === preferDomain) s += 60;
                     targetKeywords.forEach((kw, idx) => {
-                        if (id.includes(kw)) s += (40 - idx * 4);
+                        if (id.includes(kw)) s += (45 - idx * 4);
                     });
-                    if (m.context_length >= 100000) s += 20;
-                    else if (m.context_length >= 32000) s += 10;
+                    if (includeArgon.value && id.includes('argon')) s += 80;
+                    if (m.context_length >= 100000) s += 15;
                     if (budgetMode === 'mixed' && m.is_free) s += 8;
                     return s;
                 };
 
-                let themeKeywords = ["qwen", "llama-3.3", "claude-3", "gpt-4o", "mistral", "deepseek"];
+                let themeKeywords = ["argon", "qwen", "llama-3.3", "claude-3", "gpt-4o", "mistral"];
                 let preferDomain = "Texte Polyvalent";
 
                 if (selectedTheme.value === "code") {
-                    themeKeywords = ["qwen-2.5-coder", "qwen2.5-coder", "claude-3.5-sonnet", "deepseek-chat", "deepseek-r1", "codestral", "gpt-4o"];
+                    themeKeywords = ["argon", "qwen-2.5-coder", "qwen2.5-coder", "claude-3.5-sonnet", "deepseek-r1", "codestral", "gpt-4o"];
                     preferDomain = "Code & Logique";
                 } else if (selectedTheme.value === "ocr_ce2") {
                     themeKeywords = ["qwen2.5-vl", "llama-3.2-11b-vision", "llama-3.2-90b-vision", "pixtral", "gpt-4o", "claude-3.5-sonnet"];
                     preferDomain = "Vision & Texte";
+                } else if (selectedTheme.value === "image") {
+                    themeKeywords = ["flux.1-schnell", "flux.1-dev", "imagen", "sdxl", "stable-diffusion"];
+                    preferDomain = "Génération Image";
+                    orchestratorMode.value = "mono";
+                } else if (selectedTheme.value === "video") {
+                    themeKeywords = ["ltx-video", "wan2.1", "veo", "hunyuanvideo", "text-to-video"];
+                    preferDomain = "Génération Vidéo";
+                    orchestratorMode.value = "mono";
                 } else if (selectedTheme.value === "math") {
                     themeKeywords = ["deepseek-r1", "qwq", "o3-mini", "qwen", "claude-3.5"];
                     preferDomain = "Code & Logique";
@@ -860,10 +971,10 @@
                 const topModels = ranked.slice(0, 5).map(m => m.model_id);
 
                 const gemList = prompterConcatModels.value;
-                selectedPrompter.value = gemList[0].model_id; // Gemini 3.5 Flash-Lite
-                selectedConcatenator.value = (selectedTheme.value === 'code' || selectedTheme.value === 'ocr_ce2' || budgetMode === 'paid')
-                    ? gemList[2].model_id // Gemini 3.1 Pro
-                    : gemList[1].model_id; // Gemini 3.8 Flash
+                selectedPrompter.value = gemList[0].model_id;
+                selectedConcatenator.value = (budgetMode === 'paid' || selectedTheme.value === 'code' || selectedTheme.value === 'ocr_ce2')
+                    ? gemList[2].model_id
+                    : gemList[1].model_id;
 
                 if (orchestratorMode.value === "mono") {
                     workers.value = [topModels[0] || "", "", "", "", ""];
@@ -871,7 +982,24 @@
                     workers.value = [topModels[0] || "", topModels[1] || "", topModels[2] || "", topModels[3] || "", topModels[4] || ""];
                 }
 
-                showToast(`Sélection Travailleurs (HF/CF/OR - ${budgetMode.toUpperCase()}) + Gemini appliquée.`);
+                showToast(`Aide Sélection [${selectedTheme.value.toUpperCase()} - ${budgetMode.toUpperCase()}] appliquée !`);
+            };
+
+            // Point 2 : Téléchargement garanti des logs système
+            const downloadLogs = async () => {
+                try {
+                    const res = await fetch('/api/logs/download');
+                    if (res.ok) {
+                        const text = await res.text();
+                        const d = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+                        downloadFile(text, `aethas38_logs_${d}.log`, 'text/plain;charset=utf-8');
+                        showToast("Fichier de logs téléchargé !");
+                    } else {
+                        window.open('/api/logs/download', '_blank');
+                    }
+                } catch (e) {
+                    window.open('/api/logs/download', '_blank');
+                }
             };
 
             const generateMediaAction = async () => {
@@ -1003,10 +1131,10 @@
             const validateConfigAndReplace = async () => {
                 if (!modelInfo.models || modelInfo.models.length === 0) return;
                 const validWorkerIds = modelInfo.models
-                    .filter(m => ALLOWED_WORKER_PROVIDERS.includes((m.provider || '').toLowerCase()))
+                    .filter(m => isModelWorkerSelectable(m))
                     .map(m => m.model_id);
-                const replacements = [];
-                
+                if (includeArgon.value) validWorkerIds.push('argon');
+
                 for(let i=0; i<5; i++) {
                     const val = workers.value[i];
                     if (val && val.trim() !== "" && !validWorkerIds.includes(val)) {
@@ -1018,23 +1146,17 @@
                             if (res.ok) {
                                 const data = await res.json();
                                 workers.value[i] = data.suggestion;
-                                replacements.push(`- Travailleur ${i+1} : ${val} -> ${data.suggestion}`);
                             }
                         } catch(e) {}
                     }
                 }
 
-                // Vérifie que Prompteur et Concaténeur sont bien parmi les 3 modèles Gemini autorisés
                 const validGeminiIds = prompterConcatModels.value.map(g => g.model_id);
                 if (!validGeminiIds.includes(selectedPrompter.value)) {
                     selectedPrompter.value = validGeminiIds[0];
                 }
                 if (!validGeminiIds.includes(selectedConcatenator.value)) {
                     selectedConcatenator.value = validGeminiIds[1] || validGeminiIds[0];
-                }
-
-                if (replacements.length > 0) {
-                    showToast("Certains travailleurs ont été ajustés vers HF/Cloudflare/OpenRouter.");
                 }
             };
 
@@ -1064,7 +1186,7 @@
                     if(res.ok) { 
                         await fetchModelsInfo(); 
                         await fetchFinances();
-                        showToast("Synchronisation réussie !"); 
+                        showToast("Synchronisation et filtrage BDD réussis !"); 
                     }
                 } catch(e) {} 
                 isSyncing.value = false; 
@@ -1165,7 +1287,28 @@
             };
             
             const downloadMessage = (content, dateString) => { downloadFile(content, `message_${dateString.replace(/[:T.Z]/g, '-')}.txt`); };
-            const parseMessage = (content) => { const regex = /```([\w.-]*)\n([\s\S]*?)```/g; let parts = [], last = 0, m; while ((m = regex.exec(content)) !== null) { if (m.index > last) parts.push({ type: 'text', content: content.slice(last, m.index) }); parts.push({ type: 'code', language: m[1], content: m[2] }); last = m.index + m[0].length; } if (last < content.length) parts.push({ type: 'text', content: content.slice(last) }); return parts.length > 0 ? parts : [{ type: 'text', content: content }]; };
+
+            const parseMessage = (content) => {
+                if (!content) return [{ type: 'text', content: '' }];
+                if (content.startsWith('[MEDIA_IMAGE:') || content.startsWith('[MEDIA_VIDEO:')) {
+                    const lines = content.split('\n');
+                    const header = lines[0];
+                    const mediaType = header.includes('VIDEO') ? 'VIDEO' : 'IMAGE';
+                    const model = header.split(':')[1]?.replace(']', '') || '';
+                    const url = lines[1] || '';
+                    const caption = lines.slice(2).join(' ');
+                    return [{ type: 'media', mediaType, model, url, caption }];
+                }
+                const regex = /```([\w.-]*)\n([\s\S]*?)```/g;
+                let parts = [], last = 0, m;
+                while ((m = regex.exec(content)) !== null) {
+                    if (m.index > last) parts.push({ type: 'text', content: content.slice(last, m.index) });
+                    parts.push({ type: 'code', language: m[1], content: m[2] });
+                    last = m.index + m[0].length;
+                }
+                if (last < content.length) parts.push({ type: 'text', content: content.slice(last) });
+                return parts.length > 0 ? parts : [{ type: 'text', content: content }];
+            };
 
             const fetchProjects = async () => { try { const res = await fetch('/api/projects'); if(res.ok) projects.value = await res.json(); nextTick(()=>lucide.createIcons()); } catch(e){} };
             
@@ -1224,7 +1367,7 @@
                     : workers.value.filter(w => w && w.trim() !== "");
 
                 if ((!prompt.value.trim() && attachedFiles.value.length === 0) || !activeProject.value || activeWorkers.length === 0) {
-                    alert("Veuillez sélectionner au moins un travailleur (HF, Cloudflare ou OpenRouter) et saisir un message.");
+                    alert("Veuillez sélectionner au moins un travailleur et saisir un message.");
                     return;
                 }
                 const userText = prompt.value.trim(); 
@@ -1312,13 +1455,13 @@
                 openSettings, passForm, settingsMessage, isSavingSettings, changePassword, uploadAvatar,
                 adminSettings, adminSettingsMessage, isSavingAdminSettings, saveAdminSettings,
                 modelInfo, financesList, filterSearch, filterDomain, filterPricing, filterProvider, filteredModels,
-                prompterConcatModels, getFilteredWorkerModels, formatDate, syncModels, isSyncing,
-                orchestratorMode, selectedTheme, enableWebSearch, applyThemeRecommendation,
+                prompterConcatModels, getFilteredWorkerModels, isModelWorkerSelectable, formatDate, syncModels, isSyncing,
+                orchestratorMode, selectedTheme, enableWebSearch, includeArgon, toggleArgonMode, applyThemeRecommendation, applyMediaRecommendation,
                 workers, selectedPrompter, selectedConcatenator, colPricing, colProvider, colDomain, downloadTemplate, exportCSV, handleConfigImport,
                 mediaType, mediaPricing, mediaProvider, selectedMediaModel, selectedMediaPrompter, mediaPrompt, isGeneratingMedia, generatedMediaList, filteredMediaModels, generateMediaAction,
                 isAssignModalOpen, openAssignModal, closeAssignModal, assignForm, assignMessage, confirmAssignModel,
                 attachedFiles, handleFileUpload, handlePaste, removeFile,
-                exportProject, copyToClipboard, downloadFile, downloadMessage, parseMessage, systemLogs,
+                exportProject, copyToClipboard, downloadFile, downloadMessage, downloadLogs, parseMessage, systemLogs,
                 toastVisible, toastMessage, showToast
             };
         }

@@ -17,7 +17,10 @@ from .schemas import (
     MediaGenerateRequest, MediaGenerateResponse
 )
 from .models import User, Project, Message, SystemSettings, AIModel, FinancialLog
-from .orchestrator import run_orchestrator, sync_providers_models, sync_finances, activity_logs, log_activity, generate_media, resolve_gemini_model_id, ALLOWED_WORKER_PROVIDERS
+from .orchestrator import (
+    run_orchestrator, sync_providers_models, sync_finances, activity_logs,
+    log_activity, generate_media, resolve_gemini_model_id, is_worker_eligible
+)
 from .logger import log_file, cleanup_old_logs
 
 Base.metadata.create_all(bind=engine)
@@ -39,6 +42,12 @@ avatars_path = os.path.join(assets_path, "avatars")
 os.makedirs(assets_path, exist_ok=True)
 os.makedirs(avatars_path, exist_ok=True)
 app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+
+NO_CACHE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0"
+}
 
 async def scheduler_task():
     tz = pytz.timezone('Europe/Paris')
@@ -89,9 +98,9 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
 @app.get("/")
 def read_root(db: Session = Depends(get_db)): return RedirectResponse(url="/setup") if is_setup_required(db) else RedirectResponse(url="/login")
 @app.get("/setup")
-def setup_page(db: Session = Depends(get_db)): return RedirectResponse(url="/login") if not is_setup_required(db) else FileResponse(os.path.join(os.getcwd(), "frontend", "index.html"))
+def setup_page(db: Session = Depends(get_db)): return RedirectResponse(url="/login") if not is_setup_required(db) else FileResponse(os.path.join(os.getcwd(), "frontend", "index.html"), headers=NO_CACHE_HEADERS)
 @app.get("/login")
-def login_page(db: Session = Depends(get_db)): return RedirectResponse(url="/setup") if is_setup_required(db) else FileResponse(os.path.join(os.getcwd(), "frontend", "login.html"))
+def login_page(db: Session = Depends(get_db)): return RedirectResponse(url="/setup") if is_setup_required(db) else FileResponse(os.path.join(os.getcwd(), "frontend", "login.html"), headers=NO_CACHE_HEADERS)
 
 @app.post("/api/setup")
 def create_admin(admin_data: AdminCreate, db: Session = Depends(get_db)):
@@ -116,7 +125,7 @@ def login(login_data: LoginRequest, response: Response, db: Session = Depends(ge
 def dashboard(request: Request):
     token = request.cookies.get("session_token")
     if not token or not verify_token(token): return RedirectResponse(url="/login")
-    return FileResponse(os.path.join(os.getcwd(), "frontend", "dashboard.html"))
+    return FileResponse(os.path.join(os.getcwd(), "frontend", "dashboard.html"), headers=NO_CACHE_HEADERS)
 
 @app.get("/api/logs")
 def get_logs(current_user: User = Depends(get_current_user)):
@@ -131,11 +140,10 @@ def add_frontend_log(req: LogRequest, current_user: User = Depends(get_current_u
 def download_current_logs(current_user: User = Depends(get_current_user)):
     filename = f"aethas38_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
     if os.path.exists(log_file):
-        return FileResponse(path=log_file, media_type="text/plain;charset=utf-8", filename=filename)
+        return FileResponse(path=log_file, media_type="text/plain;charset=utf-8", filename=filename, headers=NO_CACHE_HEADERS)
     content = "\n".join(activity_logs) if activity_logs else "Aucun log enregistré."
-    return Response(content=content, media_type="text/plain;charset=utf-8", headers={"Content-Disposition": f"attachment; filename={filename}"})
+    return Response(content=content, media_type="text/plain;charset=utf-8", headers={"Content-Disposition": f"attachment; filename={filename}", **NO_CACHE_HEADERS})
 
-# Point 6 : Route API Studio Image & Vidéo
 @app.post("/api/media/generate", response_model=MediaGenerateResponse)
 async def api_generate_media(req: MediaGenerateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     settings = db.query(SystemSettings).first()
@@ -155,14 +163,14 @@ async def api_generate_media(req: MediaGenerateRequest, db: Session = Depends(ge
 async def suggest_replacement(req: ModelReplacementRequest, db: Session = Depends(get_db)):
     log_activity(f"⚠️ Modèle travailleur indisponible: {req.missing_model}. Demande de suggestion à Gemini...")
     settings = db.query(SystemSettings).first()
-    models = db.query(AIModel).filter(AIModel.provider.in_(list(ALLOWED_WORKER_PROVIDERS))).all()
-    available = [m.model_id for m in models]
+    all_models = db.query(AIModel).all()
+    available = [m.model_id for m in all_models if is_worker_eligible(m)]
     default_worker = available[0] if available else "Qwen/Qwen2.5-Coder-32B-Instruct"
 
     if not settings or not settings.gemini_api_key:
         return {"suggestion": default_worker, "reason": "Clé API Gemini non configurée."}
 
-    prompt = f"Le modèle IA '{req.missing_model}' n'est plus disponible. Voici les modèles disponibles (HuggingFace, Cloudflare, OpenRouter) : {', '.join(available[:250])}. Trouve le modèle le plus proche techniquement. Réponds UNIQUEMENT avec ce format strict : ID_DU_MODELE | Brève explication en français de 10 mots max."
+    prompt = f"Le modèle IA '{req.missing_model}' n'est plus disponible. Voici les modèles disponibles : {', '.join(available[:250])}. Trouve le modèle le plus proche techniquement. Réponds UNIQUEMENT avec ce format strict : ID_DU_MODELE | Brève explication en français de 10 mots max."
     
     try:
         from openai import AsyncOpenAI
