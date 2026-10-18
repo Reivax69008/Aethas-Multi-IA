@@ -22,15 +22,17 @@ jobs:
         run: |
           python3 validate_project.py
 
+      - name: Configuration de Docker pour le registre HTTP local
+        run: |
+          # Crée la configuration du démon Docker dans l'environnement du runner pour accepter le HTTP non sécurisé
+          sudo mkdir -p /etc/docker
+          echo '{"insecure-registries": ["192.168.1.20:3000"]}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker || true
+
       - name: Connexion au registre Gitea et Publication du Paquet
         run: |
-          # Correction : Désactivation explicite du socket TLS pour forcer le HTTP local pur
-          unset DOCKER_TLS_VERIFY
-          unset DOCKER_HOST
-          unset DOCKER_CERT_PATH
-
-          # Connexion au registre Gitea local (192.168.1.20:3000)
-          echo "${{ secrets.GITEA_TOKEN || gitea.token }}" | docker login ${{ env.REGISTRY }} -u ${{ gitea.actor }} --password-stdin
+          # Connexion explicite en précisant le protocole ou via le login standard configuré sur le daemon
+          echo "${{ secrets.GITEA_TOKEN || gitea.token }}" | docker login http://${{ env.REGISTRY }} -u ${{ gitea.actor }} --password-stdin
 
           # Construction et Push du paquet
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
