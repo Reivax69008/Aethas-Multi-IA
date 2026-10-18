@@ -55,13 +55,17 @@ def determine_domain(model_id: str, pipeline_tag: str = "", methods: list = None
     return "Texte Polyvalent"
 
 def is_allowed_gemini_model(model_id: str, display_name: str = "", domain: str = "") -> bool:
-    hay = f"{model_id} {display_name}".lower()
-    if any(ex in hay for ex in ["tts", "embedding", "aqa", "bison", "gecko"]):
+    """Exclut lyria/tts/embedding et ne garde que Gemini 3.5 flash-lite, 3.8 flash, 3.1 pro, Argon et Image/Vidéo Gemini."""
+    mid = (model_id or "").lower()
+    hay = f"{mid} {display_name}".lower()
+    if any(ex in hay for ex in ["lyria", "tts", "embedding", "aqa", "bison", "gecko", "learnlm", "gemma"]):
         return False
-    if domain in ["Génération Image", "Génération Vidéo"] or any(k in hay for k in ["imagen", "veo", "-image", "-video"]):
+    if domain in ["Génération Image", "Génération Vidéo"] or any(k in mid for k in ["imagen", "veo", "-image", "-video"]):
         return True
     if "argon" in hay:
         return True
+    if not mid.startswith("gemini-"):
+        return False
     if "3.5" in hay and ("flash-lite" in hay or "lite" in hay):
         return True
     if "3.8" in hay and "flash" in hay:
@@ -69,6 +73,25 @@ def is_allowed_gemini_model(model_id: str, display_name: str = "", domain: str =
     if "3.1" in hay and "pro" in hay:
         return True
     return False
+
+def purge_unauthorized_models(db: Session):
+    """Purge immédiate en BDD des anciens modèles non autorisés (Groq, DeepSeek, Mistral, Lyria, etc.)."""
+    try:
+        all_models = db.query(AIModel).all()
+        removed = 0
+        for m in all_models:
+            prov = (m.provider or "").lower()
+            if prov not in ["openrouter", "cloudflare", "huggingface", "gemini"]:
+                db.delete(m)
+                removed += 1
+            elif prov == "gemini" and not is_allowed_gemini_model(m.model_id, m.name or "", m.domain or ""):
+                db.delete(m)
+                removed += 1
+        if removed > 0:
+            db.commit()
+            log_activity(f"[Purge Auto BDD] {removed} modèle(s) non autorisés (ex: lyria/groq) supprimés.")
+    except Exception:
+        db.rollback()
 
 def is_worker_eligible(model_obj: AIModel) -> bool:
     if not model_obj:
@@ -85,13 +108,21 @@ def is_worker_eligible(model_obj: AIModel) -> bool:
     return False
 
 def resolve_gemini_model_id(db: Session, requested_id: str) -> str:
-    if not requested_id:
-        requested_id = "gemini-3.5-flash-lite"
-    req_low = requested_id.lower()
+    """Résout le vrai nom du modèle Gemini pour Prompteur/Concaténeur (jamais lyria ni un ancien modèle Groq/OpenRouter)."""
+    req_low = (requested_id or "gemini-3.5-flash-lite").lower()
 
-    gemini_models = db.query(AIModel).filter(AIModel.provider == "gemini").all()
+    gemini_models = [
+        m for m in db.query(AIModel).filter(AIModel.provider == "gemini").all()
+        if is_allowed_gemini_model(m.model_id, m.name or "", m.domain or "")
+        and m.domain not in ["Génération Image", "Génération Vidéo"]
+    ]
+
     if not gemini_models:
-        return requested_id
+        if "3.8" in req_low:
+            return "gemini-3.8-flash"
+        if "3.1" in req_low:
+            return "gemini-3.1-pro-preview"
+        return "gemini-3.5-flash-lite"
 
     for m in gemini_models:
         if m.model_id.lower() == req_low or (m.name and m.name.lower() == req_low):
@@ -101,10 +132,6 @@ def resolve_gemini_model_id(db: Session, requested_id: str) -> str:
         for m in gemini_models:
             if "argon" in m.model_id.lower() or (m.name and "argon" in m.name.lower()):
                 return m.model_id
-    elif "3.5" in req_low and "lite" in req_low:
-        for m in gemini_models:
-            if "3.5" in m.model_id.lower() and "lite" in m.model_id.lower():
-                return m.model_id
     elif "3.8" in req_low and "flash" in req_low:
         for m in gemini_models:
             if "3.8" in m.model_id.lower() and "flash" in m.model_id.lower():
@@ -113,15 +140,14 @@ def resolve_gemini_model_id(db: Session, requested_id: str) -> str:
         for m in gemini_models:
             if "3.1" in m.model_id.lower() and "pro" in m.model_id.lower():
                 return m.model_id
-
-    for m in gemini_models:
-        if req_low in m.model_id.lower():
-            return m.model_id
+    else:
+        for m in gemini_models:
+            if "3.5" in m.model_id.lower() and "lite" in m.model_id.lower():
+                return m.model_id
 
     return gemini_models[0].model_id
 
 def get_model_is_free(db: Session, model_id: str) -> bool:
-    """Détermine si un modèle est Gratuit (True) ou Payant (False)."""
     m = db.query(AIModel).filter(AIModel.model_id == model_id).first()
     if m is not None:
         return bool(m.is_free)
@@ -130,23 +156,24 @@ def get_model_is_free(db: Session, model_id: str) -> bool:
     return True
 
 def find_quota_fallback_model(db: Session, failed_model_id: str, excluded_ids: set, is_worker: bool = True, target_domain: str = None, strict_is_free: bool = None) -> str:
-    """Point 2 : Trouve un modèle de remplacement en respectant STRICTEMENT le caractère Gratuit ou Payant."""
+    """Trouve un modèle de remplacement en respectant STRICTEMENT le caractère Gratuit ou Payant."""
     orig = db.query(AIModel).filter(AIModel.model_id == failed_model_id).first()
     must_be_free = strict_is_free if strict_is_free is not None else (bool(orig.is_free) if orig else True)
     domain_to_match = target_domain or (orig.domain if orig else determine_domain(failed_model_id))
 
     if not is_worker:
-        # Pour le Prompteur / Concaténeur : cherche d'abord parmi les autres modèles Gemini autorisés
-        gem_candidates = db.query(AIModel).filter(
-            AIModel.provider == "gemini",
-            AIModel.is_free == must_be_free,
-            ~AIModel.model_id.in_(excluded_ids)
-        ).all()
-        text_gems = [g for g in gem_candidates if g.domain not in ["Génération Image", "Génération Vidéo"]]
-        if text_gems:
-            return text_gems[0].model_id
+        gem_candidates = [
+            g for g in db.query(AIModel).filter(AIModel.provider == "gemini", ~AIModel.model_id.in_(excluded_ids)).all()
+            if is_allowed_gemini_model(g.model_id, g.name or "", g.domain or "")
+            and g.domain not in ["Génération Image", "Génération Vidéo"]
+        ]
+        if gem_candidates:
+            return gem_candidates[0].model_id
+        for fallback_gem in ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-pro-preview"]:
+            if fallback_gem not in excluded_ids:
+                return fallback_gem
+        return None
 
-    # Recherche parmi tous les modèles Travailleurs ayant STRICTEMENT le même statut Gratuit/Payant
     all_candidates = db.query(AIModel).filter(
         AIModel.is_free == must_be_free,
         ~AIModel.model_id.in_(excluded_ids)
@@ -156,11 +183,17 @@ def find_quota_fallback_model(db: Session, failed_model_id: str, excluded_ids: s
     if not eligible:
         return None
 
-    # Priorité aux modèles du même domaine avec grand contexte
     same_domain = [m for m in eligible if m.domain == domain_to_match]
-    pool = same_domain if same_domain else eligible
+    if domain_to_match in ["Génération Image", "Génération Vidéo"]:
+        # Pour l'image et la vidéo, on ne bascule que sur un modèle du même type média
+        pool = same_domain
+    else:
+        pool = same_domain if same_domain else [m for m in eligible if m.domain not in ["Génération Image", "Génération Vidéo"]]
+
+    if not pool:
+        return None
     pool.sort(key=lambda x: (x.context_length or 0), reverse=True)
-    return pool[0].model_id if pool else None
+    return pool[0].model_id
 
 async def translate_en_to_fr(client: httpx.AsyncClient, text: str) -> str:
     if not text: return "Aucune description fournie."
@@ -232,7 +265,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
     added = 0
     models_to_process = {}
 
-    async with httpx.AsyncClient(timeout=90.0) as client:
+    async with httpx.AsyncClient(timeout=90.0, follow_redirects=True) as client:
         # 1. OPENROUTER
         if settings.openrouter_api_key:
             try:
@@ -284,10 +317,9 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
             ("black-forest-labs/FLUX.1-dev", "FLUX.1 Dev (Image HF Pro)", "Génération Image", False, 4096),
             ("stabilityai/stable-diffusion-xl-base-1.0", "Stable Diffusion XL 1.0 (Image HF)", "Génération Image", True, 4096),
             ("ByteDance/SDXL-Lightning", "SDXL Lightning (Image Rapide HF)", "Génération Image", True, 4096),
-            ("Wan-AI/Wan2.1-T2V-14B", "Wan 2.1 Text-to-Video 14B (Vidéo HF)", "Génération Vidéo", False, 4096),
             ("Lightricks/LTX-Video", "LTX-Video Temps Réel (Vidéo HF)", "Génération Vidéo", True, 4096),
+            ("Wan-AI/Wan2.1-T2V-14B", "Wan 2.1 Text-to-Video 14B (Vidéo HF)", "Génération Vidéo", False, 4096),
             ("tencent/HunyuanVideo", "HunyuanVideo HD (Vidéo HF)", "Génération Vidéo", False, 4096),
-            ("ali-vilab/text-to-video-ms-1.7b", "ModelScope Text-to-Video (Vidéo HF)", "Génération Vidéo", True, 4096),
         ]
         for m_id, name, dom, is_free, ctx in hf_curated:
             models_to_process[m_id] = {
@@ -305,7 +337,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
             try:
                 hf_headers = {"Authorization": f"Bearer {settings.huggingface_api_key}"}
                 for ptag in ["text-generation", "text-to-image", "text-to-video"]:
-                    hf_resp = await client.get(f"https://huggingface.co/api/models?pipeline_tag={ptag}&inference=warm&sort=downloads&direction=-1&limit=15", headers=hf_headers, timeout=15.0)
+                    hf_resp = await client.get(f"https://huggingface.co/api/models?pipeline_tag={ptag}&inference=warm&sort=downloads&direction=-1&limit=12", headers=hf_headers, timeout=15.0)
                     if hf_resp.status_code == 200 and isinstance(hf_resp.json(), list):
                         for item in hf_resp.json():
                             m_id = item.get("id")
@@ -324,7 +356,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
             except Exception as e:
                 print(f"Erreur HF Models: {e}")
 
-        # 4. COMPTE GEMINI (3 versions + Argon + Image/Vidéo Gemini)
+        # 4. COMPTE GEMINI (Uniquement les 3 versions + Argon + Image/Vidéo Gemini, sans Lyria)
         if settings.gemini_api_key:
             try:
                 resp = await client.get(f"https://generativelanguage.googleapis.com/v1beta/models?key={settings.gemini_api_key}")
@@ -386,14 +418,8 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
         except IntegrityError: db.rollback()
         except Exception: db.rollback()
 
+    purge_unauthorized_models(db)
     try:
-        all_db_models = db.query(AIModel).all()
-        for m in all_db_models:
-            prov = (m.provider or "").lower()
-            if prov not in ["openrouter", "cloudflare", "huggingface", "gemini"]:
-                db.delete(m)
-            elif prov == "gemini" and not is_allowed_gemini_model(m.model_id, m.name or "", m.domain or ""):
-                db.delete(m)
         settings.last_sync_date = datetime.now(timezone.utc)
         settings.last_sync_type = sync_type
         db.commit()
@@ -406,7 +432,7 @@ async def sync_providers_models(db: Session, settings: SystemSettings, sync_type
 
 def get_client_for_model(db: Session, model_id: str, settings: SystemSettings, is_worker: bool = False):
     model_db = db.query(AIModel).filter(AIModel.model_id == model_id).first()
-    provider = (model_db.provider or "openrouter").lower() if model_db else "openrouter"
+    provider = (model_db.provider or "openrouter").lower() if model_db else ("gemini" if model_id.lower().startswith("gemini-") else "openrouter")
 
     if is_worker and provider not in ALLOWED_WORKER_PROVIDERS:
         if provider == "gemini" and ("argon" in model_id.lower() or (model_db and model_db.domain in ["Génération Image", "Génération Vidéo"])):
@@ -481,7 +507,6 @@ async def ask_agent(client, model_id, messages, provider="openrouter", enable_we
         return extract_safe_content(resp)
 
 async def ask_agent_with_fallback(db: Session, settings: SystemSettings, model_id: str, messages: list, is_worker: bool = True, enable_web: bool = False) -> str:
-    """Point 2 : En cas de dépassement de quota ou d'indisponibilité, bascule automatiquement sur un autre modèle en respectant Gratuit/Payant."""
     tried_models = set()
     current_model = model_id
     strict_free = get_model_is_free(db, model_id)
@@ -509,9 +534,7 @@ async def ask_agent_with_fallback(db: Session, settings: SystemSettings, model_i
 
     raise ValueError(f"Tous les modèles ({tier_label}) sollicités ont dépassé leur quota.")
 
-# --- POINT 1 & POINT 2 : GÉNÉRATION D'IMAGE ET VIDÉO BLINDÉE AVEC BASCULE AUTOMATIQUE DE QUOTA ---
 async def _try_single_media_model(client: httpx.AsyncClient, settings: SystemSettings, provider: str, model_id: str, final_prompt: str, media_type: str) -> str:
-    """Tente de générer le média sur un modèle précis et retourne le data_url ou lève une exception."""
     # 1. GEMINI IMAGE / VIDEO
     if provider == "gemini":
         if not settings.gemini_api_key:
@@ -547,35 +570,46 @@ async def _try_single_media_model(client: httpx.AsyncClient, settings: SystemSet
                             return f"data:{mime};base64,{inline['data']}"
             except Exception:
                 pass
-        raise ValueError(f"Quota ou erreur Gemini Media ({resp.status_code}): {resp.text[:140]}")
+        raise ValueError(f"Gemini Media ({resp.status_code}): {resp.text[:140]}")
 
-    # 2. HUGGING FACE INFERENCE API
+    # 2. HUGGING FACE INFERENCE API (Support hf-inference + fal-ai pour Vidéo/Image)
     elif provider == "huggingface":
         if not settings.huggingface_api_key:
             raise ValueError("Clé API HuggingFace manquante.")
-        headers = {"Authorization": f"Bearer {settings.huggingface_api_key}"}
-        hf_url = f"https://router.huggingface.co/hf-inference/models/{model_id}"
-        resp = await client.post(hf_url, headers=headers, json={"inputs": final_prompt})
-        if resp.status_code != 200:
-            resp = await client.post(f"https://api-inference.huggingface.co/models/{model_id}", headers=headers, json={"inputs": final_prompt})
-        if resp.status_code != 200:
-            raise ValueError(f"Quota ou erreur HuggingFace ({resp.status_code}): {resp.text[:140]}")
-        ctype = (resp.headers.get("content-type") or "").lower()
-        if "application/json" in ctype:
-            raise ValueError(f"Réponse erreur JSON HuggingFace: {resp.text[:140]}")
-        mime = "video/mp4" if media_type == "video" else (ctype or "image/png")
-        b64 = base64.b64encode(resp.content).decode("utf-8")
-        return f"data:{mime};base64,{b64}"
+        headers = {"Authorization": f"Bearer {settings.huggingface_api_key.strip()}"}
+        urls_to_try = [
+            f"https://router.huggingface.co/hf-inference/models/{model_id}",
+            f"https://router.huggingface.co/fal-ai/{model_id}"
+        ]
+        last_hf_err = ""
+        for hf_url in urls_to_try:
+            resp = await client.post(hf_url, headers=headers, json={"inputs": final_prompt, "prompt": final_prompt})
+            if resp.status_code == 200:
+                ctype = (resp.headers.get("content-type") or "").lower()
+                if "application/json" in ctype:
+                    j_resp = resp.json()
+                    if isinstance(j_resp, dict):
+                        ext_url = (j_resp.get("video") or {}).get("url") or (j_resp.get("images") or [{}])[0].get("url") or j_resp.get("url")
+                        if ext_url:
+                            return ext_url
+                    last_hf_err = f"Réponse JSON HF: {resp.text[:120]}"
+                    continue
+                mime = "video/mp4" if media_type == "video" else (ctype or "image/png")
+                b64 = base64.b64encode(resp.content).decode("utf-8")
+                return f"data:{mime};base64,{b64}"
+            else:
+                last_hf_err = f"HTTP {resp.status_code} ({resp.text[:120]})"
+        raise ValueError(f"HuggingFace ({model_id}) indisponible ou quota atteint : {last_hf_err}")
 
     # 3. CLOUDFLARE WORKERS AI
     elif provider == "cloudflare":
         if not settings.cloudflare_account_id or not settings.cloudflare_api_token:
             raise ValueError("Identifiants Cloudflare manquants.")
-        cf_url = f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id}/ai/run/{model_id}"
-        headers = {"Authorization": f"Bearer {settings.cloudflare_api_token}"}
+        cf_url = f"https://api.cloudflare.com/client/v4/accounts/{settings.cloudflare_account_id.strip()}/ai/run/{model_id}"
+        headers = {"Authorization": f"Bearer {settings.cloudflare_api_token.strip()}"}
         resp = await client.post(cf_url, headers=headers, json={"prompt": final_prompt})
         if resp.status_code != 200:
-            raise ValueError(f"Quota ou erreur Cloudflare ({resp.status_code}): {resp.text[:140]}")
+            raise ValueError(f"Cloudflare ({resp.status_code}): {resp.text[:140]}")
         ctype = (resp.headers.get("content-type") or "").lower()
         if "application/json" in ctype:
             j = resp.json()
@@ -590,14 +624,14 @@ async def _try_single_media_model(client: httpx.AsyncClient, settings: SystemSet
     else:
         if not settings.openrouter_api_key:
             raise ValueError("Clé API OpenRouter manquante.")
-        headers = {"Authorization": f"Bearer {settings.openrouter_api_key}", "HTTP-Referer": "https://aethas38.duckdns.org"}
+        headers = {"Authorization": f"Bearer {settings.openrouter_api_key.strip()}", "HTTP-Referer": "https://aethas38.duckdns.org"}
         resp = await client.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers=headers,
             json={"model": model_id, "messages": [{"role": "user", "content": final_prompt}], "modalities": ["image", "text"]}
         )
         if resp.status_code != 200:
-            raise ValueError(f"Quota ou erreur OpenRouter ({resp.status_code}): {resp.text[:140]}")
+            raise ValueError(f"OpenRouter ({resp.status_code}): {resp.text[:140]}")
         data = resp.json()
         if data.get("error"):
             raise ValueError(f"Erreur OpenRouter: {data['error']}")
@@ -610,7 +644,7 @@ async def _try_single_media_model(client: httpx.AsyncClient, settings: SystemSet
         content = msg.get("content") or ""
         if "data:image" in content or content.startswith("http"):
             return content.strip()
-        raise ValueError("Ce modèle OpenRouter n'a pas renvoyé d'image.")
+        raise ValueError("Ce modèle OpenRouter n'a pas renvoyé de média.")
 
 async def generate_media(db: Session, settings: SystemSettings, prompt: str, media_type: str, model_id: str, prompter_id: str = "gemini-3.5-flash-lite", optimize_prompt: bool = True) -> dict:
     try:
@@ -630,7 +664,7 @@ async def generate_media(db: Session, settings: SystemSettings, prompt: str, med
                     [{"role": "system", "content": sys_msg}, {"role": "user", "content": prompt}],
                     is_worker=False, enable_web=False
                 )
-                log_activity(f"[Studio {media_type.upper()}] Prompt optimisé par Gemini.")
+                log_activity(f"[Studio {media_type.upper()}] Prompt optimisé par {real_prompter}.")
             except Exception as e:
                 log_activity(f"[Studio] Optimisation ignorée ({str(e)[:50]}), utilisation du prompt original.")
 
@@ -642,7 +676,7 @@ async def generate_media(db: Session, settings: SystemSettings, prompt: str, med
         current_model = model_id
         last_error = ""
 
-        async with httpx.AsyncClient(timeout=180.0) as client:
+        async with httpx.AsyncClient(timeout=180.0, follow_redirects=True) as client:
             for attempt in range(4):
                 tried_models.add(current_model)
                 model_db = db.query(AIModel).filter(AIModel.model_id == current_model).first()
@@ -680,7 +714,10 @@ async def generate_media(db: Session, settings: SystemSettings, prompt: str, med
                     log_activity(f"🔄 Bascule automatique Média ({tier_label} strict) : {current_model} -> {next_mod}")
                     current_model = next_mod
 
-        raise HTTPException(status_code=400, detail=f"Impossible de générer le média ({tier_label}) après bascule automatique. Dernière erreur : {last_error}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Aucun modèle {media_type} ({tier_label}) n'a pu aboutir après bascule automatique. Détail fournisseur : {last_error}"
+        )
     except HTTPException:
         raise
     except Exception as e:

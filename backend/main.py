@@ -19,7 +19,8 @@ from .schemas import (
 from .models import User, Project, Message, SystemSettings, AIModel, FinancialLog
 from .orchestrator import (
     run_orchestrator, sync_providers_models, sync_finances, activity_logs,
-    log_activity, generate_media, resolve_gemini_model_id, is_worker_eligible, find_quota_fallback_model
+    log_activity, generate_media, resolve_gemini_model_id, is_worker_eligible,
+    find_quota_fallback_model, purge_unauthorized_models
 )
 from .logger import log_file, cleanup_old_logs, system_logger
 
@@ -37,7 +38,6 @@ except Exception:
 
 app = FastAPI(title="AETHAS38")
 
-# Point 1 : Intercepteur global qui garantit une réponse JSON valide même en cas d'erreur 500
 @app.exception_handler(Exception)
 async def global_json_exception_handler(request: Request, exc: Exception):
     tb = traceback.format_exc()
@@ -93,6 +93,11 @@ async def scheduler_task():
 @app.on_event("startup")
 async def startup_event():
     cleanup_old_logs(30)
+    db = SessionLocal()
+    try:
+        purge_unauthorized_models(db)
+    finally:
+        db.close()
     asyncio.create_task(scheduler_task())
 
 def is_setup_required(db: Session) -> bool: return db.query(User).filter(User.is_superadmin == True).first() is None
@@ -404,7 +409,7 @@ def export_models(db: Session = Depends(get_db), current_user: User = Depends(ge
         md_content += f"## Fournisseur : {prov.upper()}\n\n"
         prov_models = [m for m in models if m.provider == prov]
         for m in prov_models:
-            price_info = "**GRATUIT**" if m.is_free else f"In: ${m.pricing_prompt:.2f} / Out: ${m.pricing_completion:.2f}"
+            price_info = "**GRATUIT**" if m.is_free else f"In: ${m.pricing_prompt:.2f} / Out:${m.pricing_completion:.2f}"
             ctx_info = f"{int((m.context_length or 0)/1000)}k"
             desc = m.description_fr.replace('\n', ' ') if m.description_fr else ""
             md_content += f"- **{m.name or m.model_id}** (`{m.model_id}`)\n"

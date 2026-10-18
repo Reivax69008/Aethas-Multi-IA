@@ -19,9 +19,7 @@ jobs:
 
       - name: Validation syntaxique Backend Python & Frontend HTML
         run: |
-          python3 -m py_compile backend/*.py
-          python3 -c "import glob, re, sys; files = glob.glob('frontend/*.html'); tags = ['html','head','body','script','style','div','main','aside','header','table','select','textarea']; [sys.exit(f'Erreur HTML dans {f}: balise <{t}> non équilibrée') for f in files for c in [open(f, encoding='utf-8').read()] for t in tags if len(re.findall(rf'<{t}(?=[\s>])', c)) != len(re.findall(rf'</{t}\s*>', c))]"
-          echo "✅ Code Backend (.py) et Frontend (.html) 100% valides !"
+          python3 validate_project.py
 
       - name: Compilation incrémentale sur le serveur hôte (Cache Docker actif)
         run: |
