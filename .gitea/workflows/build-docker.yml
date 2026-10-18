@@ -1,4 +1,4 @@
-name: Test, Build & Deploy Local AETHAS38
+name: Build, Push Registry & Deploy AETHAS38
 
 on:
   push:
@@ -8,10 +8,11 @@ on:
       - 'v*'
 
 env:
-  IMAGE_NAME: multi-ia-codage
+  REGISTRY: 192.168.1.20:3000
+  IMAGE_NAME: xavier/multi-ia-codage
 
 jobs:
-  build-local:
+  build-and-push:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout du dépôt
@@ -21,19 +22,34 @@ jobs:
         run: |
           python3 validate_project.py
 
-      - name: Compilation incrémentale sur le serveur hôte (Cache Docker actif)
+      - name: Connexion au registre Gitea et Publication du Paquet
         run: |
+          # 1. Contourner la sécurité SSL pour le registre HTTP local de Gitea
+          export DOCKER_TLS_VERIFY=0
+
+          # 2. Connexion au registre Gitea (192.168.1.20:3000)
+          echo "${{ secrets.GITEA_TOKEN || gitea.token }}" | docker login ${{ env.REGISTRY }} -u ${{ gitea.actor }} --password-stdin
+
+          # 3. Construction et Push du paquet
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             VERSION="${GITHUB_REF#refs/tags/}"
-            docker build -t ${{ env.IMAGE_NAME }}:${VERSION} -t ${{ env.IMAGE_NAME }}:latest .
+            TAGGED_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
+            LATEST_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+            
+            docker build -t ${TAGGED_IMAGE} -t ${LATEST_IMAGE} .
+            docker push ${TAGGED_IMAGE}
+            docker push ${LATEST_IMAGE}
           else
-            docker build -t ${{ env.IMAGE_NAME }}:latest .
+            LATEST_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+            docker build -t ${LATEST_IMAGE} .
+            docker push ${LATEST_IMAGE}
           fi
 
-      - name: Redéploiement automatique du conteneur
+      - name: Mise à jour locale sur le serveur hôte
         run: |
           if [ -d "/mnt/stockage_raid/AppData/MULTI-IA-AETHAS38" ]; then
             cd /mnt/stockage_raid/AppData/MULTI-IA-AETHAS38
+            docker compose pull aethas38-core
             docker compose up -d --force-recreate aethas38-core
           fi
           docker image prune -f
