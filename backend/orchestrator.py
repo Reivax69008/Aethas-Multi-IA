@@ -108,8 +108,20 @@ def is_worker_eligible(model_obj: AIModel) -> bool:
     return False
 
 def resolve_gemini_model_id(db: Session, requested_id: str) -> str:
-    """Résout le vrai nom du modèle Gemini pour Prompteur/Concaténeur (jamais lyria ni un ancien modèle Groq/OpenRouter)."""
-    req_low = (requested_id or "gemini-3.5-flash-lite").lower()
+    """Résout le modèle pour Prompteur/Concaténeur : accepte Gemini autorisé, Argon, ou un modèle gratuit OpenRouter sélectionné."""
+    req_clean = (requested_id or "gemini-3.5-flash-lite").strip()
+    req_low = req_clean.lower()
+
+    # Si l'utilisateur a sélectionné un modèle OpenRouter gratuit ou Argon existant en BDD pour le Prompteur/Concaténeur
+    existing_model = db.query(AIModel).filter(AIModel.model_id == req_clean).first()
+    if existing_model:
+        prov = (existing_model.provider or "").lower()
+        if prov == "openrouter" and existing_model.is_free and existing_model.domain not in ["Génération Image", "Génération Vidéo"]:
+            return existing_model.model_id
+        if "argon" in req_low:
+            return existing_model.model_id
+        if prov == "gemini" and is_allowed_gemini_model(existing_model.model_id, existing_model.name or "", existing_model.domain or ""):
+            return existing_model.model_id
 
     gemini_models = [
         m for m in db.query(AIModel).filter(AIModel.provider == "gemini").all()
@@ -155,24 +167,93 @@ def get_model_is_free(db: Session, model_id: str) -> bool:
         return True
     return True
 
-def find_quota_fallback_model(db: Session, failed_model_id: str, excluded_ids: set, is_worker: bool = True, target_domain: str = None, strict_is_free: bool = None) -> str:
-    """Trouve un modèle de remplacement en respectant STRICTEMENT le caractère Gratuit ou Payant."""
+def _score_openrouter_free_fallback(m: AIModel, target_domain: str, required_ctx: int = 8192) -> int:
+    """Calcule un score de pertinence pour choisir le modèle gratuit OpenRouter le plus adapté."""
+    score = 0
+    mid = (m.model_id or "").lower()
+    dom = m.domain or "Texte Polyvalent"
+    ctx = m.context_length or 8192
+
+    if dom == target_domain:
+        score += 100
+    elif target_domain == "Code & Logique" and dom == "Texte Polyvalent":
+        score += 40
+    elif target_domain == "Texte Polyvalent" and dom in ["Code & Logique", "Vision & Texte"]:
+        score += 50
+
+    if ctx >= required_ctx:
+        score += 50
+    score += min(int(ctx / 4000), 40)
+
+    preferred_keywords = ["gemini", "qwen-2.5-coder", "qwen2.5", "deepseek", "llama-3.3", "llama-3.1", "mistral", "pixtral", "vl"]
+    for idx, kw in enumerate(preferred_keywords):
+        if kw in mid:
+            score += (35 - idx * 3)
+            break
+
+    return score
+
+def find_quota_fallback_model(
+    db: Session,
+    failed_model_id: str,
+    excluded_ids: set,
+    is_worker: bool = True,
+    target_domain: str = None,
+    strict_is_free: bool = None,
+    min_required_context: int = None
+) -> str:
+    """
+    Trouve un modèle de remplacement disponible :
+    - Pour Prompteur/Concaténeur (is_worker=False) : bascule en priorité sur gemini-3.5-flash-lite
+      ou sur le modèle GRATUIT OpenRouter le plus adapté au domaine et au contexte.
+    - Pour Travailleur (is_worker=True) : respecte STRICTEMENT les mêmes pré-requis que la sélection
+      initiale (Gratuit/Payant, Domaine fonctionnel, et capacité de contexte).
+    """
     orig = db.query(AIModel).filter(AIModel.model_id == failed_model_id).first()
-    must_be_free = strict_is_free if strict_is_free is not None else (bool(orig.is_free) if orig else True)
     domain_to_match = target_domain or (orig.domain if orig else determine_domain(failed_model_id))
+    req_ctx = min_required_context or (orig.context_length if orig and orig.context_length else 8192)
 
     if not is_worker:
+        # 1. Priorité à gemini-3.5-flash-lite s'il n'a pas encore été testé
+        gem_lite_id = resolve_gemini_model_id(db, "gemini-3.5-flash-lite")
+        if gem_lite_id not in excluded_ids and "gemini-3.5-flash-lite" not in excluded_ids:
+            return gem_lite_id
+
+        # 2. Autres modèles Gemini texte/vision autorisés non testés
         gem_candidates = [
             g for g in db.query(AIModel).filter(AIModel.provider == "gemini", ~AIModel.model_id.in_(excluded_ids)).all()
             if is_allowed_gemini_model(g.model_id, g.name or "", g.domain or "")
             and g.domain not in ["Génération Image", "Génération Vidéo"]
         ]
         if gem_candidates:
+            gem_candidates.sort(key=lambda x: (0 if "lite" in x.model_id.lower() else 1))
             return gem_candidates[0].model_id
-        for fallback_gem in ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-pro-preview"]:
-            if fallback_gem not in excluded_ids:
-                return fallback_gem
+
+        # 3. Bascule sur le modèle GRATUIT OpenRouter le plus adapté
+        or_free_candidates = [
+            m for m in db.query(AIModel).filter(
+                AIModel.provider == "openrouter",
+                AIModel.is_free == True,
+                ~AIModel.model_id.in_(excluded_ids)
+            ).all()
+            if m.domain not in ["Génération Image", "Génération Vidéo", "Audio"]
+        ]
+        if domain_to_match == "Vision & Texte":
+            vision_or = [m for m in or_free_candidates if m.domain == "Vision & Texte"]
+            if vision_or:
+                or_free_candidates = vision_or
+
+        if or_free_candidates:
+            or_free_candidates.sort(
+                key=lambda m: _score_openrouter_free_fallback(m, domain_to_match, req_ctx),
+                reverse=True
+            )
+            return or_free_candidates[0].model_id
+
         return None
+
+    # --- MODE TRAVAILLEUR : Respect strict des pré-requis de la sélection initiale ---
+    must_be_free = strict_is_free if strict_is_free is not None else (bool(orig.is_free) if orig else True)
 
     all_candidates = db.query(AIModel).filter(
         AIModel.is_free == must_be_free,
@@ -185,15 +266,26 @@ def find_quota_fallback_model(db: Session, failed_model_id: str, excluded_ids: s
 
     same_domain = [m for m in eligible if m.domain == domain_to_match]
     if domain_to_match in ["Génération Image", "Génération Vidéo"]:
-        # Pour l'image et la vidéo, on ne bascule que sur un modèle du même type média
         pool = same_domain
     else:
         pool = same_domain if same_domain else [m for m in eligible if m.domain not in ["Génération Image", "Génération Vidéo"]]
 
     if not pool:
         return None
-    pool.sort(key=lambda x: (x.context_length or 0), reverse=True)
-    return pool[0].model_id
+
+    # Priorise les modèles qui supportent au moins le même contexte et le même fournisseur (OpenRouter gratuit si initialement gratuit)
+    compat_ctx_pool = [m for m in pool if (m.context_length or 0) >= req_ctx]
+    final_pool = compat_ctx_pool if compat_ctx_pool else pool
+
+    final_pool.sort(
+        key=lambda x: (
+            1 if (x.provider or "").lower() == "openrouter" else 0,
+            _score_openrouter_free_fallback(x, domain_to_match, req_ctx),
+            x.context_length or 0
+        ),
+        reverse=True
+    )
+    return final_pool[0].model_id
 
 async def translate_en_to_fr(client: httpx.AsyncClient, text: str) -> str:
     if not text: return "Aucune description fournie."
@@ -452,16 +544,37 @@ def get_client_for_model(db: Session, model_id: str, settings: SystemSettings, i
     return AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=settings.openrouter_api_key), "openrouter"
 
 def compute_dynamic_chunk_size(db: Session, active_model_ids: list) -> int:
-    valid_ids = [m for m in active_model_ids if m and m.strip()]
+    """
+    Calcule la taille des chunks en fonction du contexte accepté par TOUS les modèles
+    sélectionnés (Prompteur + Travailleurs + Concaténeur) et s'aligne sur le plus restrictif.
+    """
+    valid_ids = []
+    for m in active_model_ids:
+        if m and m.strip() and m.strip() not in valid_ids:
+            valid_ids.append(m.strip())
     if not valid_ids:
-        return 60000
+        return 20000
+
     models_db = db.query(AIModel).filter(AIModel.model_id.in_(valid_ids)).all()
-    contexts = [m.context_length for m in models_db if m.context_length and m.context_length > 0]
+    db_map = {m.model_id: m.context_length for m in models_db if m.context_length and m.context_length > 0}
+
+    contexts = []
+    for mid in valid_ids:
+        if mid in db_map:
+            contexts.append(db_map[mid])
+        elif mid.lower().startswith("gemini-") or "argon" in mid.lower():
+            contexts.append(128000)
+        elif mid.startswith("@cf/"):
+            contexts.append(16384)
+        else:
+            contexts.append(8192)
+
     min_ctx = min(contexts) if contexts else 8192
 
-    calculated_chars = int(min_ctx * 0.5 * 3.5)
-    chunk_size = max(6000, min(calculated_chars, 150000))
-    log_activity(f"Contexte le plus restrictif : {min_ctx} tokens -> Chunk dynamique fixé à {chunk_size} caractères.")
+    # Marge de sécurité de 45% du contexte le plus restrictif (1 token ≈ 3.5 caractères)
+    calculated_chars = int(min_ctx * 0.45 * 3.5)
+    chunk_size = max(4000, min(calculated_chars, 120000))
+    log_activity(f"Contexte le plus restrictif sur {len(valid_ids)} modèle(s) : {min_ctx} tokens -> Chunk dynamique fixé à {chunk_size} caractères.")
     return chunk_size
 
 def extract_safe_content(resp) -> str:
@@ -495,6 +608,8 @@ async def ask_agent(client, model_id, messages, provider="openrouter", enable_we
         try:
             resp = await client.chat.completions.create(**kwargs)
             return extract_safe_content(resp)
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             if enable_web:
                 log_activity(f"Repli sans plugin web pour {model_id} : {str(e)[:80]}")
@@ -506,71 +621,99 @@ async def ask_agent(client, model_id, messages, provider="openrouter", enable_we
         resp = await client.chat.completions.create(**kwargs)
         return extract_safe_content(resp)
 
-async def ask_agent_with_fallback(db: Session, settings: SystemSettings, model_id: str, messages: list, is_worker: bool = True, enable_web: bool = False) -> str:
+async def ask_agent_with_fallback(
+    db: Session,
+    settings: SystemSettings,
+    model_id: str,
+    messages: list,
+    is_worker: bool = True,
+    enable_web: bool = False,
+    target_domain: str = None,
+    min_required_context: int = None
+) -> str:
     tried_models = set()
     current_model = model_id
-    strict_free = get_model_is_free(db, model_id)
+    strict_free = True if not is_worker else get_model_is_free(db, model_id)
     tier_label = "GRATUIT" if strict_free else "PAYANT"
+    role_label = "Travailleur" if is_worker else "Prompteur/Concaténeur"
 
-    for attempt in range(4):
+    for attempt in range(5):
         tried_models.add(current_model)
         client, provider = get_client_for_model(db, current_model, settings, is_worker=is_worker)
         try:
             return await ask_agent(client, current_model, messages, provider, enable_web=enable_web)
+        except asyncio.CancelledError:
+            log_activity(f"🛑 Requête interrompue par l'utilisateur sur {current_model}.")
+            raise
         except Exception as e:
             err_str = str(e)
-            log_activity(f"⚠️ Quota/Erreur sur {current_model} ({tier_label}) : {err_str[:90]}")
+            log_activity(f"⚠️ Quota/Erreur {role_label} sur {current_model} ({tier_label}) : {err_str[:90]}")
             next_model = find_quota_fallback_model(
                 db=db,
                 failed_model_id=current_model,
                 excluded_ids=tried_models,
                 is_worker=is_worker,
-                strict_is_free=strict_free
+                target_domain=target_domain,
+                strict_is_free=strict_free,
+                min_required_context=min_required_context
             )
             if not next_model:
                 raise e
-            log_activity(f"🔄 Bascule automatique ({tier_label} respecté) : {current_model} -> {next_model}")
+            log_activity(f"🔄 Bascule auto {role_label} ({tier_label} / mêmes pré-requis) : {current_model} -> {next_model}")
             current_model = next_model
 
-    raise ValueError(f"Tous les modèles ({tier_label}) sollicités ont dépassé leur quota.")
+    raise ValueError(f"Tous les modèles {role_label} ({tier_label}) sollicités ont dépassé leur quota.")
 
 async def _try_single_media_model(client: httpx.AsyncClient, settings: SystemSettings, provider: str, model_id: str, final_prompt: str, media_type: str) -> str:
     # 1. GEMINI IMAGE / VIDEO
     if provider == "gemini":
         if not settings.gemini_api_key:
             raise ValueError("Clé API Gemini manquante.")
-        predict_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:predict?key={settings.gemini_api_key}"
-        resp = await client.post(predict_url, json={"instances": [{"prompt": final_prompt}], "parameters": {"sampleCount": 1}})
-        if resp.status_code == 200:
-            try:
-                j_data = resp.json()
-                preds = j_data.get("predictions") or []
-                if preds:
-                    pred = preds[0]
-                    b64 = pred.get("bytesBase64Encoded") or pred.get("image") or pred.get("video")
-                    mime = pred.get("mimeType") or ("video/mp4" if media_type == "video" else "image/png")
-                    if b64:
-                        return f"data:{mime};base64,{b64}"
-            except Exception:
-                pass
 
-        gen_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={settings.gemini_api_key}"
-        resp2 = await client.post(gen_url, json={
-            "contents": [{"parts": [{"text": final_prompt}]}],
-            "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]}
-        })
-        if resp2.status_code == 200:
-            try:
-                candidates = resp2.json().get("candidates") or []
-                for c in candidates:
-                    for part in ((c.get("content") or {}).get("parts") or []):
-                        inline = part.get("inlineData")
-                        if inline and inline.get("data"):
-                            mime = inline.get("mimeType") or "image/png"
-                            return f"data:{mime};base64,{inline['data']}"
-            except Exception:
-                pass
-        raise ValueError(f"Gemini Media ({resp.status_code}): {resp.text[:140]}")
+        errors_collected = []
+        # Si le modèle est un modèle gemini-* (ex: gemini-3.1-flash-image-preview), on teste generateContent d'abord
+        if model_id.lower().startswith("gemini-"):
+            gen_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={settings.gemini_api_key}"
+            resp2 = await client.post(gen_url, json={
+                "contents": [{"parts": [{"text": final_prompt}]}],
+                "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]}
+            })
+            if resp2.status_code == 200:
+                try:
+                    candidates = resp2.json().get("candidates") or []
+                    for c in candidates:
+                        for part in ((c.get("content") or {}).get("parts") or []):
+                            inline = part.get("inlineData")
+                            if inline and inline.get("data"):
+                                mime = inline.get("mimeType") or "image/png"
+                                return f"data:{mime};base64,{inline['data']}"
+                except Exception:
+                    pass
+            errors_collected.append(f"generateContent({resp2.status_code})")
+
+        # Test via l'endpoint :predict (avec repli sur imagen-3.0-generate-002 si modèle image preview 404)
+        predict_models = [model_id]
+        if media_type == "image" and "imagen-3.0-generate-002" not in predict_models:
+            predict_models.append("imagen-3.0-generate-002")
+
+        for p_mod in predict_models:
+            predict_url = f"https://generativelanguage.googleapis.com/v1beta/models/{p_mod}:predict?key={settings.gemini_api_key}"
+            resp = await client.post(predict_url, json={"instances": [{"prompt": final_prompt}], "parameters": {"sampleCount": 1}})
+            if resp.status_code == 200:
+                try:
+                    j_data = resp.json()
+                    preds = j_data.get("predictions") or []
+                    if preds:
+                        pred = preds[0]
+                        b64 = pred.get("bytesBase64Encoded") or pred.get("image") or pred.get("video")
+                        mime = pred.get("mimeType") or ("video/mp4" if media_type == "video" else "image/png")
+                        if b64:
+                            return f"data:{mime};base64,{b64}"
+                except Exception:
+                    pass
+            errors_collected.append(f"{p_mod}({resp.status_code}): {resp.text[:100]}")
+
+        raise ValueError(f"Gemini Media indisponible: {' | '.join(errors_collected)}")
 
     # 2. HUGGING FACE INFERENCE API (Support hf-inference + fal-ai pour Vidéo/Image)
     elif provider == "huggingface":
@@ -651,7 +794,7 @@ async def generate_media(db: Session, settings: SystemSettings, prompt: str, med
         log_activity(f"[Studio {media_type.upper()}] Démarrage avec {model_id}...")
         final_prompt = prompt
 
-        if optimize_prompt and settings.gemini_api_key:
+        if optimize_prompt and (settings.gemini_api_key or settings.openrouter_api_key):
             try:
                 real_prompter = resolve_gemini_model_id(db, prompter_id)
                 sys_msg = (
@@ -665,6 +808,8 @@ async def generate_media(db: Session, settings: SystemSettings, prompt: str, med
                     is_worker=False, enable_web=False
                 )
                 log_activity(f"[Studio {media_type.upper()}] Prompt optimisé par {real_prompter}.")
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 log_activity(f"[Studio] Optimisation ignorée ({str(e)[:50]}), utilisation du prompt original.")
 
@@ -677,7 +822,7 @@ async def generate_media(db: Session, settings: SystemSettings, prompt: str, med
         last_error = ""
 
         async with httpx.AsyncClient(timeout=180.0, follow_redirects=True) as client:
-            for attempt in range(4):
+            for attempt in range(5):
                 tried_models.add(current_model)
                 model_db = db.query(AIModel).filter(AIModel.model_id == current_model).first()
                 if model_db and model_db.provider:
@@ -698,6 +843,8 @@ async def generate_media(db: Session, settings: SystemSettings, prompt: str, med
                         "optimized_prompt": final_prompt,
                         "model_used": current_model
                     }
+                except asyncio.CancelledError:
+                    raise
                 except Exception as e:
                     last_error = str(e)
                     log_activity(f"⚠️ Échec/Quota sur {current_model} ({tier_label}) : {last_error[:90]}")
@@ -718,6 +865,9 @@ async def generate_media(db: Session, settings: SystemSettings, prompt: str, med
             status_code=400,
             detail=f"Aucun modèle {media_type} ({tier_label}) n'a pu aboutir après bascule automatique. Détail fournisseur : {last_error}"
         )
+    except asyncio.CancelledError:
+        log_activity("🛑 Génération média interrompue par l'utilisateur.")
+        raise HTTPException(status_code=499, detail="Génération média interrompue par l'utilisateur.")
     except HTTPException:
         raise
     except Exception as e:
@@ -743,18 +893,19 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
     original_user_text = user_prompt.split("\n\n[Fichiers joints")[0] if "[Fichiers joints" in user_prompt else user_prompt
     formatted_history = [{"role": msg.role, "content": msg.content or ""} for msg in history[:-1]] if len(history) > 1 else []
 
-    all_involved_models = [p_mod] + workers + ([c_mod] if mode == "multi" and len(workers) > 1 else [])
+    # Tous les modèles sélectionnés sont pris en compte pour déterminer le contexte le plus restrictif
+    all_involved_models = [p_mod] + workers + ([c_mod] if mode == "multi" else [])
     chunk_size = compute_dynamic_chunk_size(db, all_involved_models)
 
     is_ocr_ce2 = (theme == "ocr_ce2")
     final_response = ""
 
     try:
-        log_activity(f"Orchestration [{mode.upper()} | Thème: {theme} | Web: {'ON' if enable_web else 'OFF'}]. Prompteur Gemini: {p_mod}")
+        log_activity(f"Orchestration [{mode.upper()} | Thème: {theme} | Web: {'ON' if enable_web else 'OFF'}]. Prompteur: {p_mod}")
 
         files_context = ""
         if extracted_files:
-            log_activity(f"Traitement Map-Reduce de {len(extracted_files)} fichier(s) joint(s).")
+            log_activity(f"Traitement Map-Reduce de {len(extracted_files)} fichier(s) joint(s) (Chunk max: {chunk_size} car.).")
             async def process_single_file(f):
                 if not f or not isinstance(f, dict): return ""
                 fname = f.get('name') or 'Fichier_inconnu'
@@ -779,9 +930,15 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                         {"type": "image_url", "image_url": {"url": content}}
                     ]
                     try:
-                        analysis = await ask_agent_with_fallback(db, settings, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": user_msg_content}], is_worker=False, enable_web=False)
+                        analysis = await ask_agent_with_fallback(
+                            db, settings, p_mod,
+                            [{"role": "system", "content": file_sys}, {"role": "user", "content": user_msg_content}],
+                            is_worker=False, enable_web=False, target_domain="Vision & Texte"
+                        )
                         log_activity(f"OCR Vision de {fname} réussi.")
                         return f"\n\n--- Transcription exacte du fichier {fname} ---\n{analysis}"
+                    except asyncio.CancelledError:
+                        raise
                     except Exception as e:
                         log_activity(f"Erreur OCR Vision sur {fname}: {str(e)}")
                         return f"\n\n--- Erreur de lecture image sur {fname} ---\n{str(e)}"
@@ -796,13 +953,19 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                         else:
                             file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nPartie {idx+1}/{len(chunks)} du fichier '{fname}'. Analysez, extrayez et résumez le code, VBA, SQL ou les données pertinentes.\n\nContenu :\n```\n{chunk}\n```"
                         try:
-                            analysis = await ask_agent_with_fallback(db, settings, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}], is_worker=False, enable_web=False)
+                            analysis = await ask_agent_with_fallback(
+                                db, settings, p_mod,
+                                [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}],
+                                is_worker=False, enable_web=False
+                            )
                             chunk_analyses.append(analysis or "[ Analyse vide ]")
                             log_activity(f"Chunk {idx+1}/{len(chunks)} de {fname} traité.")
+                        except asyncio.CancelledError:
+                            raise
                         except Exception as e:
                             chunk_analyses.append(f"[Erreur sur la partie {idx+1}: {str(e)}]")
                             log_activity(f"Erreur chunk {idx+1}/{len(chunks)} pour {fname}: {str(e)}")
-                        await asyncio.sleep(1.5)
+                        await asyncio.sleep(1.0)
                     return f"\n\n--- Extraction du fichier {fname} (en {len(chunks)} parties) ---\n" + "\n".join(chunk_analyses)
                 else:
                     if is_ocr_ce2:
@@ -810,9 +973,15 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                     else:
                         file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nAnalysez le fichier ci-dessous. Extrayez, résumez et conservez méticuleusement tout le code, les macros VBA, les requêtes SQL, ou les données métier pertinentes.\n\nFichier : {fname}\nContenu :\n```\n{content}\n```"
                     try:
-                        analysis = await ask_agent_with_fallback(db, settings, p_mod, [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}], is_worker=False, enable_web=False)
+                        analysis = await ask_agent_with_fallback(
+                            db, settings, p_mod,
+                            [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}],
+                            is_worker=False, enable_web=False
+                        )
                         log_activity(f"Analyse intégrale de {fname} réussie.")
                         return f"\n\n--- Extraction du fichier {fname} ---\n{analysis}"
+                    except asyncio.CancelledError:
+                        raise
                     except Exception as e:
                         log_activity(f"Erreur d'analyse sur {fname}: {str(e)}")
                         return f"\n\n--- Erreur sur {fname} ---\n{str(e)}"
@@ -821,10 +990,15 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
             for f in extracted_files:
                 analysis = await process_single_file(f)
                 file_analyses.append(analysis or "")
-                await asyncio.sleep(1.5)
+                await asyncio.sleep(1.0)
             
             files_context = "".join(file_analyses)
             user_prompt = f"{original_user_text}\n\nVoici les données extraites des fichiers joints :\n{files_context}"
+
+        # Si le prompt total dépasse le chunk_size restrictif des travailleurs, on le segmente/condense proprement
+        if len(user_prompt) > chunk_size:
+            log_activity(f"Adaptation du prompt ({len(user_prompt)} car.) à la limite restrictive ({chunk_size} car.)...")
+            user_prompt = user_prompt[:chunk_size]
 
         if is_ocr_ce2:
             log_activity("Structuration de la tâche de correction CE2 (Français strict conservé)...")
@@ -833,11 +1007,22 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                 "Ne traduis RIEN en anglais. Prépare la consigne complète en français pour le correcteur IA en conservant "
                 "STRICTEMENT à l'identique les transcriptions brutes des copies d'élèves (avec toutes leurs fautes d'origine) ainsi que le corrigé de référence."
             )
-            optimized = await ask_agent_with_fallback(db, settings, p_mod, [{"role": "system", "content": prompt_system}, {"role": "user", "content": user_prompt}], is_worker=False, enable_web=False)
+            optimized = await ask_agent_with_fallback(
+                db, settings, p_mod,
+                [{"role": "system", "content": prompt_system}, {"role": "user", "content": user_prompt}],
+                is_worker=False, enable_web=False
+            )
         else:
-            log_activity("Optimisation de la requête via le Prompteur Gemini...")
+            log_activity(f"Optimisation de la requête via le Prompteur ({p_mod})...")
             prompt_system = "You are an expert prompt engineer. Translate and optimize the user request and any file context into clear, precise English tailored for AI execution. Keep all code blocks and exact data intact."
-            optimized = await ask_agent_with_fallback(db, settings, p_mod, [{"role": "system", "content": prompt_system}, {"role": "user", "content": user_prompt}], is_worker=False, enable_web=False)
+            optimized = await ask_agent_with_fallback(
+                db, settings, p_mod,
+                [{"role": "system", "content": prompt_system}, {"role": "user", "content": user_prompt}],
+                is_worker=False, enable_web=False
+            )
+
+        if len(optimized) > chunk_size:
+            optimized = optimized[:chunk_size]
 
         worker_sys_prompt = None
         if is_ocr_ce2:
@@ -858,6 +1043,17 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                 "Ne traduis jamais la syntaxe du code source à l'intérieur des blocs de code."
             )
 
+        # Troncature préventive de l'historique pour respecter le modèle le plus restrictif
+        safe_history = []
+        running_chars = len(optimized) + (len(worker_sys_prompt) if worker_sys_prompt else 0)
+        for h_msg in reversed(formatted_history):
+            c_len = len(h_msg.get("content") or "")
+            if running_chars + c_len <= chunk_size:
+                safe_history.insert(0, h_msg)
+                running_chars += c_len
+            else:
+                break
+
         async def execute_single_worker(w_mod: str) -> str:
             m_db = db.query(AIModel).filter(AIModel.model_id == w_mod).first()
             dom = m_db.domain if m_db else determine_domain(w_mod)
@@ -865,13 +1061,17 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                 m_type = "video" if dom == "Génération Vidéo" else "image"
                 media_res = await generate_media(db, settings, optimized, m_type, w_mod, p_mod, optimize_prompt=False)
                 return f"[MEDIA_{m_type.upper()}:{media_res['model_used']}]\n{media_res['media_url']}\nPrompt utilisé : {media_res['optimized_prompt']}"
-            msgs = formatted_history.copy()
+            msgs = safe_history.copy()
             if worker_sys_prompt:
                 msgs.insert(0, {"role": "system", "content": worker_sys_prompt})
             msgs.append({"role": "user", "content": optimized})
-            return await ask_agent_with_fallback(db, settings, w_mod, msgs, is_worker=True, enable_web=enable_web)
+            return await ask_agent_with_fallback(
+                db, settings, w_mod, msgs,
+                is_worker=True, enable_web=enable_web,
+                target_domain=dom
+            )
 
-        log_activity(f"Exécution sur {len(workers)} travailleur(s) (avec bascule anti-quota active)...")
+        log_activity(f"Exécution sur {len(workers)} travailleur(s) (avec bascule anti-quota équivalente active)...")
         if len(workers) == 1:
             worker_response = await execute_single_worker(workers[0])
             responses = [worker_response]
@@ -879,13 +1079,16 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
         else:
             w_tasks = [execute_single_worker(w) for w in workers]
             responses = await asyncio.gather(*w_tasks, return_exceptions=True)
+            for r in responses:
+                if isinstance(r, asyncio.CancelledError):
+                    raise r
             log_activity("Tous les travailleurs ont terminé leur analyse.")
 
         if mode == "mono" or any(str(r).startswith("[MEDIA_") for r in responses):
             log_activity("Restitution directe (Mono-IA / Média généré).")
             final_response = "\n\n".join([str(r) for r in responses])
         else:
-            log_activity(f"Synthèse finale via Concaténeur Gemini ({c_mod})...")
+            log_activity(f"Synthèse finale via Concaténeur ({c_mod})...")
             if is_ocr_ce2:
                 concat_system = (
                     "Tu es le coordinateur pédagogique de Céline (classe de CE2). "
@@ -901,10 +1104,20 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                     "CRITICAL: Do NOT translate code blocks, programming keywords, or source code contents."
                 )
             synth = f"User Request: {original_user_text}\n\n" + "\n".join([f"--- EXPERT {i+1} ---\n{str(r)}" for i, r in enumerate(responses)])
-            final_response = await ask_agent_with_fallback(db, settings, c_mod, [{"role": "system", "content": concat_system}, {"role": "user", "content": synth}], is_worker=False, enable_web=False)
+            if len(synth) > chunk_size * 2:
+                synth = synth[:chunk_size * 2]
+            final_response = await ask_agent_with_fallback(
+                db, settings, c_mod,
+                [{"role": "system", "content": concat_system}, {"role": "user", "content": synth}],
+                is_worker=False, enable_web=False,
+                target_domain="Code & Logique" if theme == "code" else "Texte Polyvalent"
+            )
 
         log_activity("Orchestration terminée avec succès.")
 
+    except asyncio.CancelledError:
+        log_activity("🛑 Orchestration interrompue à la demande de l'utilisateur.")
+        raise
     except Exception as e:
         tb_str = traceback.format_exc()
         system_logger.error(f"Traceback complet:\n{tb_str}")

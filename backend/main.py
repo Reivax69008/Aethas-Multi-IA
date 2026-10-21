@@ -3,8 +3,8 @@ from fastapi.responses import RedirectResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from typing import List
-import os, json, asyncio, shutil, base64, io, csv, zipfile, traceback
+from typing import List, Dict
+import os, json, asyncio, shutil, base64, io, csv, zipfile, traceback, httpx
 from datetime import datetime, timedelta, timezone
 import pytz
 
@@ -20,7 +20,7 @@ from .models import User, Project, Message, SystemSettings, AIModel, FinancialLo
 from .orchestrator import (
     run_orchestrator, sync_providers_models, sync_finances, activity_logs,
     log_activity, generate_media, resolve_gemini_model_id, is_worker_eligible,
-    find_quota_fallback_model, purge_unauthorized_models
+    find_quota_fallback_model, purge_unauthorized_models, ask_agent_with_fallback
 )
 from .logger import log_file, cleanup_old_logs, system_logger
 
@@ -37,6 +37,13 @@ except Exception:
         pass
 
 app = FastAPI(title="AETHAS38")
+
+# --- CONFIGURATION HERMES AGENT AUTO-HÉBERGÉ ---
+HERMES_API_URL = os.getenv("HERMES_API_URL", "http://192.168.1.20:8642")
+HERMES_API_KEY = os.getenv("HERMES_API_KEY", "87186fe63b1e5d8b8d01bc769f5e894d24081a86d0d800d00b6358c26fded37e")
+
+# --- REGISTRE DES TÂCHES ACTIVES POUR INTERRUPTION IMMÉDIATE ---
+active_project_tasks: Dict[int, asyncio.Task] = {}
 
 @app.exception_handler(Exception)
 async def global_json_exception_handler(request: Request, exc: Exception):
@@ -59,6 +66,81 @@ NO_CACHE_HEADERS = {
     "Pragma": "no-cache",
     "Expires": "0"
 }
+
+def extract_attached_files(files_list) -> tuple[list, list]:
+    """Extrait le contenu texte, PDF, Word, Excel, Macros VBA et Images des fichiers joints."""
+    extracted_files_data = []
+    files_names = []
+    if not files_list:
+        return extracted_files_data, files_names
+
+    for f in files_list:
+        fname = f.name if hasattr(f, "name") else f.get("name", "fichier")
+        content = f.content if hasattr(f, "content") else f.get("content", "")
+        files_names.append(fname)
+        ext = fname.split('.')[-1].lower() if '.' in fname else ''
+
+        if content.startswith("data:"):
+            if ext in ['png', 'jpg', 'jpeg', 'webp', 'gif'] or content.startswith("data:image/"):
+                extracted_files_data.append({"name": fname, "content": content, "is_image": True})
+                continue
+
+            try:
+                header, b64data = content.split(",", 1)
+                file_bytes = base64.b64decode(b64data)
+                extracted_text = ""
+
+                if ext == 'pdf':
+                    try:
+                        import PyPDF2
+                        reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+                        extracted_text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+                    except Exception as e:
+                        extracted_text = f"[Erreur lecture PDF: {str(e)}]"
+                elif ext in ['docx', 'odt']:
+                    try:
+                        import zipfile as zf_doc
+                        import xml.etree.ElementTree as ET
+                        with zf_doc.ZipFile(io.BytesIO(file_bytes)) as dz:
+                            xml_file = "word/document.xml" if ext == "docx" else "content.xml"
+                            xml_content = dz.read(xml_file)
+                            tree = ET.fromstring(xml_content)
+                            extracted_text = "".join(tree.itertext())
+                    except Exception as e:
+                        extracted_text = f"[Erreur lecture document {ext}: {str(e)}]"
+                elif ext in ['xls', 'xlsx', 'xlsm', 'xlsb']:
+                    try:
+                        import openpyxl
+                        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=False)
+                        for sheet_name in wb.sheetnames:
+                            sheet = wb[sheet_name]
+                            extracted_text += f"\n--- Feuille : {sheet_name} ---\n"
+                            for row in sheet.iter_rows(values_only=True):
+                                row_vals = [str(cell) if cell is not None else "" for cell in row]
+                                if any(row_vals):
+                                    extracted_text += "\t".join(row_vals) + "\n"
+                        if ext in ['xlsm', 'xlsb', 'xls']:
+                            try:
+                                from oletools.olevba import VBA_Parser
+                                vbaparser = VBA_Parser("filename", data=file_bytes)
+                                if vbaparser.detect_vba_macros():
+                                    extracted_text += "\n\n--- MACROS VBA DETECTEES ---\n"
+                                    for (_, _, vba_filename, vba_code) in vbaparser.extract_macros():
+                                        extracted_text += f"\n// Module: {vba_filename}\n{vba_code}\n"
+                            except Exception:
+                                pass
+                    except Exception as e:
+                        extracted_text = f"[Erreur lecture Excel: {str(e)}]"
+                else:
+                    extracted_text = file_bytes.decode('utf-8', errors='replace')
+                
+                extracted_files_data.append({"name": fname, "content": extracted_text, "is_image": False})
+            except Exception as e:
+                extracted_files_data.append({"name": fname, "content": f"[ERREUR DE DECODAGE: {str(e)}]", "is_image": False})
+        else:
+            extracted_files_data.append({"name": fname, "content": content, "is_image": False})
+
+    return extracted_files_data, files_names
 
 async def scheduler_task():
     tz = pytz.timezone('Europe/Paris')
@@ -134,7 +216,8 @@ def login(login_data: LoginRequest, response: Response, db: Session = Depends(ge
     user = db.query(User).filter(User.username == login_data.username).first()
     if not user or not verify_password(login_data.password, user.hashed_password): raise HTTPException(status_code=401, detail="Identifiants incorrects.")
     if not verify_totp(user.totp_secret, login_data.totp_code): raise HTTPException(status_code=401, detail="2FA invalide.")
-    response.set_cookie(key="session_token", value=create_access_token(data={"sub": user.username}), httponly=True, max_age=28800, samesite="lax")
+    # Cookie de session fixé à 10 heures (36000 secondes)
+    response.set_cookie(key="session_token", value=create_access_token(data={"sub": user.username}), httponly=True, max_age=36000, samesite="lax")
     return {"message": "Connexion réussie"}
 
 @app.get("/dashboard")
@@ -142,6 +225,151 @@ def dashboard(request: Request):
     token = request.cookies.get("session_token")
     if not token or not verify_token(token): return RedirectResponse(url="/login")
     return FileResponse(os.path.join(os.getcwd(), "frontend", "dashboard.html"), headers=NO_CACHE_HEADERS)
+
+# --- INTÉGRATION HERMES AGENT (SYNCHRONISÉE AVEC LES PROJETS AETHAS38) ---
+@app.get("/api/hermes/status")
+async def check_hermes_status(current_user: User = Depends(get_current_user)):
+    """Vérifie la disponibilité de l'instance Hermes auto-hébergée."""
+    headers = {"Authorization": f"Bearer {HERMES_API_KEY}"}
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        for endpoint in ["/health", "/v1/models", "/"]:
+            try:
+                resp = await client.get(f"{HERMES_API_URL}{endpoint}", headers=headers)
+                if resp.status_code in [200, 401, 404]:
+                    return {"status": "online", "url": HERMES_API_URL}
+            except Exception:
+                continue
+    return {"status": "offline", "url": HERMES_API_URL}
+
+async def _call_hermes_instance(db: Session, project: Project, history: list, extra_files_context: str, settings: SystemSettings, fallback_worker: str) -> str:
+    """Appelle Hermes avec l'historique complet de la discussion AETHAS38 pour conserver la mémoire et s'adapter."""
+    hermes_messages = [
+        {
+            "role": "system",
+            "content": (
+                f"Tu es Hermes, l'agent autonome intégré à AETHAS38 (Discussion: '{project.title}', ID: {project.id}). "
+                "Tu partages exactement le même historique de discussion que le mode Multi-Codage AETHAS38. "
+                "Garde en mémoire tout le contexte des échanges précédents et adapte-toi au fur et à mesure."
+            )
+        }
+    ]
+    for m in history:
+        hermes_messages.append({"role": m.role, "content": m.content or ""})
+
+    if extra_files_context and hermes_messages[-1]["role"] == "user":
+        hermes_messages[-1]["content"] += f"\n\n[Contenu extrait des fichiers joints] :\n{extra_files_context}"
+
+    headers = {
+        "Authorization": f"Bearer {HERMES_API_KEY}",
+        "X-API-Key": HERMES_API_KEY,
+        "Content-Type": "application/json"
+    }
+
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        # 1. Endpoint compatible OpenAI v1 (/v1/chat/completions) d'Hermes Gateway
+        try:
+            payload_v1 = {
+                "model": "hermes-agent",
+                "messages": hermes_messages,
+                "user": f"aethas38_project_{project.id}"
+            }
+            resp = await client.post(f"{HERMES_API_URL}/v1/chat/completions", headers=headers, json=payload_v1)
+            if resp.status_code == 200:
+                data = resp.json()
+                choices = data.get("choices") or []
+                if choices and choices[0].get("message", {}).get("content"):
+                    log_activity(f"[Hermes Agent] Réponse synchronisée reçue sur le projet #{project.id}.")
+                    return choices[0]["message"]["content"]
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            log_activity(f"[Hermes v1] Repli endpoint ({str(e)[:60]})...")
+
+        # 2. Endpoint alternatif (/api/chat) d'Hermes
+        try:
+            payload_alt = {
+                "prompt": hermes_messages[-1]["content"],
+                "session_id": f"aethas38_project_{project.id}",
+                "history": hermes_messages[:-1]
+            }
+            resp2 = await client.post(f"{HERMES_API_URL}/api/chat", headers=headers, json=payload_alt)
+            if resp2.status_code == 200:
+                data2 = resp2.json()
+                ans = data2.get("response") or data2.get("message") or data2.get("content")
+                if ans:
+                    log_activity(f"[Hermes Agent] Réponse reçue via /api/chat sur le projet #{project.id}.")
+                    return str(ans)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            log_activity(f"⚠️ [Hermes] Instance locale injoignable ou quota dépassé ({str(e)[:70]}). Bascule sur IA équivalente AETHAS38...")
+
+    # 3. Bascule automatique équivalente si Hermes ou son modèle sous-jacent dépasse son quota
+    fallback_ans = await ask_agent_with_fallback(
+        db=db,
+        settings=settings,
+        model_id=fallback_worker or "Qwen/Qwen2.5-Coder-32B-Instruct",
+        messages=hermes_messages,
+        is_worker=True,
+        enable_web=True,
+        target_domain="Code & Logique"
+    )
+    return f"*(Bascule auto AETHAS38 - Quota/Relais Hermes)*\n\n{fallback_ans}"
+
+@app.post("/api/projects/{project_id}/hermes", response_model=List[MessageResponse])
+async def create_hermes_project_message(project_id: int, message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Enregistre et synchronise la discussion Hermes dans le même projet que AETHAS38 Multi-Codage."""
+    p = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Projet introuvable.")
+
+    if message.config:
+        p.config_json = json.dumps(message.config.dict())
+        db.commit()
+
+    extracted_files_data, files_names = extract_attached_files(message.files)
+    extra_files_context = "\n\n".join([f"--- {fd['name']} ---\n{fd['content']}" for fd in extracted_files_data if not fd.get("is_image")])
+
+    db_content = message.content
+    if files_names:
+        db_content += f"\n\n[Fichiers joints pour analyse : {', '.join(files_names)}]"
+
+    db.add(Message(role="user", content=db_content, project_id=project_id))
+    db.commit()
+
+    if p.title == "Nouvelle discussion":
+        first_content = message.content.split("\n\n[Fichiers joints")[0].strip()
+        new_title = first_content.split('\n')[0][:35].strip() or "Discussion Hermes"
+        p.title = new_title + ("..." if len(first_content) > 35 else "")
+        db.commit()
+
+    history = db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
+    settings = db.query(SystemSettings).first()
+    fallback_worker = (message.config.workers[0] if message.config and message.config.workers else "Qwen/Qwen2.5-Coder-32B-Instruct")
+
+    task = asyncio.current_task()
+    active_project_tasks[project_id] = task
+    try:
+        hermes_resp = await _call_hermes_instance(db, p, history, extra_files_context, settings, fallback_worker)
+        db.add(Message(role="assistant", content=hermes_resp, project_id=project_id))
+        db.commit()
+    except asyncio.CancelledError:
+        db.add(Message(role="assistant", content="🛑 *[Requête Hermes interrompue par l'utilisateur]*", project_id=project_id))
+        db.commit()
+    finally:
+        active_project_tasks.pop(project_id, None)
+
+    return db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
+
+@app.post("/api/projects/{project_id}/abort")
+async def abort_project_request(project_id: int, current_user: User = Depends(get_current_user)):
+    """Interrompt immédiatement la requête IA ou Hermes en cours sur le projet."""
+    task = active_project_tasks.get(project_id)
+    if task and not task.done():
+        task.cancel()
+        log_activity(f"🛑 Signal d'interruption envoyé sur le projet #{project_id} par {current_user.username}.")
+        return {"status": "aborted", "message": "Requête interrompue avec succès."}
+    return {"status": "idle", "message": "Aucune requête active à interrompre."}
 
 @app.get("/api/logs")
 def get_logs(current_user: User = Depends(get_current_user)):
@@ -177,10 +405,10 @@ async def api_generate_media(req: MediaGenerateRequest, db: Session = Depends(ge
 
 @app.post("/api/models/suggest_replacement")
 async def suggest_replacement(req: ModelReplacementRequest, db: Session = Depends(get_db)):
-    log_activity(f"⚠️ Modèle travailleur indisponible: {req.missing_model}. Recherche de remplacement de même niveau tarifaire...")
+    log_activity(f"⚠️ Modèle indisponible ou hors quota: {req.missing_model}. Recherche d'un équivalent strict...")
     fallback = find_quota_fallback_model(db, req.missing_model, {req.missing_model}, is_worker=True)
     if fallback:
-        return {"suggestion": fallback, "reason": "Remplacement automatique respectant le mode Gratuit/Payant."}
+        return {"suggestion": fallback, "reason": "Remplacement automatique respectant strictement les pré-requis (Gratuit/Payant, Domaine et Contexte)."}
     return {"suggestion": "Qwen/Qwen2.5-Coder-32B-Instruct", "reason": "Repli par défaut."}
 
 @app.get("/api/users/me")
@@ -263,7 +491,7 @@ def export_project(project_id: int, format: str = "txt", db: Session = Depends(g
         data = [{"role": m.role, "content": m.content, "date": m.created_at.isoformat()} for m in messages]
         return Response(content=json.dumps(data, indent=2), media_type="application/json", headers={"Content-Disposition": f"attachment; filename=export_{project_id}.json"})
     text_out = f"--- HISTORIQUE : {p.title} ---\n\n"
-    for m in messages: text_out += f"[{m.created_at.strftime('%Y-%m-%d %H:%M:%S')}] {'VOUS' if m.role == 'user' else 'AETHAS38'}:\n{m.content}\n\n{'-'*50}\n\n"
+    for m in messages: text_out += f"[{m.created_at.strftime('%Y-%m-%d %H:%M:%S')}] {'VOUS' if m.role == 'user' else 'AETHAS38 / HERMES'}:\n{m.content}\n\n{'-'*50}\n\n"
     return Response(content=text_out, media_type="text/plain;charset=utf-8", headers={"Content-Disposition": f"attachment; filename=export_{project_id}.txt"})
 
 @app.get("/api/projects/{project_id}/messages", response_model=List[MessageResponse])
@@ -279,81 +507,7 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
         p.config_json = json.dumps(message.config.dict())
         db.commit()
 
-    if p.title == "Nouvelle discussion":
-        user_msgs = db.query(Message).filter(Message.project_id == project_id, Message.role == "user").order_by(Message.created_at.asc()).all()
-        if len(user_msgs) == 1:
-            first_content = user_msgs[0].content.split("\n\n[Fichiers joints")[0].strip()
-            new_title = first_content.split('\n')[0][:35].strip() or "Discussion"
-            p.title = new_title + ("..." if len(first_content) > 35 else "")
-            db.commit()
-
-    extracted_files_data = []
-    files_names = []
-    
-    if message.files:
-        for f in message.files:
-            files_names.append(f.name)
-            content = f.content
-            ext = f.name.split('.')[-1].lower() if '.' in f.name else ''
-
-            if content.startswith("data:"):
-                if ext in ['png', 'jpg', 'jpeg', 'webp', 'gif'] or content.startswith("data:image/"):
-                    extracted_files_data.append({"name": f.name, "content": content, "is_image": True})
-                    continue
-
-                try:
-                    header, b64data = content.split(",", 1)
-                    file_bytes = base64.b64decode(b64data)
-                    extracted_text = ""
-
-                    if ext == 'pdf':
-                        try:
-                            import PyPDF2
-                            reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
-                            extracted_text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
-                        except Exception as e:
-                            extracted_text = f"[Erreur lecture PDF: {str(e)}]"
-                    elif ext in ['docx', 'odt']:
-                        try:
-                            import zipfile as zf_doc
-                            import xml.etree.ElementTree as ET
-                            with zf_doc.ZipFile(io.BytesIO(file_bytes)) as dz:
-                                xml_file = "word/document.xml" if ext == "docx" else "content.xml"
-                                xml_content = dz.read(xml_file)
-                                tree = ET.fromstring(xml_content)
-                                extracted_text = "".join(tree.itertext())
-                        except Exception as e:
-                            extracted_text = f"[Erreur lecture document {ext}: {str(e)}]"
-                    elif ext in ['xls', 'xlsx', 'xlsm', 'xlsb']:
-                        try:
-                            import openpyxl
-                            wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=False)
-                            for sheet_name in wb.sheetnames:
-                                sheet = wb[sheet_name]
-                                extracted_text += f"\n--- Feuille : {sheet_name} ---\n"
-                                for row in sheet.iter_rows(values_only=True):
-                                    row_vals = [str(cell) if cell is not None else "" for cell in row]
-                                    if any(row_vals):
-                                        extracted_text += "\t".join(row_vals) + "\n"
-                            if ext in ['xlsm', 'xlsb', 'xls']:
-                                try:
-                                    from oletools.olevba import VBA_Parser
-                                    vbaparser = VBA_Parser("filename", data=file_bytes)
-                                    if vbaparser.detect_vba_macros():
-                                        extracted_text += "\n\n--- MACROS VBA DETECTEES ---\n"
-                                        for (_, _, vba_filename, vba_code) in vbaparser.extract_macros():
-                                            extracted_text += f"\n// Module: {vba_filename}\n{vba_code}\n"
-                                except Exception: pass
-                        except Exception as e:
-                            extracted_text = f"[Erreur lecture Excel: {str(e)}]"
-                    else:
-                        extracted_text = file_bytes.decode('utf-8', errors='replace')
-                    
-                    extracted_files_data.append({"name": f.name, "content": extracted_text, "is_image": False})
-                except Exception as e:
-                    extracted_files_data.append({"name": f.name, "content": f"[ERREUR DE DECODAGE: {str(e)}]", "is_image": False})
-            else:
-                extracted_files_data.append({"name": f.name, "content": content, "is_image": False})
+    extracted_files_data, files_names = extract_attached_files(message.files)
 
     db_content = message.content
     if files_names:
@@ -361,15 +515,31 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
 
     db.add(Message(role=message.role, content=db_content, project_id=project_id))
     db.commit()
+
+    if p.title == "Nouvelle discussion":
+        user_msgs = db.query(Message).filter(Message.project_id == project_id, Message.role == "user").order_by(Message.created_at.asc()).all()
+        if len(user_msgs) >= 1:
+            first_content = user_msgs[0].content.split("\n\n[Fichiers joints")[0].strip()
+            new_title = first_content.split('\n')[0][:35].strip() or "Discussion"
+            p.title = new_title + ("..." if len(first_content) > 35 else "")
+            db.commit()
     
     history = db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
     settings = db.query(SystemSettings).first()
     conf = message.config.dict() if message.config else {"workers": ["Qwen/Qwen2.5-Coder-32B-Instruct"]} 
     
-    ai_resp = await run_orchestrator(db, history, settings, conf, extracted_files_data)
-    
-    db.add(Message(role="assistant", content=ai_resp, project_id=project_id))
-    db.commit()
+    task = asyncio.current_task()
+    active_project_tasks[project_id] = task
+    try:
+        ai_resp = await run_orchestrator(db, history, settings, conf, extracted_files_data)
+        db.add(Message(role="assistant", content=ai_resp, project_id=project_id))
+        db.commit()
+    except asyncio.CancelledError:
+        db.add(Message(role="assistant", content="🛑 *[Requête interrompue par l'utilisateur]*", project_id=project_id))
+        db.commit()
+    finally:
+        active_project_tasks.pop(project_id, None)
+
     return db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
 
 @app.get("/api/models/info")

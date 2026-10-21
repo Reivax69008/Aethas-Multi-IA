@@ -1,5 +1,8 @@
 import bcrypt
 import pyotp
+import jwt
+from datetime import datetime, timedelta, timezone
+import os
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Vérifie si le mot de passe en clair correspond au hash."""
@@ -23,17 +26,13 @@ def verify_totp(secret: str, code: str) -> bool:
     totp = pyotp.TOTP(secret)
     return totp.verify(code)
 
-import jwt
-from datetime import datetime, timedelta, timezone
-import os
-
 # Dans l'idéal, cette clé secrète sera à placer dans votre fichier .env plus tard
 SECRET_KEY = os.getenv("SECRET_KEY", r"`*\$Tu*CCc5hglT$mX'HykxERDljBz")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+ACCESS_TOKEN_EXPIRE_MINUTES = 600  # 10 heures (600 minutes)
 
 def create_access_token(data: dict):
-    """Crée un jeton JWT valable 60 minutes."""
+    """Crée un jeton JWT valable 10 heures (600 minutes)."""
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
@@ -45,6 +44,6 @@ def verify_token(token: str):
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
     except jwt.ExpiredSignatureError:
-        return None  # Le jeton a expiré (60 min écoulées)
+        return None  # Le jeton a expiré (10h00 écoulées)
     except jwt.InvalidTokenError:
         return None  # Le jeton est invalide

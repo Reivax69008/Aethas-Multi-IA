@@ -56,6 +56,8 @@
                         <option value="worker3">Travailleur 3</option>
                         <option value="worker4">Travailleur 4</option>
                         <option value="worker5">Travailleur 5</option>
+                        <option value="prompter">Prompteur</option>
+                        <option value="concatenator">Concaténeur</option>
                     </select>
                 </div>
                 <button @click="confirmAssignModel" class="w-full mt-4 bg-aethas-cyan hover:bg-cyan-600 text-black font-bold py-2.5 px-4 rounded-lg transition-colors">
@@ -80,11 +82,15 @@
                 <button @click="createNewProject" :disabled="isLoading" class="w-full bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 rounded-lg py-2 px-3 flex items-center justify-center gap-2 shadow-md text-sm">
                     <i data-lucide="plus" class="w-4 h-4 text-aethas-cyan"></i> Nouveau Projet Chat
                 </button>
+                <button @click="openHermesView" :class="['w-full border rounded-lg py-2 px-3 flex items-center justify-between transition-colors text-sm font-medium', activeView === 'hermes' ? 'bg-amber-500/20 border-amber-500 text-amber-300' : 'bg-aethas-dark hover:bg-gray-800 text-gray-300 border-gray-700']">
+                    <span class="flex items-center gap-2"><i data-lucide="bot" class="w-4 h-4 text-amber-400"></i> Instance Hermes Agent</span>
+                    <span :class="['w-2.5 h-2.5 rounded-full', hermesStatus === 'online' ? 'bg-green-500 animate-pulse' : 'bg-red-500']" :title="hermesStatus === 'online' ? 'Hermes en ligne' : 'Hermes hors ligne'"></span>
+                </button>
                 <button @click="activeView = 'media'" :class="['w-full border rounded-lg py-2 px-3 flex items-center justify-center gap-2 transition-colors text-sm font-medium', activeView === 'media' ? 'bg-aethas-purple/20 border-aethas-purple text-purple-300' : 'bg-aethas-dark hover:bg-gray-800 text-gray-300 border-gray-700']">
-                    <i data-lucide="film" class="w-4 h-4 text-aethas-purple"></i> Studio Image & Vidéo
+                    <i data-lucide="film" class="w-4 h-4 text-aethas-purple"></i> Studio Image &amp; Vidéo
                 </button>
                 <button v-if="user.is_admin" @click="activeView = 'models'" :class="['w-full border rounded-lg py-2 px-3 flex items-center justify-center gap-2 transition-colors text-sm', activeView === 'models' ? 'bg-aethas-cyan/10 border-aethas-cyan text-aethas-cyan' : 'bg-aethas-dark hover:bg-gray-800 text-gray-300 border-gray-700']">
-                    <i data-lucide="database" class="w-4 h-4"></i> Modèles & Finances
+                    <i data-lucide="database" class="w-4 h-4"></i> Modèles &amp; Finances
                 </button>
             </div>
 
@@ -92,7 +98,7 @@
                 <div v-if="pinnedProjects.length > 0">
                     <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Épinglés</h3>
                     <ul class="space-y-1">
-                        <li v-for="project in pinnedProjects" :key="project.id" @click="selectProject(project)" :class="['group flex items-center justify-between p-2 rounded cursor-pointer text-sm', activeView === 'chat' && activeProject && activeProject.id === project.id ? 'bg-gray-700 text-white' : 'hover:bg-gray-800 text-gray-300']">
+                        <li v-for="project in pinnedProjects" :key="project.id" @click="selectProject(project)" :class="['group flex items-center justify-between p-2 rounded cursor-pointer text-sm', (activeView === 'chat' || activeView === 'hermes') && activeProject && activeProject.id === project.id ? 'bg-gray-700 text-white' : 'hover:bg-gray-800 text-gray-300']">
                             <div class="flex items-center gap-2 truncate"><i data-lucide="pin" class="w-3 h-3 text-aethas-cyan"></i><span class="truncate">{{ project.title }}</span></div>
                             <div class="hidden group-hover:flex items-center gap-1 bg-gray-800 pl-2 rounded">
                                 <button @click.stop="renameProject(project)" class="text-gray-400 hover:text-aethas-cyan"><i data-lucide="edit-2" class="w-3.5 h-3.5"></i></button>
@@ -108,7 +114,7 @@
                         <span class="text-[9px] text-red-400/80" title="Les discussions non épinglées de plus de 7 jours sont supprimées automatiquement.">Auto-suppression &gt; 7j</span>
                     </div>
                     <ul class="space-y-1">
-                        <li v-for="project in recentProjects" :key="project.id" @click="selectProject(project)" :class="['group flex items-center justify-between p-2 rounded cursor-pointer text-sm', activeView === 'chat' && activeProject && activeProject.id === project.id ? 'bg-gray-700 text-white' : 'hover:bg-gray-800 text-gray-300']">
+                        <li v-for="project in recentProjects" :key="project.id" @click="selectProject(project)" :class="['group flex items-center justify-between p-2 rounded cursor-pointer text-sm', (activeView === 'chat' || activeView === 'hermes') && activeProject && activeProject.id === project.id ? 'bg-gray-700 text-white' : 'hover:bg-gray-800 text-gray-300']">
                             <div class="flex items-center gap-2 truncate"><i data-lucide="message-square" class="w-3 h-3 text-gray-500"></i><span class="truncate">{{ project.title }}</span></div>
                             <div class="hidden group-hover:flex items-center gap-1 bg-gray-800 pl-2 rounded">
                                 <button @click.stop="renameProject(project)" class="text-gray-400 hover:text-aethas-cyan"><i data-lucide="edit-2" class="w-3.5 h-3.5"></i></button>
@@ -175,16 +181,120 @@
                 </div>
             </div>
             <div class="flex items-center gap-3">
+                <button v-if="isAiThinking || isHermesWorking || isGeneratingMedia" @click="abortCurrentRequest" class="text-xs bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-1 rounded flex items-center gap-1 shadow-[0_0_10px_rgba(220,38,38,0.5)] animate-pulse">
+                    🛑 Interrompre la requête
+                </button>
                 <button @click="downloadLogs" class="text-xs bg-gray-800 hover:bg-gray-700 text-aethas-cyan border border-aethas-cyan/50 px-2.5 py-1 rounded flex items-center gap-1 font-semibold">
                     ⬇ Logs (.log)
                 </button>
-                <div v-if="activeView === 'chat' && activeProject" class="text-sm font-medium text-gray-300 flex items-center gap-3 border-l border-gray-600 pl-3">
+                <div v-if="(activeView === 'chat' || activeView === 'hermes') && activeProject" class="text-sm font-medium text-gray-300 flex items-center gap-3 border-l border-gray-600 pl-3">
                     <span class="truncate max-w-[200px] md:max-w-lg">{{ activeProject.title }}</span>
                     <button @click="exportProject('txt')" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600 px-2 py-1 rounded flex items-center gap-1">TXT</button>
                     <button @click="exportProject('json')" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-600 px-2 py-1 rounded flex items-center gap-1">JSON</button>
                 </div>
             </div>
         </header>
+
+        <!-- VUE : INSTANCE HERMES AGENT (SYNCHRONISÉE AVEC LES DISCUSSIONS AETHAS38) -->
+        <div v-if="activeView === 'hermes'" class="flex-1 flex flex-col min-h-0 w-full overflow-hidden">
+            <div class="px-4 md:px-8 py-3 bg-gray-900/90 border-b border-gray-700 flex flex-wrap justify-between items-center gap-3 flex-shrink-0">
+                <div class="flex items-center gap-3">
+                    <i data-lucide="bot" class="w-6 h-6 text-amber-400"></i>
+                    <div>
+                        <h2 class="text-base font-bold text-white flex items-center gap-2">
+                            Instance Hermes Agent Autonome
+                            <span class="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded font-mono">SYNCHRO AETHAS38 ACTIVE</span>
+                        </h2>
+                        <p class="text-[11px] text-gray-400">Les discussions sont partagées à l'identique avec AETHAS38 Multi-Codage. Hermes conserve l'historique complet en mémoire et s'adapte au fil des échanges.</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-2 bg-gray-800 border border-gray-700 px-3 py-1 rounded-lg">
+                        <span :class="['w-2.5 h-2.5 rounded-full', hermesStatus === 'online' ? 'bg-green-500 animate-pulse' : 'bg-red-500']"></span>
+                        <span class="text-xs font-mono text-gray-200 uppercase">{{ hermesStatus === 'online' ? 'Hermes Connecté' : 'Hors ligne' }}</span>
+                    </div>
+                    <button @click="checkHermes" class="bg-gray-800 hover:bg-gray-700 text-aethas-cyan border border-gray-600 px-3 py-1 rounded-lg text-xs font-semibold">Actualiser Statut</button>
+                    <button @click="activeView = 'chat'" class="bg-gray-800 hover:bg-gray-700 text-purple-300 border border-aethas-purple/50 px-3 py-1 rounded-lg text-xs font-semibold">⇄ Basculer vue Multi-IA</button>
+                </div>
+            </div>
+
+            <div v-if="!activeProject" class="flex-1 w-full overflow-y-auto p-4 flex flex-col items-center justify-center">
+                <img src="/assets/logo.png" class="w-24 h-24 mb-6 rounded-full border-2 border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.5)]">
+                <h2 class="text-2xl font-bold text-gray-200 mb-2">Instance Hermes Agent</h2>
+                <p class="text-gray-400 text-sm mb-4">Sélectionnez une discussion existante dans la barre latérale ou créez-en une nouvelle pour synchroniser Hermes.</p>
+                <button @click="createNewProjectAndStayInHermes" class="bg-amber-500 hover:bg-amber-600 text-black font-bold px-5 py-2.5 rounded-xl text-sm shadow-lg">
+                    + Démarrer une discussion synchronisée Hermes
+                </button>
+            </div>
+
+            <template v-else>
+                <div class="flex-1 w-full overflow-y-auto px-4 md:px-8 py-6 space-y-6 flex flex-col custom-scrollbar" id="hermes-chat-box">
+                    <div v-if="messages.length === 0" class="flex-1 flex items-center justify-center text-gray-500 italic">
+                        Posez une tâche ou interrogez votre agent autonome Hermes (historique synchronisé avec « {{ activeProject.title }} »)...
+                    </div>
+
+                    <div v-for="msg in messages" :key="msg.id" :class="['rounded-2xl p-5 shadow-md', msg.role === 'user' ? 'bg-gray-800 ml-auto border border-gray-700 w-full md:w-4/5 lg:w-3/4' : 'bg-aethas-panel mr-auto border border-amber-500/40 flex flex-col w-full']">
+                        <div class="flex items-center gap-2 mb-2">
+                            <img v-if="msg.role === 'user' && user.avatar_path" :src="user.avatar_path" class="w-5 h-5 rounded-full object-cover">
+                            <span class="text-xs font-semibold uppercase tracking-wider" :class="msg.role === 'user' ? 'text-gray-400' : 'text-amber-400'">{{ msg.role === 'user' ? 'Vous' : 'Hermes / AETHAS38' }}</span>
+                        </div>
+
+                        <div class="text-gray-200 text-sm leading-relaxed w-full">
+                            <template v-for="(part, index) in parseMessage(msg.content)" :key="index">
+                                <div v-if="part.type === 'text'" class="whitespace-pre-wrap font-sans w-full">{{ part.content }}</div>
+                                <div v-if="part.type === 'media'" class="my-4 bg-black rounded-xl border border-aethas-purple/50 p-3 flex flex-col items-center">
+                                    <img v-if="part.mediaType === 'IMAGE'" :src="part.url" class="max-h-[420px] rounded-lg object-contain">
+                                    <video v-else :src="part.url" controls autoplay loop class="max-h-[420px] rounded-lg object-contain"></video>
+                                    <div class="mt-2 flex items-center justify-between w-full text-xs text-gray-400">
+                                        <span>Modèle : {{ part.model }} | {{ part.caption }}</span>
+                                        <a :href="part.url" :download="'media_' + Date.now() + (part.mediaType === 'VIDEO' ? '.mp4' : '.png')" class="bg-gray-800 hover:bg-gray-700 text-aethas-cyan px-2.5 py-1 rounded border border-gray-600">⬇ Télécharger</a>
+                                    </div>
+                                </div>
+                                <div v-if="part.type === 'code'" class="my-4 bg-gray-900 rounded-lg border border-gray-700 overflow-hidden shadow-inner w-full">
+                                    <div class="flex justify-between items-center px-4 py-2 bg-gray-800 border-b border-gray-700">
+                                        <span class="text-xs text-gray-400 font-mono flex items-center gap-2">{{ part.language || 'code' }}</span>
+                                        <div class="flex items-center">
+                                            <button @click="copyToClipboard(part.content)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded mr-2">Copier Code</button>
+                                            <button @click="downloadFile(part.content, part.language)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">⬇ Fichier</button>
+                                        </div>
+                                    </div>
+                                    <pre class="p-4 text-xs font-mono text-gray-300 overflow-x-auto custom-scrollbar w-full"><code>{{ part.content }}</code></pre>
+                                </div>
+                            </template>
+                        </div>
+
+                        <div class="mt-3 flex items-center gap-3 border-t border-gray-700/50 pt-2 opacity-60 hover:opacity-100 transition-opacity">
+                            <button @click="copyToClipboard(msg.content)" class="text-xs text-gray-400 hover:text-amber-400 flex items-center gap-1">Copier Message</button>
+                            <button @click="downloadMessage(msg.content, msg.created_at || new Date().toISOString())" class="text-xs text-gray-400 hover:text-amber-400 flex items-center gap-1">Extraire Message</button>
+                        </div>
+                    </div>
+
+                    <div v-if="isHermesWorking" class="rounded-2xl p-4 bg-aethas-panel mr-auto border border-amber-500/40 flex items-center gap-4">
+                        <div class="flex space-x-1.5 h-4 items-center">
+                            <div class="w-2 h-2 bg-amber-400 rounded-full animate-bounce"></div>
+                            <div class="w-2 h-2 bg-amber-400 rounded-full animate-bounce" style="animation-delay: 0.15s"></div>
+                            <div class="w-2 h-2 bg-amber-400 rounded-full animate-bounce" style="animation-delay: 0.3s"></div>
+                        </div>
+                        <span class="text-xs text-amber-300 font-mono">Hermes traite la requête avec l'historique...</span>
+                        <button @click="abortCurrentRequest" class="text-xs bg-red-600 hover:bg-red-700 text-white font-bold px-2.5 py-1 rounded">🛑 Stop</button>
+                    </div>
+                </div>
+
+                <div class="px-4 md:px-8 pt-3 pb-4 w-full flex-shrink-0 border-t border-gray-800 bg-aethas-dark/95">
+                    <div class="relative flex items-end bg-gray-800 border border-amber-500/50 rounded-2xl p-2 shadow-lg focus-within:border-amber-400 flex-col gap-2 w-full">
+                        <div class="w-full flex items-end gap-2">
+                            <textarea v-model="hermesPrompt" @keydown.enter.exact.prevent="sendHermesMessage" :disabled="isHermesWorking" rows="2" class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none disabled:opacity-50 custom-scrollbar text-sm" placeholder="Envoyer une instruction à Hermes (la discussion sera automatiquement synchronisée dans ce projet AETHAS38)..."></textarea>
+                            <button v-if="!isHermesWorking" @click="sendHermesMessage" :disabled="!hermesPrompt.trim()" class="bg-amber-500 hover:bg-amber-600 text-black font-bold px-6 py-3 rounded-xl text-sm transition-colors disabled:opacity-50 flex-shrink-0">
+                                Exécuter 🚀
+                            </button>
+                            <button v-else @click="abortCurrentRequest" class="bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-3 rounded-xl text-sm transition-colors flex-shrink-0">
+                                🛑 Interrompre
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
 
         <!-- VUE : STUDIO IMAGE & VIDÉO -->
         <div v-if="activeView === 'media'" class="flex-1 w-full overflow-y-auto p-4 md:p-6 space-y-6 custom-scrollbar">
@@ -247,7 +357,7 @@
                     </div>
 
                     <div>
-                        <label class="block text-xs font-bold text-amber-400 uppercase mb-1">4. Prompteur Visuel (Gemini)</label>
+                        <label class="block text-xs font-bold text-amber-400 uppercase mb-1">4. Prompteur Visuel (Gemini / OR)</label>
                         <select v-model="selectedMediaPrompter" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-200 outline-none focus:border-aethas-cyan">
                             <option v-for="gm in prompterConcatModels" :key="gm.model_id" :value="gm.model_id">{{ gm.name }}</option>
                         </select>
@@ -257,12 +367,17 @@
                 <!-- Zone de prompt Média -->
                 <div class="bg-gray-800 border border-gray-600 rounded-2xl p-4 shadow-lg space-y-3">
                     <textarea v-model="mediaPrompt" rows="3" class="w-full bg-aethas-dark border border-gray-700 rounded-xl p-3 text-sm text-gray-200 focus:border-aethas-cyan outline-none resize-none" :placeholder="mediaType === 'image' ? 'Décrivez l\'image souhaitée en français...' : 'Décrivez la scène vidéo souhaitée en français...'"></textarea>
-                    <div class="flex justify-between items-center">
+                    <div class="flex justify-between items-center gap-3">
                         <span class="text-xs text-gray-400">En cas de quota dépassé sur le modèle choisi, AETHAS38 bascule automatiquement sur un autre modèle {{ mediaType }} de même catégorie (Gratuit/Payant).</span>
-                        <button @click="generateMediaAction" :disabled="isGeneratingMedia || !mediaPrompt.trim() || !selectedMediaModel" class="bg-gradient-to-r from-aethas-cyan to-aethas-purple hover:opacity-90 text-white font-bold px-6 py-2.5 rounded-xl text-sm flex items-center gap-2 disabled:opacity-50">
-                            <span v-if="isGeneratingMedia">Génération en cours...</span>
-                            <span v-else>✨ Générer {{ mediaType === 'image' ? 'l\'Image' : 'la Vidéo' }}</span>
-                        </button>
+                        <div class="flex items-center gap-2">
+                            <button v-if="isGeneratingMedia" @click="abortCurrentRequest" class="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2.5 rounded-xl text-sm flex items-center gap-1">
+                                🛑 Interrompre
+                            </button>
+                            <button @click="generateMediaAction" :disabled="isGeneratingMedia || !mediaPrompt.trim() || !selectedMediaModel" class="bg-gradient-to-r from-aethas-cyan to-aethas-purple hover:opacity-90 text-white font-bold px-6 py-2.5 rounded-xl text-sm flex items-center gap-2 disabled:opacity-50">
+                                <span v-if="isGeneratingMedia">Génération en cours...</span>
+                                <span v-else>✨ Générer {{ mediaType === 'image' ? 'l\'Image' : 'la Vidéo' }}</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -420,7 +535,7 @@
                     <table class="w-full text-left text-sm text-gray-300">
                         <thead class="text-xs uppercase bg-gray-800 text-gray-400 sticky top-0">
                             <tr>
-                                <th class="px-4 py-3 text-center">Assigner Worker</th>
+                                <th class="px-4 py-3 text-center">Assigner Rôle</th>
                                 <th class="px-4 py-3">Modèle</th>
                                 <th class="px-4 py-3">Fournisseur</th>
                                 <th class="px-4 py-3">Domaine</th>
@@ -432,8 +547,7 @@
                         <tbody>
                             <tr v-for="model in filteredModels" :key="model.model_id" class="border-b border-gray-700 hover:bg-gray-800/50 transition-colors">
                                 <td class="px-4 py-3 text-center">
-                                    <input v-if="isModelWorkerSelectable(model)" type="radio" name="modelSelect" @click.prevent="openAssignModal(model.model_id)" class="w-4 h-4 text-aethas-cyan bg-gray-900 border-gray-600 focus:ring-aethas-cyan cursor-pointer">
-                                    <span v-else class="text-[10px] text-amber-400 font-semibold">Prompteur</span>
+                                    <input type="radio" name="modelSelect" @click.prevent="openAssignModal(model.model_id)" class="w-4 h-4 text-aethas-cyan bg-gray-900 border-gray-600 focus:ring-aethas-cyan cursor-pointer">
                                 </td>
                                 <td class="px-4 py-3 font-mono text-xs text-aethas-cyan break-all">{{ model.model_id }}</td>
                                 <td class="px-4 py-3 uppercase text-xs font-bold">{{ model.provider }}</td>
@@ -496,12 +610,16 @@
                         </div>
                     </div>
 
-                    <div v-if="isAiThinking" class="rounded-2xl p-4 bg-aethas-panel mr-auto border border-aethas-cyan/30 w-24">
+                    <div v-if="isAiThinking" class="rounded-2xl p-4 bg-aethas-panel mr-auto border border-aethas-cyan/30 flex items-center gap-4">
                         <div class="flex space-x-1.5 h-4 items-center">
                             <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce"></div>
                             <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce" style="animation-delay: 0.15s"></div>
                             <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce" style="animation-delay: 0.3s"></div>
                         </div>
+                        <span class="text-xs text-gray-300 font-mono">Orchestration en cours...</span>
+                        <button @click="abortCurrentRequest" class="text-xs bg-red-600 hover:bg-red-700 text-white font-bold px-2.5 py-1 rounded transition-colors">
+                            🛑 Interrompre
+                        </button>
                     </div>
                 </div>
 
@@ -591,7 +709,7 @@
                         </div>
 
                         <div class="border-r border-b lg:border-b-0 border-black p-1.5 bg-gray-800 flex flex-col justify-center">
-                            <label class="block text-[9px] text-amber-400 mb-1">PROMPTEUR (GEMINI)</label>
+                            <label class="block text-[9px] text-amber-400 mb-1">PROMPTEUR (GEMINI / OR)</label>
                             <select v-model="selectedPrompter" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
                                 <option v-for="gm in prompterConcatModels" :key="gm.model_id" :value="gm.model_id">{{ gm.name }}</option>
                             </select>
@@ -639,7 +757,7 @@
                             </div>
 
                             <div class="p-1.5 bg-gray-800 flex flex-col justify-center">
-                                <label class="block text-[9px] text-aethas-purple mb-1">CONCATENEUR (GEMINI)</label>
+                                <label class="block text-[9px] text-aethas-purple mb-1">CONCATENEUR (GEMINI / OR)</label>
                                 <select v-model="selectedConcatenator" class="w-full bg-aethas-dark border border-gray-700 rounded text-gray-200 text-[10px] p-1 outline-none truncate">
                                     <option v-for="gm in prompterConcatModels" :key="gm.model_id" :value="gm.model_id">{{ gm.name }}</option>
                                 </select>
@@ -664,7 +782,10 @@
 
                             <textarea v-model="prompt" @input="autoResize" @paste="handlePaste" @keydown.enter.exact.prevent="sendMessage" ref="promptTextarea" :disabled="isAiThinking" rows="1" class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none disabled:opacity-50 custom-scrollbar" :placeholder="selectedTheme === 'ocr_ce2' ? 'Joignez les copies CE2 + le corrigé de référence, puis lancez la correction...' : (attachedFiles.length > 0 ? attachedFiles.length + ' fichier(s) attaché(s)' : 'Posez votre question ou glissez jusqu\'à 10 fichiers ici...')"></textarea>
                             
-                            <button @click="sendMessage" :disabled="(!prompt.trim() && attachedFiles.length === 0) || isAiThinking" class="p-3 text-aethas-cyan hover:text-white disabled:opacity-50"><i data-lucide="send" class="w-5 h-5"></i></button>
+                            <button v-if="!isAiThinking" @click="sendMessage" :disabled="!prompt.trim() && attachedFiles.length === 0" class="p-3 text-aethas-cyan hover:text-white disabled:opacity-50"><i data-lucide="send" class="w-5 h-5"></i></button>
+                            <button v-else @click="abortCurrentRequest" class="px-4 py-2.5 mr-1 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs flex items-center gap-1 transition-colors flex-shrink-0 shadow-md">
+                                🛑 Interrompre
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -679,7 +800,7 @@
     createApp({
         setup() {
             const user = ref({ username: "Guest", is_admin: false, is_superadmin: false, avatar_path: null });
-            const projectVersion = ref("v0.19.4");
+            const projectVersion = ref("v0.20.0");
             const activeView = ref('chat'); 
             const settingsTab = ref('user');
             const isSidebarOpen = ref(true);
@@ -694,12 +815,143 @@
             const isAiThinking = ref(false);
             const isSyncing = ref(false);
 
+            // --- GESTION HERMES AGENT & INTERRUPTION ---
+            const hermesStatus = ref("offline");
+            const hermesPrompt = ref("");
+            const isHermesWorking = ref(false);
+            let abortController = null;
+
             const toastVisible = ref(false);
             const toastMessage = ref("");
             const showToast = (msg) => {
                 toastMessage.value = msg;
                 toastVisible.value = true;
                 setTimeout(() => { toastVisible.value = false; }, 5000);
+            };
+
+            const abortCurrentRequest = () => {
+                if (abortController) {
+                    abortController.abort();
+                    abortController = null;
+                }
+                isAiThinking.value = false;
+                isHermesWorking.value = false;
+                isGeneratingMedia.value = false;
+                showToast("🛑 Requête interrompue par l'utilisateur.");
+                fetch('/api/logs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: "Requête interrompue manuellement par l'utilisateur." })
+                }).catch(() => {});
+            };
+
+            const checkHermes = async () => {
+                try {
+                    const res = await fetch('/api/hermes/status');
+                    if (res.ok) {
+                        const data = await res.json();
+                        hermesStatus.value = data.status || "offline";
+                    } else {
+                        hermesStatus.value = "offline";
+                    }
+                } catch (e) {
+                    hermesStatus.value = "offline";
+                }
+                nextTick(() => lucide.createIcons());
+            };
+
+            const openHermesView = async () => {
+                activeView.value = 'hermes';
+                await checkHermes();
+                if (!activeProject.value && projects.value.length > 0) {
+                    await selectProject(projects.value[0], 'hermes');
+                }
+                nextTick(() => {
+                    const box = document.getElementById('hermes-chat-box');
+                    if (box) box.scrollTop = box.scrollHeight;
+                    lucide.createIcons();
+                });
+            };
+
+            const createNewProjectAndStayInHermes = async () => {
+                isLoading.value = true;
+                try {
+                    const res = await fetch('/api/projects', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ title: "Nouvelle discussion" })
+                    });
+                    if (res.ok) {
+                        const np = await res.json();
+                        projects.value.unshift(np);
+                        await selectProject(np, 'hermes');
+                    }
+                } catch (e) {} finally {
+                    isLoading.value = false;
+                }
+            };
+
+            const sendHermesMessage = async () => {
+                if (!hermesPrompt.value.trim() || isHermesWorking.value) return;
+                if (!activeProject.value) {
+                    await createNewProjectAndStayInHermes();
+                    if (!activeProject.value) return;
+                }
+
+                const text = hermesPrompt.value.trim();
+                hermesPrompt.value = "";
+                const historySnapshot = messages.value.map(m => ({ role: m.role, content: m.content }));
+                messages.value.push({ id: Date.now(), role: 'user', content: text });
+                isHermesWorking.value = true;
+
+                nextTick(() => {
+                    const box = document.getElementById('hermes-chat-box');
+                    if (box) box.scrollTop = box.scrollHeight;
+                });
+
+                abortController = new AbortController();
+                try {
+                    const res = await fetch('/api/hermes/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            project_id: activeProject.value.id,
+                            prompt: text,
+                            history: historySnapshot
+                        }),
+                        signal: abortController.signal
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (Array.isArray(data.messages)) {
+                            messages.value = data.messages;
+                        } else {
+                            const answer = data.response || data.message || JSON.stringify(data);
+                            messages.value.push({ id: Date.now() + 1, role: 'assistant', content: answer });
+                        }
+                        fetchProjects().then(() => {
+                            if (activeProject.value) {
+                                const updated = projects.value.find(p => p.id === activeProject.value.id);
+                                if (updated) activeProject.value.title = updated.title;
+                            }
+                        });
+                    } else {
+                        const errDetail = await readErrorDetail(res);
+                        messages.value.push({ id: Date.now() + 1, role: 'assistant', content: "Erreur Hermes : " + errDetail });
+                    }
+                } catch (e) {
+                    if (e.name !== 'AbortError') {
+                        messages.value.push({ id: Date.now() + 1, role: 'assistant', content: "Erreur réseau vers l'instance Hermes : " + e.message });
+                    }
+                } finally {
+                    isHermesWorking.value = false;
+                    abortController = null;
+                    nextTick(() => {
+                        const box = document.getElementById('hermes-chat-box');
+                        if (box) box.scrollTop = box.scrollHeight;
+                        lucide.createIcons();
+                    });
+                }
             };
 
             const readErrorDetail = async (res) => {
@@ -791,6 +1043,15 @@
                     const argonMod = modelInfo.models.find(m => (m.model_id || '').toLowerCase().includes('argon'));
                     list.push(argonMod ? { model_id: argonMod.model_id, name: argonMod.name || argonMod.model_id } : { model_id: 'argon', name: 'Argon (Spécial)' });
                 }
+                const freeOrModels = modelInfo.models
+                    .filter(m => (m.provider || '').toLowerCase() === 'openrouter' && m.is_free && m.domain !== 'Génération Image' && m.domain !== 'Génération Vidéo')
+                    .sort((a, b) => (b.context_length || 0) - (a.context_length || 0))
+                    .slice(0, 15);
+                freeOrModels.forEach(m => {
+                    if (!list.some(item => item.model_id === m.model_id)) {
+                        list.push({ model_id: m.model_id, name: `[OR-FREE] ${m.name || m.model_id}` });
+                    }
+                });
                 return list;
             });
 
@@ -1007,6 +1268,7 @@
                 if (!mediaPrompt.value.trim() || !selectedMediaModel.value) return;
                 isGeneratingMedia.value = true;
                 const requestedModel = selectedMediaModel.value;
+                abortController = new AbortController();
                 try {
                     const res = await fetch('/api/media/generate', {
                         method: 'POST',
@@ -1017,7 +1279,8 @@
                             model_id: requestedModel,
                             prompter_id: selectedMediaPrompter.value,
                             optimize_prompt: true
-                        })
+                        }),
+                        signal: abortController.signal
                     });
                     if (res.ok) {
                         const data = await res.json();
@@ -1034,9 +1297,12 @@
                         alert("Erreur de génération média : " + errDetail);
                     }
                 } catch (e) {
-                    alert("Erreur réseau lors de la génération : " + e.message);
+                    if (e.name !== 'AbortError') {
+                        alert("Erreur réseau lors de la génération : " + e.message);
+                    }
                 } finally {
                     isGeneratingMedia.value = false;
+                    abortController = null;
                 }
             };
 
@@ -1048,7 +1314,14 @@
 
             const toggleSidebar = () => { isSidebarOpen.value = !isSidebarOpen.value; };
             const autoResize = () => { const el = promptTextarea.value; if(el){ el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }};
-            const scrollToBottom = () => { nextTick(() => { const c = document.getElementById('chat-container'); if (c) c.scrollTop = c.scrollHeight; }); };
+            const scrollToBottom = () => {
+                nextTick(() => {
+                    const c = document.getElementById('chat-container');
+                    if (c) c.scrollTop = c.scrollHeight;
+                    const hb = document.getElementById('hermes-chat-box');
+                    if (hb) hb.scrollTop = hb.scrollHeight;
+                });
+            };
 
             const fetchAdminSettings = async () => {
                 try {
@@ -1109,13 +1382,19 @@
                 if (targetProj && targetProj.config_json) {
                     try { Object.assign(config, JSON.parse(targetProj.config_json)); } catch(e){}
                 }
-                const idx = parseInt(assignForm.role.replace('worker', '')) - 1;
-                config.workers[idx] = assignForm.modelId;
-                await saveProjectConfigToDB(assignForm.projectId, config);
-                if (activeProject.value && activeProject.value.id == assignForm.projectId) {
-                    workers.value = config.workers;
+                if (assignForm.role === 'prompter') {
+                    config.prompter = assignForm.modelId;
+                    if (activeProject.value && activeProject.value.id == assignForm.projectId) selectedPrompter.value = config.prompter;
+                } else if (assignForm.role === 'concatenator') {
+                    config.concatenator = assignForm.modelId;
+                    if (activeProject.value && activeProject.value.id == assignForm.projectId) selectedConcatenator.value = config.concatenator;
+                } else {
+                    const idx = parseInt(assignForm.role.replace('worker', '')) - 1;
+                    config.workers[idx] = assignForm.modelId;
+                    if (activeProject.value && activeProject.value.id == assignForm.projectId) workers.value = config.workers;
                 }
-                assignMessage.value = "Travailleur assigné et sauvegardé !";
+                await saveProjectConfigToDB(assignForm.projectId, config);
+                assignMessage.value = "Modèle assigné et sauvegardé !";
                 setTimeout(() => { closeAssignModal(); }, 1000);
             };
 
@@ -1158,12 +1437,12 @@
                     }
                 }
 
-                const validGeminiIds = prompterConcatModels.value.map(g => g.model_id);
-                if (!validGeminiIds.includes(selectedPrompter.value)) {
-                    selectedPrompter.value = validGeminiIds[0];
+                const validPrompterIds = prompterConcatModels.value.map(g => g.model_id);
+                if (!validPrompterIds.includes(selectedPrompter.value)) {
+                    selectedPrompter.value = validPrompterIds[0] || "gemini-3.5-flash-lite";
                 }
-                if (!validGeminiIds.includes(selectedConcatenator.value)) {
-                    selectedConcatenator.value = validGeminiIds[1] || validGeminiIds[0];
+                if (!validPrompterIds.includes(selectedConcatenator.value)) {
+                    selectedConcatenator.value = validPrompterIds[1] || validPrompterIds[0] || "gemini-3.5-flash-lite";
                 }
             };
 
@@ -1319,8 +1598,12 @@
 
             const fetchProjects = async () => { try { const res = await fetch('/api/projects'); if(res.ok) projects.value = await res.json(); nextTick(()=>lucide.createIcons()); } catch(e){} };
             
-            const selectProject = async (project) => { 
-                activeView.value = 'chat'; 
+            const selectProject = async (project, keepView = null) => { 
+                if (keepView) {
+                    activeView.value = keepView;
+                } else if (activeView.value !== 'hermes') {
+                    activeView.value = 'chat';
+                }
                 activeProject.value = project; 
                 messages.value = []; 
 
@@ -1364,7 +1647,7 @@
                 activeView.value = 'chat'; isLoading.value = true; 
                 try { 
                     const res = await fetch('/api/projects', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({title: "Nouvelle discussion"})}); 
-                    if(res.ok){ const np = await res.json(); projects.value.unshift(np); selectProject(np); }
+                    if(res.ok){ const np = await res.json(); projects.value.unshift(np); selectProject(np, 'chat'); }
                 } catch(e){} finally{isLoading.value = false;} 
             };
 
@@ -1386,6 +1669,7 @@
                 isAiThinking.value = true; 
                 scrollToBottom();
                 
+                abortController = new AbortController();
                 const payloadFiles = [...attachedFiles.value];
                 const payload = { 
                     role: 'user', 
@@ -1404,7 +1688,12 @@
                 attachedFiles.value = [];
 
                 try {
-                    const response = await fetch(`/api/projects/${activeProject.value.id}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    const response = await fetch(`/api/projects/${activeProject.value.id}/messages`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                        signal: abortController.signal
+                    });
                     if (response.ok) { 
                         const data = await response.json(); 
                         if (Array.isArray(data)) messages.value = data; 
@@ -1416,9 +1705,12 @@
                         alert("Erreur API IA : " + errDetail); 
                     }
                 } catch (error) {
-                    alert("Erreur réseau : " + error.message);
+                    if (error.name !== 'AbortError') {
+                        alert("Erreur réseau : " + error.message);
+                    }
                 } finally { 
                     isAiThinking.value = false; 
+                    abortController = null;
                     scrollToBottom(); 
                     nextTick(()=>lucide.createIcons()); 
                     fetchProjects().then(() => {
@@ -1453,12 +1745,14 @@
                     if(activeProject.value) validateConfigAndReplace();
                 }); 
                 fetchFinances(); 
+                checkHermes();
                 logInterval = setInterval(fetchLogs, 2000);
             });
 
             return { 
                 user, projectVersion, activeView, settingsTab, isSidebarOpen, toggleSidebar, prompt, autoResize, promptTextarea, 
                 projects, pinnedProjects, recentProjects, activeProject, messages, isAiThinking,
+                hermesStatus, hermesPrompt, isHermesWorking, checkHermes, openHermesView, createNewProjectAndStayInHermes, sendHermesMessage, abortCurrentRequest,
                 createNewProject, selectProject, renameProject, sendMessage, isLoading, togglePin, deleteProject,
                 openSettings, passForm, settingsMessage, isSavingSettings, changePassword, uploadAvatar,
                 adminSettings, adminSettingsMessage, isSavingAdminSettings, saveAdminSettings,
