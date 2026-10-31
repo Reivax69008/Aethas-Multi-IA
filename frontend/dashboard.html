@@ -10,6 +10,10 @@
     </script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Markdown & Coloration Syntaxique (Points 10 & 11) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <style>
         body { background-color: #0f172a; color: #f8fafc; font-family: 'Inter', sans-serif; }
         .neon-text { background: linear-gradient(to right, #06b6d4, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
@@ -30,51 +34,27 @@
             transition: all 0.2s ease;
             flex-shrink: 0;
         }
-        .lm-badge svg {
-            width: 14px;
-            height: 14px;
-            stroke-width: 2;
-        }
-        .lm-badge-vision {
-            background-color: rgba(234, 179, 8, 0.14);
-            border-color: rgba(234, 179, 8, 0.45);
-            color: #facc15;
-            box-shadow: 0 0 8px rgba(234, 179, 8, 0.15);
-        }
-        .lm-badge-tools {
-            background-color: rgba(59, 130, 246, 0.15);
-            border-color: rgba(59, 130, 246, 0.45);
-            color: #3b82f6;
-            box-shadow: 0 0 8px rgba(59, 130, 246, 0.15);
-        }
-        .lm-badge-reason {
-            background-color: rgba(34, 197, 94, 0.15);
-            border-color: rgba(34, 197, 94, 0.45);
-            color: #22c55e;
-            box-shadow: 0 0 8px rgba(34, 197, 94, 0.15);
-        }
-        .lm-badge-audio {
-            background-color: rgba(168, 85, 247, 0.15);
-            border-color: rgba(168, 85, 247, 0.45);
-            color: #c084fc;
-            box-shadow: 0 0 8px rgba(168, 85, 247, 0.15);
-        }
-        .lm-badge-cyan {
-            background-color: rgba(6, 182, 212, 0.15);
-            border-color: rgba(6, 182, 212, 0.45);
-            color: #22d3ee;
-            box-shadow: 0 0 8px rgba(6, 182, 212, 0.15);
-        }
-        .lm-badge-red {
-            background-color: rgba(239, 68, 68, 0.18);
-            border-color: rgba(239, 68, 68, 0.55);
-            color: #f87171;
-            box-shadow: 0 0 10px rgba(239, 68, 68, 0.25);
-        }
-        .lm-badge-inactive {
-            opacity: 0.28;
-            filter: grayscale(60%);
-        }
+        .lm-badge svg { width: 14px; height: 14px; stroke-width: 2; }
+        .lm-badge-vision { background-color: rgba(234, 179, 8, 0.14); border-color: rgba(234, 179, 8, 0.45); color: #facc15; box-shadow: 0 0 8px rgba(234, 179, 8, 0.15); }
+        .lm-badge-tools { background-color: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.45); color: #3b82f6; box-shadow: 0 0 8px rgba(59, 130, 246, 0.15); }
+        .lm-badge-reason { background-color: rgba(34, 197, 94, 0.15); border-color: rgba(34, 197, 94, 0.45); color: #22c55e; box-shadow: 0 0 8px rgba(34, 197, 94, 0.15); }
+        .lm-badge-audio { background-color: rgba(168, 85, 247, 0.15); border-color: rgba(168, 85, 247, 0.45); color: #c084fc; box-shadow: 0 0 8px rgba(168, 85, 247, 0.15); }
+        .lm-badge-cyan { background-color: rgba(6, 182, 212, 0.15); border-color: rgba(6, 182, 212, 0.45); color: #22d3ee; box-shadow: 0 0 8px rgba(6, 182, 212, 0.15); }
+        .lm-badge-red { background-color: rgba(239, 68, 68, 0.18); border-color: rgba(239, 68, 68, 0.55); color: #f87171; box-shadow: 0 0 10px rgba(239, 68, 68, 0.25); }
+        .lm-badge-inactive { opacity: 0.28; filter: grayscale(60%); }
+
+        /* Style Markdown Amélioré (OpenWebUI / Gemini) */
+        .markdown-body { font-size: 0.92rem; line-height: 1.7; word-break: break-word; }
+        .markdown-body p { margin-bottom: 0.75rem; }
+        .markdown-body pre { background: #0b0f19; border: 1px solid #334155; border-radius: 0.5rem; padding: 1rem; margin: 1rem 0; overflow-x: auto; }
+        .markdown-body code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; background: rgba(15, 23, 42, 0.6); padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-size: 0.85em; }
+        .markdown-body pre code { background: transparent; padding: 0; }
+        .markdown-body ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 0.75rem; }
+        .markdown-body ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 0.75rem; }
+        .markdown-body blockquote { border-left: 4px solid #06b6d4; padding-left: 1rem; color: #94a3b8; margin: 1rem 0; font-style: italic; }
+        .markdown-body table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        .markdown-body th, .markdown-body td { border: 1px solid #334155; padding: 0.5rem 0.75rem; text-align: left; }
+        .markdown-body th { background: #1e293b; color: #06b6d4; }
     </style>
 </head>
 <body class="h-screen w-screen flex overflow-hidden">
@@ -85,6 +65,29 @@
     <div v-if="toastVisible" class="fixed bottom-6 right-6 bg-gray-800 border-l-4 border-aethas-cyan text-gray-200 p-4 rounded shadow-[0_0_15px_rgba(6,182,212,0.3)] z-[200] flex items-center gap-3 transition-opacity duration-300 max-w-md">
         <span class="lm-badge lm-badge-cyan"><i data-lucide="check-circle" class="w-4 h-4"></i></span>
         <span class="text-xs font-medium">{{ toastMessage }}</span>
+    </div>
+
+    <!-- MODAL CUSTOM CHARTE GRAPHIQUE (POINT 5) -->
+    <div v-if="customModal.isOpen" class="fixed inset-0 bg-black/80 z-[250] flex items-center justify-center p-4">
+        <div class="bg-aethas-panel border border-gray-600 rounded-2xl w-full max-w-md overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.8)]">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/60">
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <span class="lm-badge lm-badge-cyan"><i data-lucide="info" class="w-3.5 h-3.5"></i></span>
+                    {{ customModal.title }}
+                </h3>
+                <button @click="closeCustomModal(false)" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <p class="text-sm text-gray-300 leading-relaxed">{{ customModal.message }}</p>
+                <div v-if="customModal.isPrompt">
+                    <input v-model="customModal.inputValue" type="text" class="w-full bg-aethas-dark border border-gray-600 rounded-lg px-4 py-2.5 text-sm text-white focus:border-aethas-cyan focus:outline-none" @keydown.enter.prevent="closeCustomModal(true)">
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button v-if="customModal.isConfirm || customModal.isPrompt" @click="closeCustomModal(false)" class="bg-gray-800 hover:bg-gray-700 text-gray-300 px-4 py-2 rounded-lg text-xs font-semibold transition-colors">Annuler</button>
+                    <button @click="closeCustomModal(true)" class="bg-aethas-cyan hover:bg-cyan-600 text-black px-5 py-2 rounded-lg text-xs font-bold transition-colors shadow">Valider</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- MODAL ASSIGNATION MODÈLE -->
@@ -248,6 +251,12 @@
                 </div>
             </div>
             <div class="flex items-center gap-3">
+                <!-- Décompte Cookie Session 10h (Point 8) -->
+                <div class="hidden sm:flex items-center gap-1.5 bg-gray-900 border border-gray-700 px-3 py-1 rounded-lg text-xs font-mono" :class="cookieTimeRemaining <= 300 ? 'border-red-500 text-red-400 animate-pulse' : (cookieTimeRemaining <= 1800 ? 'border-amber-500 text-amber-300' : 'text-aethas-cyan')">
+                    <span>⏱️ Session :</span>
+                    <span class="font-bold">{{ formattedCookieTime }}</span>
+                </div>
+
                 <div v-if="isDictating" class="flex items-center gap-2 bg-red-950/70 border border-red-500/60 text-red-200 px-3 py-1 rounded-full text-xs font-semibold animate-pulse">
                     <span class="lm-badge lm-badge-red" style="width:20px;height:20px;"><i data-lucide="mic" class="w-3 h-3"></i></span>
                     <span>Dictée vocale active ({{ dictationTarget }})...</span>
@@ -313,7 +322,16 @@
 
                         <div class="text-gray-200 text-sm leading-relaxed w-full">
                             <template v-for="(part, index) in parseMessage(msg.content)" :key="index">
-                                <div v-if="part.type === 'text'" class="whitespace-pre-wrap font-sans w-full">{{ part.content }}</div>
+                                <div v-if="part.type === 'think'" class="my-3 bg-gray-900/80 border border-green-500/40 rounded-xl overflow-hidden shadow-inner">
+                                    <details class="group">
+                                        <summary class="px-4 py-2.5 bg-green-950/30 text-green-300 text-xs font-mono cursor-pointer flex items-center justify-between select-none hover:bg-green-950/50">
+                                            <span class="flex items-center gap-2">🧠 Chaîne de pensée &amp; Raisonnement de l'IA</span>
+                                            <span class="text-[10px] text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+                                        </summary>
+                                        <div class="p-4 text-xs font-mono text-gray-300 whitespace-pre-wrap border-t border-green-500/20 max-h-72 overflow-y-auto custom-scrollbar bg-black/40">{{ part.content }}</div>
+                                    </details>
+                                </div>
+                                <div v-if="part.type === 'text'" class="markdown-body w-full" v-html="renderMarkdown(part.content)"></div>
                                 <div v-if="part.type === 'media'" class="my-4 bg-black rounded-xl border border-aethas-purple/50 p-3 flex flex-col items-center">
                                     <img v-if="part.mediaType === 'IMAGE'" :src="part.url" class="max-h-[420px] rounded-lg object-contain">
                                     <video v-else :src="part.url" controls autoplay loop class="max-h-[420px] rounded-lg object-contain"></video>
@@ -322,15 +340,15 @@
                                         <a :href="part.url" :download="'media_' + Date.now() + (part.mediaType === 'VIDEO' ? '.mp4' : '.png')" class="bg-gray-800 hover:bg-gray-700 text-aethas-cyan px-2.5 py-1 rounded border border-gray-600">⬇ Télécharger</a>
                                     </div>
                                 </div>
-                                <div v-if="part.type === 'code'" class="my-4 bg-gray-900 rounded-lg border border-gray-700 overflow-hidden shadow-inner w-full">
-                                    <div class="flex justify-between items-center px-4 py-2 bg-gray-800 border-b border-gray-700">
-                                        <span class="text-xs text-gray-400 font-mono flex items-center gap-2">{{ part.language || 'code' }}</span>
-                                        <div class="flex items-center">
-                                            <button @click="copyToClipboard(part.content)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded mr-2">Copier Code</button>
-                                            <button @click="downloadFile(part.content, part.language)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">⬇ Fichier</button>
+                                <div v-if="part.type === 'code'" class="my-4 bg-[#0b0f19] rounded-xl border border-gray-700 overflow-hidden shadow-inner w-full">
+                                    <div class="flex justify-between items-center px-4 py-2 bg-gray-900 border-b border-gray-800">
+                                        <span class="text-xs text-aethas-cyan font-mono flex items-center gap-2 uppercase tracking-wide">{{ part.language || 'code' }}</span>
+                                        <div class="flex items-center gap-2">
+                                            <button @click="copyToClipboard(part.content)" class="text-gray-300 hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-800 hover:bg-gray-700 px-2.5 py-1 rounded border border-gray-700">Copier Code</button>
+                                            <button @click="downloadFile(part.content, part.language)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-800 hover:bg-gray-700 px-2.5 py-1 rounded border border-gray-700">⬇ Fichier</button>
                                         </div>
                                     </div>
-                                    <pre class="p-4 text-xs font-mono text-gray-300 overflow-x-auto custom-scrollbar w-full"><code>{{ part.content }}</code></pre>
+                                    <pre class="p-4 text-xs font-mono text-gray-200 overflow-x-auto custom-scrollbar w-full"><code>{{ part.content }}</code></pre>
                                 </div>
                             </template>
                         </div>
@@ -737,7 +755,16 @@
                         
                         <div class="text-gray-200 text-sm leading-relaxed w-full">
                             <template v-for="(part, index) in parseMessage(msg.content)" :key="index">
-                                <div v-if="part.type === 'text'" class="whitespace-pre-wrap font-sans w-full">{{ part.content }}</div>
+                                <div v-if="part.type === 'think'" class="my-3 bg-gray-900/80 border border-green-500/40 rounded-xl overflow-hidden shadow-inner">
+                                    <details class="group">
+                                        <summary class="px-4 py-2.5 bg-green-950/30 text-green-300 text-xs font-mono cursor-pointer flex items-center justify-between select-none hover:bg-green-950/50">
+                                            <span class="flex items-center gap-2">🧠 Chaîne de pensée &amp; Raisonnement de l'IA</span>
+                                            <span class="text-[10px] text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+                                        </summary>
+                                        <div class="p-4 text-xs font-mono text-gray-300 whitespace-pre-wrap border-t border-green-500/20 max-h-72 overflow-y-auto custom-scrollbar bg-black/40">{{ part.content }}</div>
+                                    </details>
+                                </div>
+                                <div v-if="part.type === 'text'" class="markdown-body w-full" v-html="renderMarkdown(part.content)"></div>
                                 <div v-if="part.type === 'media'" class="my-4 bg-black rounded-xl border border-aethas-purple/50 p-3 flex flex-col items-center">
                                     <img v-if="part.mediaType === 'IMAGE'" :src="part.url" class="max-h-[420px] rounded-lg object-contain">
                                     <video v-else :src="part.url" controls autoplay loop class="max-h-[420px] rounded-lg object-contain"></video>
@@ -746,15 +773,15 @@
                                         <a :href="part.url" :download="'media_' + Date.now() + (part.mediaType === 'VIDEO' ? '.mp4' : '.png')" class="bg-gray-800 hover:bg-gray-700 text-aethas-cyan px-2.5 py-1 rounded border border-gray-600">⬇ Télécharger</a>
                                     </div>
                                 </div>
-                                <div v-if="part.type === 'code'" class="my-4 bg-gray-900 rounded-lg border border-gray-700 overflow-hidden shadow-inner w-full">
-                                    <div class="flex justify-between items-center px-4 py-2 bg-gray-800 border-b border-gray-700">
-                                        <span class="text-xs text-gray-400 font-mono flex items-center gap-2">{{ part.language || 'code' }}</span>
-                                        <div class="flex items-center">
-                                            <button @click="copyToClipboard(part.content)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded mr-2">Copier Code</button>
-                                            <button @click="downloadFile(part.content, part.language)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">⬇ Fichier</button>
+                                <div v-if="part.type === 'code'" class="my-4 bg-[#0b0f19] rounded-xl border border-gray-700 overflow-hidden shadow-inner w-full">
+                                    <div class="flex justify-between items-center px-4 py-2 bg-gray-900 border-b border-gray-800">
+                                        <span class="text-xs text-aethas-cyan font-mono flex items-center gap-2 uppercase tracking-wide">{{ part.language || 'code' }}</span>
+                                        <div class="flex items-center gap-2">
+                                            <button @click="copyToClipboard(part.content)" class="text-gray-300 hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-800 hover:bg-gray-700 px-2.5 py-1 rounded border border-gray-700">Copier Code</button>
+                                            <button @click="downloadFile(part.content, part.language)" class="text-aethas-cyan hover:text-white flex items-center gap-1 text-xs transition-colors bg-gray-800 hover:bg-gray-700 px-2.5 py-1 rounded border border-gray-700">⬇ Fichier</button>
                                         </div>
                                     </div>
-                                    <pre class="p-4 text-xs font-mono text-gray-300 overflow-x-auto custom-scrollbar w-full"><code>{{ part.content }}</code></pre>
+                                    <pre class="p-4 text-xs font-mono text-gray-200 overflow-x-auto custom-scrollbar w-full"><code>{{ part.content }}</code></pre>
                                 </div>
                             </template>
                         </div>
@@ -765,22 +792,46 @@
                         </div>
                     </div>
 
-                    <div v-if="isAiThinking" class="rounded-2xl p-4 bg-aethas-panel mr-auto border border-aethas-cyan/30 flex items-center gap-4">
-                        <div class="flex space-x-1.5 h-4 items-center">
-                            <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce"></div>
-                            <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce" style="animation-delay: 0.15s"></div>
-                            <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce" style="animation-delay: 0.3s"></div>
+                    <!-- Encart de Raisonnement / Étape en direct (Point 1) -->
+                    <div v-if="isAiThinking" class="rounded-2xl p-4 bg-aethas-panel mr-auto border border-aethas-cyan/30 flex flex-col gap-3 w-full shadow-lg">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="flex space-x-1.5 h-4 items-center">
+                                    <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce"></div>
+                                    <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce" style="animation-delay: 0.15s"></div>
+                                    <div class="w-2 h-2 bg-aethas-cyan rounded-full animate-bounce" style="animation-delay: 0.3s"></div>
+                                </div>
+                                <span class="text-xs text-aethas-cyan font-mono font-bold">{{ liveTaskStep || 'Orchestration en cours...' }}</span>
+                            </div>
+                            <button @click="abortCurrentRequest" class="text-xs bg-red-600 hover:bg-red-700 text-white font-bold px-2.5 py-1 rounded transition-colors shadow">
+                                🛑 Interrompre
+                            </button>
                         </div>
-                        <span class="text-xs text-gray-300 font-mono">Orchestration en cours...</span>
-                        <button @click="abortCurrentRequest" class="text-xs bg-red-600 hover:bg-red-700 text-white font-bold px-2.5 py-1 rounded transition-colors">
-                            🛑 Interrompre
-                        </button>
+                        <div v-if="liveTaskReasoning" class="bg-black/50 border border-green-500/30 rounded-xl p-3 text-xs font-mono text-green-300 max-h-48 overflow-y-auto custom-scrollbar whitespace-pre-wrap">
+                            <span class="text-gray-400 font-bold block mb-1">🧠 Raisonnement en direct de l'IA :</span>
+                            {{ liveTaskReasoning }}
+                        </div>
                     </div>
                 </div>
 
                 <!-- ZONE DE PILOTAGE IA PLEINE LARGEUR -->
                 <div class="px-4 md:px-8 pt-3 pb-3 w-full flex-shrink-0 border-t border-gray-800 bg-aethas-dark/95">
                     
+                    <!-- Panneau Consignes Spécifiques Persistantes par Discussion -->
+                    <div class="mb-2 bg-gray-900 border border-gray-700 rounded-xl p-2.5 flex flex-col gap-1.5 shadow-inner">
+                        <div class="flex items-center justify-between cursor-pointer select-none" @click="showCustomInstructionsBox = !showCustomInstructionsBox">
+                            <span class="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
+                                📌 Consignes spécifiques persistantes (cette discussion) : 
+                                <span class="text-gray-400 font-normal italic truncate max-w-md">{{ projectCustomInstructions || 'Aucune consigne spécifique (cliquer pour ajouter)...' }}</span>
+                            </span>
+                            <span class="text-xs text-aethas-cyan underline">{{ showCustomInstructionsBox ? 'Masquer' : 'Modifier' }}</span>
+                        </div>
+                        <div v-if="showCustomInstructionsBox" class="flex gap-2 pt-1">
+                            <input v-model="projectCustomInstructions" type="text" placeholder="Ex: Rédige toujours en TypeScript strict, vouvoie-moi, écris les explications en français..." class="flex-1 bg-aethas-dark border border-gray-600 rounded-lg px-3 py-1.5 text-xs text-gray-200 focus:border-amber-400 outline-none">
+                            <button @click="saveProjectInstructions" class="bg-amber-500 hover:bg-amber-600 text-black font-bold px-4 py-1 rounded-lg text-xs transition-colors">Enregistrer</button>
+                        </div>
+                    </div>
+
                     <div v-if="selectedTheme === 'ocr_ce2'" class="mb-2 px-3 py-1.5 rounded-lg bg-amber-950/60 border border-amber-500/60 text-amber-200 text-xs flex items-center justify-between">
                         <div>
                             <strong>🏫 Mode OCR &amp; Correction CE2 (Céline) actif :</strong> Transcription exacte à l'identique des copies (aucune faute d'élève corrigée dans la version initiale) + retour individuel avec version corrigée selon le corrigé.
@@ -935,6 +986,7 @@
                                 <input type="file" multiple @change="handleFileUpload" class="hidden">
                             </label>
 
+                            <!-- Bouton Dictée Vocale (Compatible Opera GX via MediaRecorder) (Point 6) -->
                             <button @click="toggleDictation('chat')" type="button" :class="['mb-1 transition-colors', isDictating && dictationTarget === 'chat' ? 'lm-badge lm-badge-red animate-pulse' : 'lm-badge lm-badge-audio hover:opacity-90']" style="width:38px;height:38px;" title="Dicter votre prompt vocalement (Microphone)">
                                 <i data-lucide="mic" class="w-4 h-4"></i>
                             </button>
@@ -980,79 +1032,127 @@
             const isAiThinking = ref(false);
             const isSyncing = ref(false);
 
+            // --- SUIVI EN DIRECT & RAISONNEMENT (POINT 1) ---
+            const liveTaskStep = ref("");
+            const liveTaskReasoning = ref("");
+            let statusPollingTimer = null;
+
+            // --- CONSIGNES SPÉCIFIQUES PERSISTANTES PAR DISCUSSION ---
+            const projectCustomInstructions = ref("");
+            const showCustomInstructionsBox = ref(false);
+
+            // --- DÉCOMPTE COOKIE 10H (POINT 8) ---
+            const cookieExpiresAt = ref(null);
+            const cookieTimeRemaining = ref(36000);
+            const formattedCookieTime = computed(() => {
+                const s = Math.max(0, cookieTimeRemaining.value);
+                const hrs = Math.floor(s / 3600);
+                const mins = Math.floor((s % 3600) / 60);
+                const secs = s % 60;
+                return `${String(hrs).padStart(2, '0')}h ${String(mins).padStart(2, '0')}m ${String(secs).padStart(2, '0')}s`;
+            });
+
+            // --- MODAL CUSTOM CHARTE GRAPHIQUE (POINT 5) ---
+            const customModal = reactive({
+                isOpen: false,
+                title: "",
+                message: "",
+                isPrompt: false,
+                isConfirm: false,
+                inputValue: "",
+                resolveFn: null
+            });
+
+            const showCustomModal = (title, message, isPrompt = false, isConfirm = false, defaultVal = "") => {
+                return new Promise((resolve) => {
+                    customModal.title = title;
+                    customModal.message = message;
+                    customModal.isPrompt = isPrompt;
+                    customModal.isConfirm = isConfirm;
+                    customModal.inputValue = defaultVal;
+                    customModal.isOpen = true;
+                    customModal.resolveFn = resolve;
+                    nextTick(() => lucide.createIcons());
+                });
+            };
+
+            const closeCustomModal = (confirmed) => {
+                const res = customModal.isPrompt ? (confirmed ? customModal.inputValue : null) : confirmed;
+                customModal.isOpen = false;
+                if (customModal.resolveFn) customModal.resolveFn(res);
+                customModal.resolveFn = null;
+            };
+
             // --- GESTION HERMES AGENT & INTERRUPTION ---
             const hermesStatus = ref("offline");
             const hermesPrompt = ref("");
             const isHermesWorking = ref(false);
             let abortController = null;
 
-            // --- DICTÉE VOCALE (WEB SPEECH API) ---
+            // --- DICTÉE VOCALE (SUPPORT OPERA GX VIA MEDIARECORDER) (POINT 6) ---
             const isDictating = ref(false);
             const dictationTarget = ref("chat"); // 'chat', 'media', 'hermes'
-            let speechRecognition = null;
+            let mediaRecorder = null;
+            let audioChunks = [];
 
             const stopDictation = () => {
-                if (speechRecognition) {
-                    try { speechRecognition.stop(); } catch (e) {}
+                if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                    try { mediaRecorder.stop(); } catch(e){}
                 }
                 isDictating.value = false;
             };
 
-            const toggleDictation = (target = "chat") => {
-                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                if (!SpeechRecognition) {
-                    showToast("⚠️ Votre navigateur ne supporte pas la reconnaissance vocale Web Speech.");
+            const toggleDictation = async (target = "chat") => {
+                if (isDictating.value) {
+                    stopDictation();
                     return;
                 }
-                if (isDictating.value) {
-                    const prevTarget = dictationTarget.value;
-                    stopDictation();
-                    if (prevTarget === target) return;
-                }
-
                 dictationTarget.value = target;
-                speechRecognition = new SpeechRecognition();
-                speechRecognition.lang = "fr-FR";
-                speechRecognition.continuous = true;
-                speechRecognition.interimResults = false;
-
-                speechRecognition.onstart = () => {
-                    isDictating.value = true;
-                    showToast(`🎙️ Dictée vocale activée (${target.toUpperCase()}). Parlez maintenant...`);
-                    nextTick(() => lucide.createIcons());
-                };
-
-                speechRecognition.onresult = (event) => {
-                    let transcript = "";
-                    for (let i = event.resultIndex; i < event.results.length; i++) {
-                        if (event.results[i].isFinal) {
-                            transcript += event.results[i][0].transcript + " ";
-                        }
-                    }
-                    const cleanText = transcript.trim();
-                    if (!cleanText) return;
-                    if (dictationTarget.value === "media") {
-                        mediaPrompt.value = (mediaPrompt.value ? mediaPrompt.value.trim() + " " : "") + cleanText;
-                    } else if (dictationTarget.value === "hermes") {
-                        hermesPrompt.value = (hermesPrompt.value ? hermesPrompt.value.trim() + " " : "") + cleanText;
-                    } else {
-                        prompt.value = (prompt.value ? prompt.value.trim() + " " : "") + cleanText;
-                        nextTick(() => autoResize());
-                    }
-                };
-
-                speechRecognition.onerror = () => {
-                    isDictating.value = false;
-                };
-
-                speechRecognition.onend = () => {
-                    isDictating.value = false;
-                    nextTick(() => lucide.createIcons());
-                };
-
                 try {
-                    speechRecognition.start();
-                } catch (e) {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+                    audioChunks = [];
+                    mediaRecorder.ondataavailable = (event) => {
+                        if (event.data && event.data.size > 0) audioChunks.push(event.data);
+                    };
+                    mediaRecorder.onstop = async () => {
+                        isDictating.value = false;
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        stream.getTracks().forEach(track => track.stop());
+                        if (audioBlob.size < 500) return;
+
+                        showToast("🎙️ Transcription vocale serveur en cours (Whisper/Gemini)...");
+                        const formData = new FormData();
+                        formData.append("file", audioBlob, "speech.webm");
+                        try {
+                            const res = await fetch('/api/audio/transcribe', { method: 'POST', body: formData });
+                            if (res.ok) {
+                                const data = await res.json();
+                                const cleanText = (data.text || "").trim();
+                                if (cleanText) {
+                                    if (dictationTarget.value === "media") {
+                                        mediaPrompt.value = (mediaPrompt.value ? mediaPrompt.value.trim() + " " : "") + cleanText;
+                                    } else if (dictationTarget.value === "hermes") {
+                                        hermesPrompt.value = (hermesPrompt.value ? hermesPrompt.value.trim() + " " : "") + cleanText;
+                                    } else {
+                                        prompt.value = (prompt.value ? prompt.value.trim() + " " : "") + cleanText;
+                                        nextTick(() => autoResize());
+                                    }
+                                    showToast("✅ Dictée transcrite avec succès !");
+                                }
+                            } else {
+                                showToast("⚠️ Erreur lors de la transcription vocale.");
+                            }
+                        } catch(e) {
+                            showToast("⚠️ Erreur réseau dictée vocale.");
+                        }
+                    };
+                    mediaRecorder.start();
+                    isDictating.value = true;
+                    showToast(`🎙️ Enregistrement vocal actif (${target.toUpperCase()}). Parlez, puis réappuyez sur le micro pour valider...`);
+                    nextTick(() => lucide.createIcons());
+                } catch(e) {
+                    showToast("⚠️ Accès au microphone refusé ou non supporté par le navigateur.");
                     isDictating.value = false;
                 }
             };
@@ -1064,6 +1164,20 @@
                 toastVisible.value = true;
                 nextTick(() => lucide.createIcons());
                 setTimeout(() => { toastVisible.value = false; }, 5000);
+            };
+
+            // --- NOTIFICATIONS NAVIGATEUR OPERA GX (POINT 7) ---
+            const triggerBrowserNotification = (title, bodyText) => {
+                if (!("Notification" in window)) return;
+                if (Notification.permission === "granted") {
+                    new Notification(title, { body: bodyText, icon: "/assets/logo.png" });
+                } else if (Notification.permission !== "denied") {
+                    Notification.requestPermission().then(permission => {
+                        if (permission === "granted") {
+                            new Notification(title, { body: bodyText, icon: "/assets/logo.png" });
+                        }
+                    });
+                }
             };
 
             const abortCurrentRequest = async () => {
@@ -1078,11 +1192,6 @@
                 isHermesWorking.value = false;
                 isGeneratingMedia.value = false;
                 showToast("🛑 Requête interrompue par l'utilisateur.");
-                fetch('/api/logs', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: "Requête interrompue manuellement par l'utilisateur." })
-                }).catch(() => {});
             };
 
             const checkHermes = async () => {
@@ -1140,7 +1249,6 @@
 
                 const text = hermesPrompt.value.trim();
                 hermesPrompt.value = "";
-                const historySnapshot = messages.value.map(m => ({ role: m.role, content: m.content }));
                 messages.value.push({ id: Date.now(), role: 'user', content: text });
                 isHermesWorking.value = true;
 
@@ -1149,17 +1257,14 @@
                     if (box) box.scrollTop = box.scrollHeight;
                 });
 
-                abortController = new AbortController();
                 try {
                     const res = await fetch('/api/hermes/chat', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             project_id: activeProject.value.id,
-                            prompt: text,
-                            history: historySnapshot
-                        }),
-                        signal: abortController.signal
+                            prompt: text
+                        })
                     });
                     if (res.ok) {
                         const data = await res.json();
@@ -1169,23 +1274,16 @@
                             const answer = data.response || data.message || JSON.stringify(data);
                             messages.value.push({ id: Date.now() + 1, role: 'assistant', content: answer });
                         }
-                        fetchProjects().then(() => {
-                            if (activeProject.value) {
-                                const updated = projects.value.find(p => p.id === activeProject.value.id);
-                                if (updated) activeProject.value.title = updated.title;
-                            }
-                        });
+                        triggerBrowserNotification("AETHAS38 - Hermes", "La réponse d'Hermes est prête !");
+                        fetchProjects();
                     } else {
                         const errDetail = await readErrorDetail(res);
                         messages.value.push({ id: Date.now() + 1, role: 'assistant', content: "Erreur Hermes : " + errDetail });
                     }
                 } catch (e) {
-                    if (e.name !== 'AbortError') {
-                        messages.value.push({ id: Date.now() + 1, role: 'assistant', content: "Erreur réseau vers l'instance Hermes : " + e.message });
-                    }
+                    messages.value.push({ id: Date.now() + 1, role: 'assistant', content: "Erreur réseau vers l'instance Hermes : " + e.message });
                 } finally {
                     isHermesWorking.value = false;
-                    abortController = null;
                     nextTick(() => {
                         const box = document.getElementById('hermes-chat-box');
                         if (box) box.scrollTop = box.scrollHeight;
@@ -1260,7 +1358,6 @@
             const pinnedProjects = computed(() => projects.value.filter(p => p.is_pinned));
             const recentProjects = computed(() => projects.value.filter(p => !p.is_pinned));
 
-            // Détection de capacité (BDD + fallback intelligent côté client si ancien modèle)
             const hasCap = (m, capType) => {
                 if (!m) return false;
                 const mid = (m.model_id || '').toLowerCase();
@@ -1540,7 +1637,6 @@
                 }
             };
 
-            // --- GESTION DES IMAGES JOINTES DANS LE STUDIO IMAGE ---
             const processMediaImageFile = (file) => {
                 if (!file || !file.type.startsWith('image/')) {
                     showToast("Seuls les fichiers image sont acceptés dans le Studio Image.");
@@ -1618,11 +1714,11 @@
                         nextTick(() => lucide.createIcons());
                     } else {
                         const errDetail = await readErrorDetail(res);
-                        alert("Erreur de génération média : " + errDetail);
+                        showToast("Erreur de génération média : " + errDetail);
                     }
                 } catch (e) {
                     if (e.name !== 'AbortError') {
-                        alert("Erreur réseau lors de la génération : " + e.message);
+                        showToast("Erreur réseau lors de la génération : " + e.message);
                     }
                 } finally {
                     isGeneratingMedia.value = false;
@@ -1699,6 +1795,22 @@
                 } catch(e) {}
             };
 
+            const saveProjectInstructions = async () => {
+                if (!activeProject.value) return;
+                try {
+                    const res = await fetch(`/api/projects/${activeProject.value.id}/instructions`, {
+                        method: 'PUT',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ custom_instructions: projectCustomInstructions.value })
+                    });
+                    if (res.ok) {
+                        showToast("📌 Consignes spécifiques persistantes enregistrées pour cette discussion !");
+                    }
+                } catch(e) {
+                    showToast("Erreur lors de l'enregistrement des consignes.");
+                }
+            };
+
             const confirmAssignModel = async () => {
                 if(!assignForm.projectId || !assignForm.role) return;
                 const targetProj = projects.value.find(p => p.id == assignForm.projectId);
@@ -1736,6 +1848,38 @@
                         }
                     }
                 } catch(e){}
+            };
+
+            // --- POLLING DES TÂCHES ACTIVES & RAISONNEMENT EN DIRECT (POINT 1 & 7) ---
+            const pollActiveTasks = async () => {
+                try {
+                    const res = await fetch('/api/projects/active_tasks');
+                    if (res.ok) {
+                        const data = await res.json();
+                        const activeIds = data.active_project_ids || [];
+                        const statuses = data.statuses || {};
+
+                        if (activeProject.value && activeIds.includes(activeProject.value.id)) {
+                            isAiThinking.value = true;
+                            const st = statuses[activeProject.value.id] || {};
+                            liveTaskStep.value = st.step || "Orchestration en cours...";
+                            liveTaskReasoning.value = st.reasoning || "";
+                        } else if (isAiThinking.value && activeProject.value && !activeIds.includes(activeProject.value.id)) {
+                            // La tâche vient de se terminer en arrière-plan ! On recharge les messages
+                            isAiThinking.value = false;
+                            liveTaskStep.value = "";
+                            liveTaskReasoning.value = "";
+                            const msgRes = await fetch(`/api/projects/${activeProject.value.id}/messages`);
+                            if (msgRes.ok) {
+                                messages.value = await msgRes.json();
+                                scrollToBottom();
+                            }
+                            triggerBrowserNotification("AETHAS38", `La réponse pour "${activeProject.value.title}" est prête !`);
+                            showToast("✨ Réponse de l'IA reçue avec succès !");
+                            fetchProjects();
+                        }
+                    }
+                } catch(e) {}
             };
 
             const validateConfigAndReplace = async () => {
@@ -1778,14 +1922,27 @@
                         enable_web: enableWebSearch.value,
                         workers: workers.value,
                         prompter: selectedPrompter.value,
-                        concatenator: selectedConcatenator.value
+                        concatenator: selectedConcatenator.value,
+                        custom_instructions: projectCustomInstructions.value
                     };
                     saveProjectConfigToDB(activeProject.value.id, config);
                 }
                 nextTick(() => lucide.createIcons());
             }, { deep: true });
 
-            const fetchUser = async () => { try { const res = await fetch('/api/users/me'); if(res.ok) user.value = await res.json(); } catch(e){} };
+            const fetchUser = async () => { 
+                try { 
+                    const res = await fetch('/api/users/me'); 
+                    if(res.ok) {
+                        const d = await res.json();
+                        user.value = d;
+                        if (d.session_expires_at) {
+                            cookieExpiresAt.value = d.session_expires_at;
+                        }
+                    } 
+                } catch(e){} 
+            };
+
             const fetchModelsInfo = async () => { try { const res = await fetch('/api/models/info'); if(res.ok) { const data = await res.json(); modelInfo.last_sync_date = data.last_sync_date; modelInfo.last_sync_type = data.last_sync_type; modelInfo.models = data.models; } } catch(e){} };
             const fetchFinances = async () => { try { const res = await fetch('/api/finances'); if(res.ok) financesList.value = await res.json(); } catch(e){} };
             
@@ -1872,7 +2029,7 @@
                 const files = event.target.files;
                 if (!files) return;
                 for (let i = 0; i < files.length; i++) {
-                    if (attachedFiles.value.length >= 10) { alert("Maximum 10 fichiers par message."); break; }
+                    if (attachedFiles.value.length >= 10) { showToast("Maximum 10 fichiers par message."); break; }
                     processFile(files[i]);
                 }
                 event.target.value = null;
@@ -1912,6 +2069,26 @@
             
             const downloadMessage = (content, dateString) => { downloadFile(content, `message_${dateString.replace(/[:T.Z]/g, '-')}.txt`); };
 
+            // --- RENDU MARKDOWN RICHE & COLORATION SYNTAXIQUE (POINTS 10 & 11) ---
+            const renderMarkdown = (rawContent) => {
+                if (!rawContent) return "";
+                try {
+                    marked.setOptions({
+                        highlight: function(code, lang) {
+                            if (lang && hljs.getLanguage(lang)) {
+                                try { return hljs.highlight(code, { language: lang }).value; } catch (__) {}
+                            }
+                            return hljs.highlightAuto(code).value;
+                        },
+                        breaks: true,
+                        gfm: true
+                    });
+                    return marked.parse(rawContent);
+                } catch(e) {
+                    return rawContent;
+                }
+            };
+
             const parseMessage = (content) => {
                 if (!content) return [{ type: 'text', content: '' }];
                 if (content.startsWith('[MEDIA_IMAGE:') || content.startsWith('[MEDIA_VIDEO:')) {
@@ -1923,15 +2100,47 @@
                     const caption = lines.slice(2).join(' ');
                     return [{ type: 'media', mediaType, model, url, caption }];
                 }
-                const regex = /```([\w.-]*)\n([\s\S]*?)```/g;
-                let parts = [], last = 0, m;
-                while ((m = regex.exec(content)) !== null) {
-                    if (m.index > last) parts.push({ type: 'text', content: content.slice(last, m.index) });
-                    parts.push({ type: 'code', language: m[1], content: m[2] });
-                    last = m.index + m[0].length;
+
+                let parts = [];
+                // Extraction des blocs de pensée <think>...</think> (Point 1)
+                const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
+                let lastIdx = 0, match;
+                let cleanContent = content;
+
+                while ((match = thinkRegex.exec(content)) !== null) {
+                    if (match.index > lastIdx) {
+                        parts.push({ type: 'text', content: content.slice(lastIdx, match.index) });
+                    }
+                    parts.push({ type: 'think', content: match[1].trim() });
+                    lastIdx = match.index + match[0].length;
                 }
-                if (last < content.length) parts.push({ type: 'text', content: content.slice(last) });
-                return parts.length > 0 ? parts : [{ type: 'text', content: content }];
+                if (lastIdx < content.length) {
+                    parts.push({ type: 'text', content: content.slice(lastIdx) });
+                }
+
+                // Pour chaque partie texte, découper les blocs de code ```
+                let finalParts = [];
+                parts.forEach(p => {
+                    if (p.type === 'think') {
+                        finalParts.push(p);
+                    } else {
+                        const codeRegex = /```([\w.-]*)\n([\s\S]*?)```/g;
+                        let textLast = 0, cmatch;
+                        let textStr = p.content;
+                        while ((cmatch = codeRegex.exec(textStr)) !== null) {
+                            if (cmatch.index > textLast) {
+                                finalParts.push({ type: 'text', content: textStr.slice(textLast, cmatch.index) });
+                            }
+                            finalParts.push({ type: 'code', language: cmatch[1], content: cmatch[2] });
+                            textLast = cmatch.index + cmatch[0].length;
+                        }
+                        if (textLast < textStr.length) {
+                            finalParts.push({ type: 'text', content: textStr.slice(textLast) });
+                        }
+                    }
+                });
+
+                return finalParts.length > 0 ? finalParts : [{ type: 'text', content: content }];
             };
 
             const fetchProjects = async () => { try { const res = await fetch('/api/projects'); if(res.ok) projects.value = await res.json(); nextTick(()=>lucide.createIcons()); } catch(e){} };
@@ -1956,6 +2165,7 @@
                         workers.value = config.workers || ["", "", "", "", ""];
                         selectedPrompter.value = config.prompter || prompterConcatModels.value[0].model_id;
                         selectedConcatenator.value = config.concatenator || prompterConcatModels.value[1].model_id;
+                        projectCustomInstructions.value = config.custom_instructions || "";
                     } catch(e) {
                         workers.value = ["", "", "", "", ""];
                     }
@@ -1966,6 +2176,7 @@
                     workers.value = ["", "", "", "", ""];
                     selectedPrompter.value = prompterConcatModels.value[0].model_id;
                     selectedConcatenator.value = prompterConcatModels.value[1].model_id;
+                    projectCustomInstructions.value = "";
                 }
                 isRestoringConfig = false;
 
@@ -1995,7 +2206,7 @@
                     : workers.value.filter(w => w && w.trim() !== "");
 
                 if ((!prompt.value.trim() && attachedFiles.value.length === 0) || !activeProject.value || activeWorkers.length === 0) {
-                    alert("Veuillez sélectionner au moins un travailleur et saisir un message.");
+                    showToast("⚠️ Veuillez sélectionner au moins un travailleur et saisir un message.");
                     return;
                 }
                 if (isDictating.value) stopDictation();
@@ -2009,7 +2220,6 @@
                 isAiThinking.value = true; 
                 scrollToBottom();
                 
-                abortController = new AbortController();
                 const payloadFiles = [...attachedFiles.value];
                 const payload = { 
                     role: 'user', 
@@ -2020,7 +2230,8 @@
                         enable_web: enableWebSearch.value,
                         workers: activeWorkers,
                         prompter: selectedPrompter.value || prompterConcatModels.value[0].model_id,
-                        concatenator: selectedConcatenator.value || prompterConcatModels.value[1].model_id
+                        concatenator: selectedConcatenator.value || prompterConcatModels.value[1].model_id,
+                        custom_instructions: projectCustomInstructions.value
                     },
                     files: payloadFiles
                 };
@@ -2031,8 +2242,7 @@
                     const response = await fetch(`/api/projects/${activeProject.value.id}/messages`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload),
-                        signal: abortController.signal
+                        body: JSON.stringify(payload)
                     });
                     if (response.ok) { 
                         const data = await response.json(); 
@@ -2042,15 +2252,12 @@
                         window.location.href = '/login'; return;
                     } else { 
                         const errDetail = await readErrorDetail(response);
-                        alert("Erreur API IA : " + errDetail); 
+                        showToast("Erreur API IA : " + errDetail); 
                     }
                 } catch (error) {
-                    if (error.name !== 'AbortError') {
-                        alert("Erreur réseau : " + error.message);
-                    }
+                    showToast("Erreur réseau : " + error.message);
                 } finally { 
                     isAiThinking.value = false; 
-                    abortController = null;
                     scrollToBottom(); 
                     nextTick(()=>lucide.createIcons()); 
                     fetchProjects().then(() => {
@@ -2070,9 +2277,33 @@
                 try { const res = await fetch('/api/users/me/password', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ old_password: passForm.old, new_password: passForm.new }) }); const data = await res.json(); if (res.ok) { settingsMessage.value = data.message; passForm.old=''; passForm.new=''; passForm.confirm=''; } else { settingsMessage.value = data.detail; } } catch (e) {} finally { isSavingSettings.value = false; }
             };
 
-            const renameProject = async (project) => { const nt = window.prompt("Nom :", project.title); if (!nt || nt.trim() === "" || nt === project.title) return; try { const res = await fetch(`/api/projects/${project.id}/rename`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: nt.trim() }) }); if (res.ok) { const up = await res.json(); const i = projects.value.findIndex(p => p.id === project.id); if (i !== -1) projects.value[i] = up; if (activeProject.value && activeProject.value.id === project.id) activeProject.value.title = up.title; } } catch (e) {} };
+            const renameProject = async (project) => { 
+                const nt = await showCustomModal("Renommer la discussion", "Entrez le nouveau nom de la discussion :", true, false, project.title);
+                if (!nt || nt.trim() === "" || nt === project.title) return; 
+                try { 
+                    const res = await fetch(`/api/projects/${project.id}/rename`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: nt.trim() }) }); 
+                    if (res.ok) { 
+                        const up = await res.json(); 
+                        const i = projects.value.findIndex(p => p.id === project.id); 
+                        if (i !== -1) projects.value[i] = up; 
+                        if (activeProject.value && activeProject.value.id === project.id) activeProject.value.title = up.title; 
+                    } 
+                } catch (e) {} 
+            };
+
             const togglePin = async (pid) => { try { const res = await fetch(`/api/projects/${pid}/pin`, { method: 'PUT' }); if (res.ok) { const up = await res.json(); const i = projects.value.findIndex(p => p.id === pid); if (i !== -1) projects.value[i] = up; } } catch (e) {} };
-            const deleteProject = async (pid) => { if (!confirm("Supprimer ce projet ?")) return; try { const res = await fetch(`/api/projects/${pid}`, { method: 'DELETE' }); if (res.ok) { projects.value = projects.value.filter(p => p.id !== pid); if (activeProject.value && activeProject.value.id === pid) activeProject.value = null; } } catch (e) {} };
+            
+            const deleteProject = async (pid) => { 
+                const confirmed = await showCustomModal("Suppression", "Êtes-vous sûr de vouloir supprimer définitivement cette discussion ?", false, true);
+                if (!confirmed) return; 
+                try { 
+                    const res = await fetch(`/api/projects/${pid}`, { method: 'DELETE' }); 
+                    if (res.ok) { 
+                        projects.value = projects.value.filter(p => p.id !== pid); 
+                        if (activeProject.value && activeProject.value.id === pid) activeProject.value = null; 
+                    } 
+                } catch (e) {} 
+            };
 
             onMounted(() => { 
                 lucide.createIcons(); 
@@ -2087,6 +2318,15 @@
                 fetchFinances(); 
                 checkHermes();
                 logInterval = setInterval(fetchLogs, 2000);
+                setInterval(pollActiveTasks, 2000);
+
+                // Minuteur décompte cookie 10h (Point 8)
+                setInterval(() => {
+                    if (cookieExpiresAt.value) {
+                        const nowSec = Math.floor(Date.now() / 1000);
+                        cookieTimeRemaining.value = cookieExpiresAt.value - nowSec;
+                    }
+                }, 1000);
             });
 
             return { 
@@ -2108,7 +2348,10 @@
                 isAssignModalOpen, openAssignModal, closeAssignModal, assignForm, assignMessage, confirmAssignModel,
                 attachedFiles, handleFileUpload, handlePaste, removeFile,
                 exportProject, copyToClipboard, downloadFile, downloadMessage, downloadLogs, parseMessage, systemLogs,
-                toastVisible, toastMessage, showToast
+                toastVisible, toastMessage, showToast,
+                renderMarkdown, liveTaskStep, liveTaskReasoning,
+                projectCustomInstructions, showCustomInstructionsBox, saveProjectInstructions,
+                cookieTimeRemaining, formattedCookieTime, customModal, closeCustomModal
             };
         }
     }).mount('#app');

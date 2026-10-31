@@ -3,6 +3,9 @@ import httpx
 import urllib.parse
 import traceback
 import base64
+import os
+import re
+from typing import Dict, Any
 from openai import AsyncOpenAI
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -22,6 +25,49 @@ def log_activity(msg: str):
         activity_logs.pop(0)
     system_logger.info(msg)
 # --------------------------------------
+
+# --- ÉTAT TEMPS RÉEL DES PROJETS & RAISONNEMENT EN DIRECT (POINT 1 & 7) ---
+project_live_status: Dict[int, Dict[str, Any]] = {}
+
+def set_project_live_status(project_id: int, active: bool, step: str = "", reasoning: str = None):
+    if not project_id:
+        return
+    prev = project_live_status.get(project_id) or {}
+    project_live_status[project_id] = {
+        "active": active,
+        "step": step or prev.get("step") or "Orchestration en cours...",
+        "reasoning": reasoning if reasoning is not None else prev.get("reasoning", ""),
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+
+def clear_project_live_status(project_id: int):
+    if project_id:
+        project_live_status.pop(project_id, None)
+
+# --- CONFIGURATION HERMES & OLLAMA LOCAL (GTX 1650 - 4 Go GDDR6) ---
+HERMES_API_URL = os.getenv("HERMES_API_URL", "http://192.168.1.20:8642")
+HERMES_API_KEY = os.getenv("HERMES_API_KEY", "87186fe63b1e5d8b8d01bc769f5e894d24081a86d0d800d00b6358c26fded37e")
+
+OLLAMA_CANDIDATE_URLS = [
+    os.getenv("OLLAMA_API_URL", "").strip(),
+    "http://192.168.1.20:11434",
+    "http://host.docker.internal:11434",
+    "http://172.17.0.1:11434",
+    "http://127.0.0.1:11434"
+]
+# Modèles légers (< 2.6 Go VRAM en Q4) strictement adaptés à une GeForce GTX 1650 (4 Go GDDR6)
+GTX1650_SAFE_MODELS_PRIORITY = [
+    "qwen2.5-coder:1.5b",
+    "qwen2.5:1.5b",
+    "llama3.2:1b",
+    "deepseek-r1:1.5b",
+    "qwen2.5:3b",
+    "llama3.2:3b",
+    "gemma2:2b",
+    "phi3:mini",
+    "smollm2:1.7b",
+    "tinyllama"
+]
 
 ALLOWED_WORKER_PROVIDERS = {"openrouter", "cloudflare", "huggingface"}
 
@@ -718,17 +764,18 @@ def get_client_for_model(db: Session, model_id: str, settings: SystemSettings, i
     
     return AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=settings.openrouter_api_key), "openrouter"
 
+# --- CALCUL DU CONTEXTE MAXIMAL AVEC 10% DE MARGE STRICTE (POINT 4) ---
 def compute_dynamic_chunk_size(db: Session, active_model_ids: list) -> int:
     """
-    Calcule la taille des chunks en fonction du contexte accepté par TOUS les modèles
-    sélectionnés (Prompteur + Travailleurs + Concaténeur) et s'aligne sur le plus restrictif.
+    Extrait le contexte maximal autorisé (context_length) de tous les modèles sélectionnés
+    et fixe la limite au plus près du modèle le plus restrictif en gardant 10% de marge (90% utiles).
     """
     valid_ids = []
     for m in active_model_ids:
         if m and m.strip() and m.strip() not in valid_ids:
             valid_ids.append(m.strip())
     if not valid_ids:
-        return 20000
+        return 24000
 
     models_db = db.query(AIModel).filter(AIModel.model_id.in_(valid_ids)).all()
     db_map = {m.model_id: m.context_length for m in models_db if m.context_length and m.context_length > 0}
@@ -745,13 +792,241 @@ def compute_dynamic_chunk_size(db: Session, active_model_ids: list) -> int:
             contexts.append(8192)
 
     min_ctx = min(contexts) if contexts else 8192
-
-    calculated_chars = int(min_ctx * 0.45 * 3.5)
-    chunk_size = max(4000, min(calculated_chars, 120000))
-    log_activity(f"Contexte le plus restrictif sur {len(valid_ids)} modèle(s) : {min_ctx} tokens -> Chunk dynamique fixé à {chunk_size} caractères.")
+    # 90% du contexte maximal autorisé (10% de marge de sécurité) * ~3.8 caractères par token
+    safe_tokens = int(min_ctx * 0.90)
+    calculated_chars = int(safe_tokens * 3.8)
+    chunk_size = max(4000, min(calculated_chars, 360000))
+    log_activity(f"[Contexte IA] Max autorisé: {min_ctx} tokens -> Marge 10% appliquée ({safe_tokens} tokens / {chunk_size} car. max par chunk).")
     return chunk_size
 
-def extract_safe_content(resp) -> str:
+def split_text_smart_with_margin(text: str, max_chars_per_chunk: int) -> list:
+    """
+    Découpe intelligemment un texte ou code dépassant la limite (90% du contexte)
+    au plus près de max_chars_per_chunk le long des sauts de ligne sans couper de ligne au milieu.
+    """
+    if not text:
+        return [""]
+    if len(text) <= max_chars_per_chunk:
+        return [text]
+
+    chunks = []
+    start = 0
+    total_len = len(text)
+    while start < total_len:
+        end = min(start + max_chars_per_chunk, total_len)
+        if end < total_len:
+            # Cherche un double saut de ligne ou un saut de ligne simple dans les derniers 15% du chunk
+            search_zone_start = start + int(max_chars_per_chunk * 0.85)
+            split_pos = text.rfind("\n\n", search_zone_start, end)
+            if split_pos == -1:
+                split_pos = text.rfind("\n", search_zone_start, end)
+            if split_pos != -1 and split_pos > start:
+                end = split_pos + 1
+        chunks.append(text[start:end])
+        start = end
+    return chunks
+
+# --- CASCADE DE CHUNKING HYBRIDE : HERMES (POINT 2) -> OLLAMA GTX 1650 4Go (POINT 9) -> CLOUD (POINT 3) ---
+async def detect_local_ollama_gtx1650() -> tuple[str, str]:
+    """
+    Vérifie si Ollama est installé et accessible sur le réseau local, et sélectionne un modèle
+    compatible avec une GeForce GTX 1650 (4 Go de GDDR6, < 3.2 Go de poids).
+    """
+    async with httpx.AsyncClient(timeout=2.5) as client:
+        for base_url in OLLAMA_CANDIDATE_URLS:
+            if not base_url:
+                continue
+            clean_url = base_url.rstrip("/")
+            try:
+                resp = await client.get(f"{clean_url}/api/tags")
+                if resp.status_code == 200:
+                    models_list = resp.json().get("models") or []
+                    if not models_list:
+                        continue
+                    # Filtrer les modèles qui tiennent dans les 4 Go de GDDR6 de la GTX 1650 (< 3.3 Go)
+                    safe_installed = []
+                    for m in models_list:
+                        m_name = (m.get("name") or "").lower()
+                        m_size = int(m.get("size") or 0)
+                        if m_size == 0 or m_size <= 3300000000:
+                            safe_installed.append(m.get("name"))
+                    if not safe_installed:
+                        continue
+                    for pref in GTX1650_SAFE_MODELS_PRIORITY:
+                        for inst in safe_installed:
+                            if pref in inst.lower():
+                                return clean_url, inst
+                    return clean_url, safe_installed[0]
+            except Exception:
+                continue
+    return None, None
+
+async def try_hermes_chunk_processing(chunk_text: str, user_goal: str, chunk_idx: int, total_chunks: int, is_ocr_ce2: bool = False) -> str:
+    """Utilise la compétence de chunking / synthèse de l'instance Hermes si elle est en ligne (Point 2)."""
+    headers = {
+        "Authorization": f"Bearer {HERMES_API_KEY}",
+        "X-API-Key": HERMES_API_KEY,
+        "Content-Type": "application/json"
+    }
+    sys_instruction = (
+        "Tu es le module de Chunking de Hermes Agent. "
+        + (
+            "Transcris et restitue INTÉGRALEMENT et À L'IDENTIQUE ce segment (sans jamais corriger les fautes d'élèves)."
+            if is_ocr_ce2 else
+            "Analyse ce segment de contexte (chunk), conserve l'intégralité du code, des structures techniques et des informations clés utiles à la demande, en le structurant proprement."
+        )
+    )
+    user_msg = f"Objectif global : {user_goal}\n[Chunk {chunk_idx}/{total_chunks} - Marge 10% respectée] :\n{chunk_text}"
+
+    async with httpx.AsyncClient(timeout=90.0) as client:
+        try:
+            resp = await client.post(
+                f"{HERMES_API_URL}/v1/chat/completions",
+                headers=headers,
+                json={
+                    "model": "hermes-agent",
+                    "messages": [
+                        {"role": "system", "content": sys_instruction},
+                        {"role": "user", "content": user_msg}
+                    ]
+                }
+            )
+            if resp.status_code == 200:
+                choices = resp.json().get("choices") or []
+                if choices and choices[0].get("message", {}).get("content"):
+                    log_activity(f"[Chunking Hermes] Chunk {chunk_idx}/{total_chunks} traité par la compétence Hermes.")
+                    return choices[0]["message"]["content"]
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+    return None
+
+async def try_ollama_chunk_processing(ollama_url: str, ollama_model: str, chunk_text: str, user_goal: str, chunk_idx: int, total_chunks: int, is_ocr_ce2: bool = False) -> str:
+    """Exécute le chunking sur l'IA locale Ollama en limitant la VRAM pour la GTX 1650 4 Go GDDR6 (Point 9)."""
+    if not ollama_url or not ollama_model:
+        return None
+    # Sur une GTX 1650 4 Go, on limite num_ctx à 4096 tokens max pour éviter tout débordement VRAM
+    safe_local_chunk = chunk_text[:12000]
+    sys_instruction = (
+        "Tu es un extracteur de contexte local rapide. "
+        + (
+            "Recopie exactement à l'identique sans corriger aucune faute."
+            if is_ocr_ce2 else
+            "Extrais et conserve tous les éléments techniques, extraits de code, variables et données importantes de ce bloc pour répondre à la demande."
+        )
+    )
+    async with httpx.AsyncClient(timeout=90.0) as client:
+        try:
+            resp = await client.post(
+                f"{ollama_url}/api/chat",
+                json={
+                    "model": ollama_model,
+                    "stream": False,
+                    "options": {
+                        "num_ctx": 4096,
+                        "temperature": 0.1
+                    },
+                    "messages": [
+                        {"role": "system", "content": sys_instruction},
+                        {"role": "user", "content": f"Demande : {user_goal}\n\nSegment ({chunk_idx}/{total_chunks}) :\n{safe_local_chunk}"}
+                    ]
+                }
+            )
+            if resp.status_code == 200:
+                content = (resp.json().get("message") or {}).get("content")
+                if content:
+                    log_activity(f"[Chunking Ollama GTX 1650] Chunk {chunk_idx}/{total_chunks} traité localement via {ollama_model}.")
+                    return content
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+    return None
+
+async def smart_chunk_text_pipeline(
+    db: Session,
+    settings: SystemSettings,
+    full_text: str,
+    user_goal: str,
+    max_chunk_chars: int,
+    fallback_prompter_id: str,
+    is_ocr_ce2: bool = False,
+    project_id: int = None,
+    label: str = "Contexte"
+) -> str:
+    """
+    Pipeline complet de Chunking (Points 2, 3, 4, 9) :
+    Si le texte dépasse max_chunk_chars (90% du contexte max autorisé) :
+    1. Découpe au plus près avec 10% de marge.
+    2. Tente la compétence de chunking d'Hermes.
+    3. Sinon vérifie si Ollama est installé (optimisé GTX 1650 4 Go GDDR6) et l'utilise.
+    4. Sinon utilise l'IA serveur/cloud (Prompteur) pour condenser les chunks.
+    """
+    if len(full_text) <= max_chunk_chars:
+        return full_text
+
+    chunks = split_text_smart_with_margin(full_text, max_chunk_chars)
+    total_c = len(chunks)
+    log_activity(f"[Chunking Auto 90%] {label} ({len(full_text)} car.) dépasse la limite ({max_chunk_chars} car.) -> Découpé en {total_c} chunks.")
+    if project_id:
+        set_project_live_status(
+            project_id, True,
+            f"Découpage intelligent ({total_c} chunks avec 10% de marge)...",
+            f"Le volume ({len(full_text)} caractères) dépasse 90% du contexte autorisé ({max_chunk_chars} car.). Découpage en {total_c} parties."
+        )
+
+    ollama_url, ollama_model = await detect_local_ollama_gtx1650()
+    if ollama_url and ollama_model:
+        log_activity(f"[Ollama Détecté] Modèle compatible GTX 1650 (4 Go GDDR6) prêt : {ollama_model} sur {ollama_url}")
+
+    processed_parts = []
+    for idx, ch in enumerate(chunks, start=1):
+        if project_id:
+            set_project_live_status(
+                project_id, True,
+                f"Chunking {label} : traitement de la partie {idx}/{total_c}...",
+                f"Analyse du chunk {idx}/{total_c} ({len(ch)} car.) via cascade Hermes -> Ollama GTX 1650 -> Cloud IA..."
+            )
+
+        # 1. Compétence de chunking Hermes
+        res_chunk = await try_hermes_chunk_processing(ch, user_goal, idx, total_c, is_ocr_ce2=is_ocr_ce2)
+
+        # 2. IA locale Ollama (GTX 1650 4 Go) si chunk adapté
+        if not res_chunk and ollama_url and ollama_model and len(ch) <= 14000:
+            res_chunk = await try_ollama_chunk_processing(ollama_url, ollama_model, ch, user_goal, idx, total_c, is_ocr_ce2=is_ocr_ce2)
+
+        # 3. IA Serveur / Cloud (Prompteur)
+        if not res_chunk:
+            sys_c = (
+                "Tu es un module d'extraction fidèle. Restitue à l'identique sans corriger les fautes."
+                if is_ocr_ce2 else
+                "Tu es un ingénieur de contexte. Résume et extrait tout le code, la structure et les données techniques essentielles de ce chunk pour répondre à la demande de l'utilisateur."
+            )
+            prompt_c = f"Demande : {user_goal}\n\nChunk {idx}/{total_c} :\n```\n{ch}\n```"
+            try:
+                res_chunk = await ask_agent_with_fallback(
+                    db, settings, fallback_prompter_id,
+                    [{"role": "system", "content": sys_c}, {"role": "user", "content": prompt_c}],
+                    is_worker=False, enable_web=False, project_id=project_id
+                )
+                log_activity(f"[Chunking IA Serveur] Chunk {idx}/{total_c} traité via {fallback_prompter_id}.")
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                res_chunk = ch[: max(2000, int(max_chunk_chars / total_c))]
+                log_activity(f"[Chunking Secours] Découpage direct sur chunk {idx}/{total_c} ({str(e)[:50]}).")
+
+        processed_parts.append(f"### [Segment {idx}/{total_c}]\n{res_chunk}")
+        await asyncio.sleep(0.4)
+
+    combined = "\n\n".join(processed_parts)
+    if len(combined) > max_chunk_chars:
+        combined = combined[:max_chunk_chars]
+    return combined
+
+def extract_safe_content(resp, project_id: int = None, model_label: str = "") -> str:
+    """Extrait le contenu ET capture le raisonnement du modèle (Point 1) s'il est présent."""
     if not resp:
         raise ValueError("Réponse API vide (None).")
     if getattr(resp, "error", None):
@@ -766,34 +1041,62 @@ def extract_safe_content(resp) -> str:
     if not msg:
         raise ValueError("Objet message manquant dans la réponse.")
     content = getattr(msg, "content", None)
-    if content is None:
-        raise ValueError("Le modèle a renvoyé un contenu vide (None).")
-    return str(content)
 
-async def ask_agent(client, model_id, messages, provider="openrouter", enable_web=True) -> str:
+    # Extraction du raisonnement natif (DeepSeek-R1, OpenRouter reasoning, QwQ, etc.)
+    reasoning = (
+        getattr(msg, "reasoning_content", None)
+        or getattr(msg, "reasoning", None)
+        or (msg.get("reasoning_content") if isinstance(msg, dict) else None)
+        or (msg.get("reasoning") if isinstance(msg, dict) else None)
+    )
+
+    content_str = str(content) if content is not None else ""
+
+    # Détection des balises <think>...</think> dans le flux texte
+    think_match = re.search(r"<think>([\s\S]*?)</think>", content_str, re.IGNORECASE)
+    if think_match and not reasoning:
+        reasoning = think_match.group(1).strip()
+
+    if reasoning:
+        clean_r = str(reasoning).strip()
+        if project_id and clean_r:
+            set_project_live_status(
+                project_id,
+                True,
+                f"Raisonnement de {model_label or 'l’IA'} acquis...",
+                f"🧠 [{model_label or 'Modèle'}]\n{clean_r[:1500]}"
+            )
+        if "<think>" not in content_str and clean_r:
+            content_str = f"<think>\n{clean_r}\n</think>\n\n{content_str}"
+
+    if not content_str.strip():
+        raise ValueError("Le modèle a renvoyé un contenu vide.")
+    return content_str
+
+async def ask_agent(client, model_id, messages, provider="openrouter", enable_web=True, project_id: int = None) -> str:
     kwargs = {"model": model_id, "messages": messages}
     if provider == "openrouter": 
         kwargs["extra_headers"] = {"HTTP-Referer": "https://aethas38.duckdns.org", "X-Title": "AETHAS38 Orchestrator"}
         plugins = [{"id": "context-compression"}]
         if enable_web:
             plugins.append({"id": "web"})
-        kwargs["extra_body"] = {"plugins": plugins}
+        kwargs["extra_body"] = {"plugins": plugins, "include_reasoning": True}
         
         try:
             resp = await client.chat.completions.create(**kwargs)
-            return extract_safe_content(resp)
+            return extract_safe_content(resp, project_id=project_id, model_label=model_id)
         except asyncio.CancelledError:
             raise
         except Exception as e:
             if enable_web:
                 log_activity(f"Repli sans plugin web pour {model_id} : {str(e)[:80]}")
-                kwargs["extra_body"] = {"plugins": [{"id": "context-compression"}]}
+                kwargs["extra_body"] = {"plugins": [{"id": "context-compression"}], "include_reasoning": True}
                 resp = await client.chat.completions.create(**kwargs)
-                return extract_safe_content(resp)
+                return extract_safe_content(resp, project_id=project_id, model_label=model_id)
             raise e
     else:
         resp = await client.chat.completions.create(**kwargs)
-        return extract_safe_content(resp)
+        return extract_safe_content(resp, project_id=project_id, model_label=model_id)
 
 async def ask_agent_with_fallback(
     db: Session,
@@ -803,7 +1106,8 @@ async def ask_agent_with_fallback(
     is_worker: bool = True,
     enable_web: bool = False,
     target_domain: str = None,
-    min_required_context: int = None
+    min_required_context: int = None,
+    project_id: int = None
 ) -> str:
     tried_models = set()
     current_model = model_id
@@ -814,8 +1118,17 @@ async def ask_agent_with_fallback(
     for attempt in range(5):
         tried_models.add(current_model)
         client, provider = get_client_for_model(db, current_model, settings, is_worker=is_worker)
+        if project_id:
+            m_obj = db.query(AIModel).filter(AIModel.model_id == current_model).first()
+            has_reason = bool(m_obj and m_obj.supports_reasoning) or any(k in current_model.lower() for k in ["r1", "qwq", "thinking", "reason", "gemini-2.5", "gemini-3", "qwen3"])
+            set_project_live_status(
+                project_id,
+                True,
+                f"{role_label} ({current_model}) en cours de réflexion..." if has_reason else f"{role_label} ({current_model}) traite la requête...",
+                f"🧠 Modèle de raisonnement actif : {current_model}\nAnalyse logique et génération des chaînes de pensée en cours..." if has_reason else None
+            )
         try:
-            return await ask_agent(client, current_model, messages, provider, enable_web=enable_web)
+            return await ask_agent(client, current_model, messages, provider, enable_web=enable_web, project_id=project_id)
         except asyncio.CancelledError:
             log_activity(f"🛑 Requête interrompue par l'utilisateur sur {current_model}.")
             raise
@@ -1103,11 +1416,13 @@ async def generate_media(
         system_logger.error(f"Erreur Studio Média:\n{tb_str}")
         raise HTTPException(status_code=500, detail=f"Erreur interne Studio Média : {str(e)}")
 
-async def run_orchestrator(db: Session, history: list, settings: SystemSettings, config: dict, extracted_files: list = None) -> str:
+async def run_orchestrator(db: Session, history: list, settings: SystemSettings, config: dict, extracted_files: list = None, project_id: int = None) -> str:
     if not config: config = {}
     mode = config.get("mode", "multi")
     theme = config.get("theme", "general")
     enable_web = config.get("enable_web", True)
+    custom_instructions = (config.get("custom_instructions") or "").strip()
+
     workers = [w for w in (config.get("workers") or []) if w and w.strip()]
     if not workers:
         workers = ["Qwen/Qwen2.5-Coder-32B-Instruct"]
@@ -1121,6 +1436,11 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
     original_user_text = user_prompt.split("\n\n[Fichiers joints")[0] if "[Fichiers joints" in user_prompt else user_prompt
     formatted_history = [{"role": msg.role, "content": msg.content or ""} for msg in history[:-1]] if len(history) > 1 else []
 
+    # Injection des consignes spécifiques persistantes en début de prompt (si définies sur la discussion)
+    if custom_instructions:
+        log_activity(f"[Consignes Discussion] Application des consignes persistantes ({len(custom_instructions)} car.).")
+        user_prompt = f"[CONSIGNES SPÉCIFIQUES IMPÉRATIVES DE CETTE DISCUSSION À APPLIQUER SYSTÉMATIQUEMENT] :\n{custom_instructions}\n\n[DEMANDE DE L'UTILISATEUR] :\n{user_prompt}"
+
     all_involved_models = [p_mod] + workers + ([c_mod] if mode == "multi" else [])
     chunk_size = compute_dynamic_chunk_size(db, all_involved_models)
 
@@ -1128,11 +1448,12 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
     final_response = ""
 
     try:
+        set_project_live_status(project_id, True, f"Initialisation ({mode.upper()}) avec {p_mod}...", "")
         log_activity(f"Orchestration [{mode.upper()} | Thème: {theme} | Web: {'ON' if enable_web else 'OFF'}]. Prompteur: {p_mod}")
 
         files_context = ""
         if extracted_files:
-            log_activity(f"Traitement Map-Reduce de {len(extracted_files)} fichier(s) joint(s) (Chunk max: {chunk_size} car.).")
+            log_activity(f"Traitement Map-Reduce de {len(extracted_files)} fichier(s) joint(s) (Chunk max 90%: {chunk_size} car.).")
             async def process_single_file(f):
                 if not f or not isinstance(f, dict): return ""
                 fname = f.get('name') or 'Fichier_inconnu'
@@ -1151,6 +1472,7 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                     file_sys = "You are an expert data analyst and senior developer. Extract the most important technical information from the file without losing critical code syntax."
 
                 if is_image:
+                    set_project_live_status(project_id, True, f"Analyse Vision / OCR de l'image {fname}...")
                     log_activity(f"Analyse Vision / OCR de l'image {fname}...")
                     user_msg_content = [
                         {"type": "text", "text": f"Demande : '{original_user_text}'.\nFichier image : '{fname}'. Transcris intégralement et littéralement le contenu visible (sans corriger aucune faute si c'est une copie d'élève)."},
@@ -1160,7 +1482,7 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                         analysis = await ask_agent_with_fallback(
                             db, settings, p_mod,
                             [{"role": "system", "content": file_sys}, {"role": "user", "content": user_msg_content}],
-                            is_worker=False, enable_web=False, target_domain="Vision & Texte"
+                            is_worker=False, enable_web=False, target_domain="Vision & Texte", project_id=project_id
                         )
                         log_activity(f"OCR Vision de {fname} réussi.")
                         return f"\n\n--- Transcription exacte du fichier {fname} ---\n{analysis}"
@@ -1171,29 +1493,18 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                         return f"\n\n--- Erreur de lecture image sur {fname} ---\n{str(e)}"
 
                 if len(content) > chunk_size:
-                    chunks = [content[i:i+chunk_size] for i in range(0, len(content), chunk_size)]
-                    chunk_analyses = []
-                    log_activity(f"Fichier lourd ({fname}): Découpage en {len(chunks)} chunks de {chunk_size} car.")
-                    for idx, chunk in enumerate(chunks):
-                        if is_ocr_ce2:
-                            file_prompt = f"Demande : '{original_user_text}'.\nPartie {idx+1}/{len(chunks)} du fichier '{fname}'. Restitue le contenu EXACTEMENT à l'identique sans corriger aucune erreur d'élève :\n```\n{chunk}\n```"
-                        else:
-                            file_prompt = f"Demande de l'utilisateur : '{original_user_text}'.\n\nPartie {idx+1}/{len(chunks)} du fichier '{fname}'. Analysez, extrayez et résumez le code, VBA, SQL ou les données pertinentes.\n\nContenu :\n```\n{chunk}\n```"
-                        try:
-                            analysis = await ask_agent_with_fallback(
-                                db, settings, p_mod,
-                                [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}],
-                                is_worker=False, enable_web=False
-                            )
-                            chunk_analyses.append(analysis or "[ Analyse vide ]")
-                            log_activity(f"Chunk {idx+1}/{len(chunks)} de {fname} traité.")
-                        except asyncio.CancelledError:
-                            raise
-                        except Exception as e:
-                            chunk_analyses.append(f"[Erreur sur la partie {idx+1}: {str(e)}]")
-                            log_activity(f"Erreur chunk {idx+1}/{len(chunks)} pour {fname}: {str(e)}")
-                        await asyncio.sleep(1.0)
-                    return f"\n\n--- Extraction du fichier {fname} (en {len(chunks)} parties) ---\n" + "\n".join(chunk_analyses)
+                    processed_file = await smart_chunk_text_pipeline(
+                        db=db,
+                        settings=settings,
+                        full_text=content,
+                        user_goal=original_user_text,
+                        max_chunk_chars=chunk_size,
+                        fallback_prompter_id=p_mod,
+                        is_ocr_ce2=is_ocr_ce2,
+                        project_id=project_id,
+                        label=f"Fichier {fname}"
+                    )
+                    return f"\n\n--- Extraction chunkée (marge 10%) du fichier {fname} ---\n{processed_file}"
                 else:
                     if is_ocr_ce2:
                         file_prompt = f"Demande : '{original_user_text}'.\nFichier : '{fname}'. Restitue intégralement et À L'IDENTIQUE (sans corriger les erreurs des élèves) le contenu ci-dessous :\n```\n{content}\n```"
@@ -1203,7 +1514,7 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                         analysis = await ask_agent_with_fallback(
                             db, settings, p_mod,
                             [{"role": "system", "content": file_sys}, {"role": "user", "content": file_prompt}],
-                            is_worker=False, enable_web=False
+                            is_worker=False, enable_web=False, project_id=project_id
                         )
                         log_activity(f"Analyse intégrale de {fname} réussie.")
                         return f"\n\n--- Extraction du fichier {fname} ---\n{analysis}"
@@ -1217,15 +1528,26 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
             for f in extracted_files:
                 analysis = await process_single_file(f)
                 file_analyses.append(analysis or "")
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.5)
             
             files_context = "".join(file_analyses)
-            user_prompt = f"{original_user_text}\n\nVoici les données extraites des fichiers joints :\n{files_context}"
+            user_prompt = f"{user_prompt}\n\nVoici les données extraites des fichiers joints :\n{files_context}"
 
+        # Si le prompt complet dépasse 90% du contexte maximal autorisé -> Chunking intelligent (Hermes -> Ollama GTX 1650 -> Cloud)
         if len(user_prompt) > chunk_size:
-            log_activity(f"Adaptation du prompt ({len(user_prompt)} car.) à la limite restrictive ({chunk_size} car.)...")
-            user_prompt = user_prompt[:chunk_size]
+            user_prompt = await smart_chunk_text_pipeline(
+                db=db,
+                settings=settings,
+                full_text=user_prompt,
+                user_goal=original_user_text,
+                max_chunk_chars=chunk_size,
+                fallback_prompter_id=p_mod,
+                is_ocr_ce2=is_ocr_ce2,
+                project_id=project_id,
+                label="Prompt global"
+            )
 
+        set_project_live_status(project_id, True, f"Optimisation du prompt via {p_mod}...")
         if is_ocr_ce2:
             log_activity("Structuration de la tâche de correction CE2 (Français strict conservé)...")
             prompt_system = (
@@ -1233,22 +1555,42 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                 "Ne traduis RIEN en anglais. Prépare la consigne complète en français pour le correcteur IA en conservant "
                 "STRICTEMENT à l'identique les transcriptions brutes des copies d'élèves (avec toutes leurs fautes d'origine) ainsi que le corrigé de référence."
             )
+            if custom_instructions:
+                prompt_system = f"[CONSIGNES SPÉCIFIQUES DE LA DISCUSSION] :\n{custom_instructions}\n\n{prompt_system}"
             optimized = await ask_agent_with_fallback(
                 db, settings, p_mod,
                 [{"role": "system", "content": prompt_system}, {"role": "user", "content": user_prompt}],
-                is_worker=False, enable_web=False
+                is_worker=False, enable_web=False, project_id=project_id
             )
         else:
             log_activity(f"Optimisation de la requête via le Prompteur ({p_mod})...")
-            prompt_system = "You are an expert prompt engineer. Translate and optimize the user request and any file context into clear, precise English tailored for AI execution. Keep all code blocks and exact data intact."
+            prompt_system = (
+                "You are an expert prompt engineer. Translate and optimize the user request and any file context into clear, precise English tailored for AI execution. "
+                "Keep all code blocks, persistent custom instructions, and exact data intact."
+            )
+            if custom_instructions:
+                prompt_system += f"\n\nMANDATORY PERSISTENT DISCUSSION INSTRUCTIONS (Always enforce at the top of the prompt):\n{custom_instructions}"
             optimized = await ask_agent_with_fallback(
                 db, settings, p_mod,
                 [{"role": "system", "content": prompt_system}, {"role": "user", "content": user_prompt}],
-                is_worker=False, enable_web=False
+                is_worker=False, enable_web=False, project_id=project_id
             )
 
+        if custom_instructions:
+            optimized = f"[CONSIGNES SPÉCIFIQUES IMPÉRATIVES DE CETTE DISCUSSION] :\n{custom_instructions}\n\n{optimized}"
+
         if len(optimized) > chunk_size:
-            optimized = optimized[:chunk_size]
+            optimized = await smart_chunk_text_pipeline(
+                db=db,
+                settings=settings,
+                full_text=optimized,
+                user_goal=original_user_text,
+                max_chunk_chars=chunk_size,
+                fallback_prompter_id=p_mod,
+                is_ocr_ce2=is_ocr_ce2,
+                project_id=project_id,
+                label="Prompt optimisé"
+            )
 
         worker_sys_prompt = None
         if is_ocr_ce2:
@@ -1269,6 +1611,12 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                 "Ne traduis jamais la syntaxe du code source à l'intérieur des blocs de code."
             )
 
+        if custom_instructions:
+            worker_sys_prompt = (
+                f"[CONSIGNES SPÉCIFIQUES IMPÉRATIVES DE CETTE DISCUSSION] :\n{custom_instructions}\n\n"
+                + (worker_sys_prompt or "Respecte scrupuleusement les consignes spécifiques de cette discussion.")
+            )
+
         safe_history = []
         running_chars = len(optimized) + (len(worker_sys_prompt) if worker_sys_prompt else 0)
         for h_msg in reversed(formatted_history):
@@ -1282,21 +1630,39 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
         async def execute_single_worker(w_mod: str) -> str:
             m_db = db.query(AIModel).filter(AIModel.model_id == w_mod).first()
             dom = m_db.domain if m_db else determine_domain(w_mod)
+            # Vérification individuelle du contexte autorisé du travailleur (avec 10% de marge)
+            w_max_chars = compute_dynamic_chunk_size(db, [w_mod])
+            w_prompt = optimized
+            if len(w_prompt) > w_max_chars:
+                w_prompt = await smart_chunk_text_pipeline(
+                    db=db,
+                    settings=settings,
+                    full_text=w_prompt,
+                    user_goal=original_user_text,
+                    max_chunk_chars=w_max_chars,
+                    fallback_prompter_id=p_mod,
+                    is_ocr_ce2=is_ocr_ce2,
+                    project_id=project_id,
+                    label=f"Contexte {w_mod}"
+                )
+
             if dom in ["Génération Image", "Génération Vidéo"]:
                 m_type = "video" if dom == "Génération Vidéo" else "image"
                 img_files = [f for f in (extracted_files or []) if f.get("is_image")]
-                media_res = await generate_media(db, settings, optimized, m_type, w_mod, p_mod, optimize_prompt=False, input_images=img_files)
+                media_res = await generate_media(db, settings, w_prompt, m_type, w_mod, p_mod, optimize_prompt=False, input_images=img_files)
                 return f"[MEDIA_{m_type.upper()}:{media_res['model_used']}]\n{media_res['media_url']}\nPrompt utilisé : {media_res['optimized_prompt']}"
             msgs = safe_history.copy()
             if worker_sys_prompt:
                 msgs.insert(0, {"role": "system", "content": worker_sys_prompt})
-            msgs.append({"role": "user", "content": optimized})
+            msgs.append({"role": "user", "content": w_prompt})
             return await ask_agent_with_fallback(
                 db, settings, w_mod, msgs,
                 is_worker=True, enable_web=enable_web,
-                target_domain=dom
+                target_domain=dom,
+                project_id=project_id
             )
 
+        set_project_live_status(project_id, True, f"Exécution sur {len(workers)} travailleur(s) IA...")
         log_activity(f"Exécution sur {len(workers)} travailleur(s) (avec bascule anti-quota équivalente active)...")
         if len(workers) == 1:
             worker_response = await execute_single_worker(workers[0])
@@ -1314,6 +1680,7 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
             log_activity("Restitution directe (Mono-IA / Média généré).")
             final_response = "\n\n".join([str(r) for r in responses])
         else:
+            set_project_live_status(project_id, True, f"Synthèse finale par le Concaténeur ({c_mod})...")
             log_activity(f"Synthèse finale via Concaténeur ({c_mod})...")
             if is_ocr_ce2:
                 concat_system = (
@@ -1329,14 +1696,33 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
                     "Translate all explanatory text, descriptions, and user-facing prose into natural French. "
                     "CRITICAL: Do NOT translate code blocks, programming keywords, or source code contents."
                 )
-            synth = f"User Request: {original_user_text}\n\n" + "\n".join([f"--- EXPERT {i+1} ---\n{str(r)}" for i, r in enumerate(responses)])
-            if len(synth) > chunk_size * 2:
-                synth = synth[:chunk_size * 2]
+            if custom_instructions:
+                concat_system = f"[CONSIGNES SPÉCIFIQUES IMPÉRATIVES DE LA DISCUSSION] :\n{custom_instructions}\n\n{concat_system}"
+
+            synth = f"User Request: {original_user_text}\n"
+            if custom_instructions:
+                synth += f"Persistent Instructions: {custom_instructions}\n"
+            synth += "\n" + "\n".join([f"--- EXPERT {i+1} ---\n{str(r)}" for i, r in enumerate(responses)])
+
+            c_max_chars = compute_dynamic_chunk_size(db, [c_mod])
+            if len(synth) > c_max_chars:
+                synth = await smart_chunk_text_pipeline(
+                    db=db,
+                    settings=settings,
+                    full_text=synth,
+                    user_goal=original_user_text,
+                    max_chunk_chars=c_max_chars,
+                    fallback_prompter_id=p_mod,
+                    is_ocr_ce2=is_ocr_ce2,
+                    project_id=project_id,
+                    label="Synthèse Concaténeur"
+                )
             final_response = await ask_agent_with_fallback(
                 db, settings, c_mod,
                 [{"role": "system", "content": concat_system}, {"role": "user", "content": synth}],
                 is_worker=False, enable_web=False,
-                target_domain="Code & Logique" if theme == "code" else "Texte Polyvalent"
+                target_domain="Code & Logique" if theme == "code" else "Texte Polyvalent",
+                project_id=project_id
             )
 
         log_activity("Orchestration terminée avec succès.")
@@ -1349,6 +1735,8 @@ async def run_orchestrator(db: Session, history: list, settings: SystemSettings,
         system_logger.error(f"Traceback complet:\n{tb_str}")
         final_response = f"L'IA a rencontré une erreur critique: {str(e)}"
         log_activity(f"ERREUR CRITIQUE: {str(e)}")
+    finally:
+        clear_project_live_status(project_id)
     
     await sync_finances(db, settings)
     return final_response

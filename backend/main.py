@@ -20,15 +20,17 @@ from .models import User, Project, Message, SystemSettings, AIModel, FinancialLo
 from .orchestrator import (
     run_orchestrator, sync_providers_models, sync_finances, activity_logs,
     log_activity, generate_media, resolve_gemini_model_id, is_worker_eligible,
-    find_quota_fallback_model, purge_unauthorized_models, ask_agent_with_fallback
+    find_quota_fallback_model, purge_unauthorized_models, ask_agent_with_fallback,
+    project_live_status, set_project_live_status, clear_project_live_status
 )
 from .logger import log_file, cleanup_old_logs, system_logger
 
 Base.metadata.create_all(bind=engine)
 
-# Migration SQL automatique sans perte de données pour projects et ai_models (Capacités LM Studio)
+# Migration SQL automatique sans perte de données pour projects et ai_models (Capacités LM Studio + Consignes persistantes)
 for sql_stmt in [
     "ALTER TABLE projects ADD COLUMN IF NOT EXISTS config_json TEXT;",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS custom_instructions TEXT DEFAULT '';",
     "ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS supports_reasoning BOOLEAN DEFAULT FALSE;",
     "ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS supports_tools BOOLEAN DEFAULT FALSE;",
     "ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS supports_vision BOOLEAN DEFAULT FALSE;",
@@ -47,7 +49,7 @@ for sql_stmt in [
 app = FastAPI(title="AETHAS38")
 
 # --- GESTION AUTOMATIQUE DE LA VERSION DU PROJET ---
-DEFAULT_APP_VERSION = "v0.24.0"
+DEFAULT_APP_VERSION = "v0.25.0"
 
 def get_current_app_version() -> str:
     env_ver = os.getenv("APP_VERSION", "").strip()
@@ -68,8 +70,29 @@ def get_current_app_version() -> str:
 HERMES_API_URL = os.getenv("HERMES_API_URL", "http://192.168.1.20:8642")
 HERMES_API_KEY = os.getenv("HERMES_API_KEY", "87186fe63b1e5d8b8d01bc769f5e894d24081a86d0d800d00b6358c26fded37e")
 
-# --- REGISTRE DES TÂCHES ACTIVES POUR INTERRUPTION IMMÉDIATE ---
+# --- REGISTRE DES TÂCHES ACTIVES POUR EXÉCUTION EN ARRIÈRE-PLAN & INTERRUPTION ---
 active_project_tasks: Dict[int, asyncio.Task] = {}
+
+def get_project_custom_instructions(db: Session, project_id: int, config_dict: dict = None) -> str:
+    """Récupère les consignes spécifiques persistantes d'une discussion."""
+    if config_dict and isinstance(config_dict, dict):
+        ci = (config_dict.get("custom_instructions") or "").strip()
+        if ci:
+            return ci
+    try:
+        row = db.execute(
+            text("SELECT custom_instructions, config_json FROM projects WHERE id = :pid"),
+            {"pid": project_id}
+        ).fetchone()
+        if row:
+            if row[0] and str(row[0]).strip():
+                return str(row[0]).strip()
+            if row[1]:
+                parsed = json.loads(row[1])
+                return (parsed.get("custom_instructions") or "").strip()
+    except Exception:
+        pass
+    return ""
 
 @app.exception_handler(Exception)
 async def global_json_exception_handler(request: Request, exc: Exception):
@@ -250,15 +273,100 @@ def login(login_data: LoginRequest, response: Response, db: Session = Depends(ge
     user = db.query(User).filter(User.username == login_data.username).first()
     if not user or not verify_password(login_data.password, user.hashed_password): raise HTTPException(status_code=401, detail="Identifiants incorrects.")
     if not verify_totp(user.totp_secret, login_data.totp_code): raise HTTPException(status_code=401, detail="2FA invalide.")
-    # Cookie de session fixé à 10 heures (36000 secondes)
+    # Cookie de session fixé à 10 heures (36000 secondes) + cookie d'expiration pour le décompte temps réel
+    expires_ts = int(datetime.now(timezone.utc).timestamp()) + 36000
     response.set_cookie(key="session_token", value=create_access_token(data={"sub": user.username}), httponly=True, max_age=36000, samesite="lax")
-    return {"message": "Connexion réussie"}
+    response.set_cookie(key="session_expires_at", value=str(expires_ts), httponly=False, max_age=36000, samesite="lax")
+    return {"message": "Connexion réussie", "session_expires_at": expires_ts}
 
 @app.get("/dashboard")
 def dashboard(request: Request):
     token = request.cookies.get("session_token")
     if not token or not verify_token(token): return RedirectResponse(url="/login")
     return FileResponse(os.path.join(os.getcwd(), "frontend", "dashboard.html"), headers=NO_CACHE_HEADERS)
+
+# --- TRANSCRIPTION VOCALE SERVEUR (POUR OPERA GX / NAVIGATEURS SANS WEB SPEECH) ---
+@app.post("/api/audio/transcribe")
+async def transcribe_audio(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Transcrit un enregistrement vocal du microphone via Groq Whisper, Gemini Audio ou HuggingFace Whisper."""
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Fichier audio vide.")
+    settings = db.query(SystemSettings).first()
+    if not settings:
+        raise HTTPException(status_code=400, detail="Paramètres système non configurés.")
+
+    mime_type = file.content_type or "audio/webm"
+    errors = []
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        # 1. Priorité Groq Whisper (ultra-rapide si clé configurée)
+        if getattr(settings, "groq_api_key", None):
+            try:
+                files_data = {"file": (file.filename or "speech.webm", audio_bytes, mime_type)}
+                data_form = {"model": "whisper-large-v3-turbo", "language": "fr"}
+                r = await client.post(
+                    "https://api.groq.com/openai/v1/audio/transcriptions",
+                    headers={"Authorization": f"Bearer {settings.groq_api_key.strip()}"},
+                    files=files_data,
+                    data=data_form
+                )
+                if r.status_code == 200 and r.json().get("text"):
+                    text_out = r.json()["text"].strip()
+                    log_activity(f"[Dictée Vocale] Transcription Groq Whisper réussie ({len(text_out)} car.).")
+                    return {"text": text_out}
+                errors.append(f"Groq({r.status_code})")
+            except Exception as e:
+                errors.append(f"Groq({str(e)[:40]})")
+
+        # 2. Gemini Multimodal Audio (utilise la clé Gemini déjà présente)
+        if settings.gemini_api_key:
+            try:
+                b64_audio = base64.b64encode(audio_bytes).decode("utf-8")
+                clean_mime = mime_type.split(";")[0].strip() or "audio/webm"
+                for gem_mod in ["gemini-2.0-flash", "gemini-1.5-flash", resolve_gemini_model_id(db, "gemini-3.5-flash-lite")]:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{gem_mod}:generateContent?key={settings.gemini_api_key.strip()}"
+                    payload = {
+                        "contents": [{
+                            "parts": [
+                                {"text": "Transcris exactement en français les paroles prononcées dans cet enregistrement audio. Ne renvoie QUE le texte transcrit, sans guillemets ni commentaires."},
+                                {"inlineData": {"mimeType": clean_mime, "data": b64_audio}}
+                            ]
+                        }]
+                    }
+                    r = await client.post(url, json=payload)
+                    if r.status_code == 200:
+                        cands = r.json().get("candidates") or []
+                        if cands:
+                            parts = (cands[0].get("content") or {}).get("parts") or []
+                            if parts and parts[0].get("text"):
+                                text_out = parts[0]["text"].strip()
+                                log_activity(f"[Dictée Vocale] Transcription Gemini Audio ({gem_mod}) réussie.")
+                                return {"text": text_out}
+                    errors.append(f"Gemini-{gem_mod}({r.status_code})")
+            except Exception as e:
+                errors.append(f"Gemini({str(e)[:40]})")
+
+        # 3. HuggingFace Whisper Large V3 Turbo
+        if settings.huggingface_api_key:
+            try:
+                r = await client.post(
+                    "https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo",
+                    headers={
+                        "Authorization": f"Bearer {settings.huggingface_api_key.strip()}",
+                        "Content-Type": mime_type
+                    },
+                    content=audio_bytes
+                )
+                if r.status_code == 200 and r.json().get("text"):
+                    text_out = r.json()["text"].strip()
+                    log_activity("[Dictée Vocale] Transcription HuggingFace Whisper réussie.")
+                    return {"text": text_out}
+                errors.append(f"HF({r.status_code})")
+            except Exception as e:
+                errors.append(f"HF({str(e)[:40]})")
+
+    raise HTTPException(status_code=400, detail=f"Échec de transcription vocale ({' | '.join(errors)}). Vérifiez vos clés API Gemini/HF/Groq.")
 
 # --- INTÉGRATION HERMES AGENT (SYNCHRONISÉE AVEC LES PROJETS AETHAS38) ---
 @app.get("/api/hermes/status")
@@ -275,20 +383,22 @@ async def check_hermes_status(current_user: User = Depends(get_current_user)):
                 continue
     return {"status": "offline", "url": HERMES_API_URL}
 
-async def _call_hermes_instance(db: Session, project: Project, history: list, extra_files_context: str, settings: SystemSettings, fallback_worker: str) -> str:
-    """Appelle Hermes avec l'historique complet de la discussion AETHAS38 pour conserver la mémoire et s'adapter."""
-    hermes_messages = [
-        {
-            "role": "system",
-            "content": (
-                f"Tu es Hermes, l'agent autonome intégré à AETHAS38 (Discussion: '{project.title}', ID: {project.id}). "
-                "Tu partages exactement le même historique de discussion que le mode Multi-Codage AETHAS38. "
-                "Garde en mémoire tout le contexte des échanges précédents et adapte-toi au fur et à mesure."
-            )
-        }
-    ]
+async def _call_hermes_instance(db: Session, project: Project, history: list, extra_files_context: str, settings: SystemSettings, fallback_worker: str, custom_instructions: str = "") -> str:
+    """Appelle Hermes avec l'historique complet de la discussion AETHAS38 et les consignes spécifiques."""
+    sys_base = (
+        f"Tu es Hermes, l'agent autonome intégré à AETHAS38 (Discussion: '{project.title}', ID: {project.id}). "
+        "Tu partages exactement le même historique de discussion que le mode Multi-Codage AETHAS38. "
+        "Garde en mémoire tout le contexte des échanges précédents et adapte-toi au fur et à mesure."
+    )
+    if custom_instructions:
+        sys_base = f"[CONSIGNES SPÉCIFIQUES IMPÉRATIVES DE CETTE DISCUSSION] :\n{custom_instructions}\n\n{sys_base}"
+
+    hermes_messages = [{"role": "system", "content": sys_base}]
     for m in history:
         hermes_messages.append({"role": m.role, "content": m.content or ""})
+
+    if custom_instructions and hermes_messages[-1]["role"] == "user":
+        hermes_messages[-1]["content"] = f"[Rappel des consignes de la discussion : {custom_instructions}]\n\n" + hermes_messages[-1]["content"]
 
     if extra_files_context and hermes_messages[-1]["role"] == "user":
         hermes_messages[-1]["content"] += f"\n\n[Contenu extrait des fichiers joints] :\n{extra_files_context}"
@@ -298,6 +408,8 @@ async def _call_hermes_instance(db: Session, project: Project, history: list, ex
         "X-API-Key": HERMES_API_KEY,
         "Content-Type": "application/json"
     }
+
+    set_project_live_status(project.id, True, "Hermes analyse l'historique et exécute la tâche...", "Connexion à l'instance Hermes Agent locale...")
 
     async with httpx.AsyncClient(timeout=180.0) as client:
         try:
@@ -311,8 +423,13 @@ async def _call_hermes_instance(db: Session, project: Project, history: list, ex
                 data = resp.json()
                 choices = data.get("choices") or []
                 if choices and choices[0].get("message", {}).get("content"):
+                    msg_obj = choices[0]["message"]
+                    reasoning = msg_obj.get("reasoning_content") or msg_obj.get("reasoning") or ""
+                    content = msg_obj["content"]
+                    if reasoning and "<think>" not in content:
+                        content = f"<think>\n{reasoning}\n</think>\n\n{content}"
                     log_activity(f"[Hermes Agent] Réponse synchronisée reçue sur le projet #{project.id}.")
-                    return choices[0]["message"]["content"]
+                    return content
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -343,13 +460,38 @@ async def _call_hermes_instance(db: Session, project: Project, history: list, ex
         messages=hermes_messages,
         is_worker=True,
         enable_web=True,
-        target_domain="Code & Logique"
+        target_domain="Code & Logique",
+        project_id=project.id
     )
     return f"*(Bascule auto AETHAS38 - Quota/Relais Hermes)*\n\n{fallback_ans}"
 
+async def _run_hermes_background(project_id: int, extra_files_context: str, fallback_worker: str):
+    """Exécute la requête Hermes dans une tâche de fond indépendante du changement de page."""
+    bg_db = SessionLocal()
+    try:
+        p = bg_db.query(Project).filter(Project.id == project_id).first()
+        if not p:
+            return
+        history = bg_db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
+        settings = bg_db.query(SystemSettings).first()
+        custom_instr = get_project_custom_instructions(bg_db, project_id)
+        hermes_resp = await _call_hermes_instance(bg_db, p, history, extra_files_context, settings, fallback_worker, custom_instr)
+        bg_db.add(Message(role="assistant", content=hermes_resp, project_id=project_id))
+        bg_db.commit()
+    except asyncio.CancelledError:
+        bg_db.add(Message(role="assistant", content="🛑 *[Requête Hermes interrompue par l'utilisateur]*", project_id=project_id))
+        bg_db.commit()
+    except Exception as e:
+        bg_db.add(Message(role="assistant", content=f"Erreur Hermes : {str(e)}", project_id=project_id))
+        bg_db.commit()
+    finally:
+        active_project_tasks.pop(project_id, None)
+        clear_project_live_status(project_id)
+        bg_db.close()
+
 @app.post("/api/hermes/chat")
 async def proxy_hermes_chat(payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Route directe compatible avec l'interface Hermes synchronisée aux projets AETHAS38."""
+    """Route directe compatible avec l'interface Hermes synchronisée aux projets AETHAS38 (continue en arrière-plan)."""
     project_id = payload.get("project_id")
     user_prompt = (payload.get("prompt") or "").strip()
     if not user_prompt:
@@ -364,22 +506,15 @@ async def proxy_hermes_chat(payload: dict, db: Session = Depends(get_db), curren
                 new_title = user_prompt.split('\n')[0][:35].strip() or "Discussion Hermes"
                 p.title = new_title + ("..." if len(user_prompt) > 35 else "")
                 db.commit()
-            history = db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
-            settings = db.query(SystemSettings).first()
-            task = asyncio.current_task()
-            active_project_tasks[project_id] = task
-            try:
-                hermes_resp = await _call_hermes_instance(db, p, history, "", settings, "Qwen/Qwen2.5-Coder-32B-Instruct")
-                db.add(Message(role="assistant", content=hermes_resp, project_id=project_id))
-                db.commit()
-            except asyncio.CancelledError:
-                db.add(Message(role="assistant", content="🛑 *[Requête Hermes interrompue par l'utilisateur]*", project_id=project_id))
-                db.commit()
-            finally:
-                active_project_tasks.pop(project_id, None)
+
+            bg_task = asyncio.create_task(_run_hermes_background(project_id, "", "Qwen/Qwen2.5-Coder-32B-Instruct"))
+            active_project_tasks[project_id] = bg_task
+            await asyncio.shield(bg_task)
+
             updated_msgs = db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
+            last_ans = updated_msgs[-1].content if updated_msgs else ""
             return {
-                "response": hermes_resp,
+                "response": last_ans,
                 "messages": [{"id": m.id, "role": m.role, "content": m.content, "created_at": m.created_at.isoformat(), "project_id": m.project_id} for m in updated_msgs]
             }
 
@@ -412,23 +547,35 @@ async def create_hermes_project_message(project_id: int, message: MessageCreate,
         p.title = new_title + ("..." if len(first_content) > 35 else "")
         db.commit()
 
-    history = db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
-    settings = db.query(SystemSettings).first()
     fallback_worker = (message.config.workers[0] if message.config and message.config.workers else "Qwen/Qwen2.5-Coder-32B-Instruct")
 
-    task = asyncio.current_task()
-    active_project_tasks[project_id] = task
-    try:
-        hermes_resp = await _call_hermes_instance(db, p, history, extra_files_context, settings, fallback_worker)
-        db.add(Message(role="assistant", content=hermes_resp, project_id=project_id))
-        db.commit()
-    except asyncio.CancelledError:
-        db.add(Message(role="assistant", content="🛑 *[Requête Hermes interrompue par l'utilisateur]*", project_id=project_id))
-        db.commit()
-    finally:
-        active_project_tasks.pop(project_id, None)
+    bg_task = asyncio.create_task(_run_hermes_background(project_id, extra_files_context, fallback_worker))
+    active_project_tasks[project_id] = bg_task
+    await asyncio.shield(bg_task)
 
     return db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
+
+@app.get("/api/projects/active_tasks")
+async def get_all_active_tasks(current_user: User = Depends(get_current_user)):
+    """Retourne toutes les tâches en cours pour que l'interface suive l'avancement même après un changement de page."""
+    running_ids = [pid for pid, t in list(active_project_tasks.items()) if not t.done()]
+    return {
+        "active_project_ids": running_ids,
+        "statuses": {str(pid): project_live_status.get(pid, {}) for pid in running_ids}
+    }
+
+@app.get("/api/projects/{project_id}/status")
+async def get_single_project_status(project_id: int, current_user: User = Depends(get_current_user)):
+    """Retourne le statut temps réel et le raisonnement en direct d'une discussion."""
+    task = active_project_tasks.get(project_id)
+    is_running = bool(task and not task.done())
+    st = project_live_status.get(project_id) or {}
+    return {
+        "active": is_running,
+        "step": st.get("step") or ("Orchestration en cours..." if is_running else ""),
+        "reasoning": st.get("reasoning") or "",
+        "updated_at": st.get("updated_at")
+    }
 
 @app.post("/api/projects/{project_id}/abort")
 async def abort_project_request(project_id: int, current_user: User = Depends(get_current_user)):
@@ -436,8 +583,10 @@ async def abort_project_request(project_id: int, current_user: User = Depends(ge
     task = active_project_tasks.get(project_id)
     if task and not task.done():
         task.cancel()
+        clear_project_live_status(project_id)
         log_activity(f"🛑 Signal d'interruption envoyé sur le projet #{project_id} par {current_user.username}.")
         return {"status": "aborted", "message": "Requête interrompue avec succès."}
+    clear_project_live_status(project_id)
     return {"status": "idle", "message": "Aucune requête active à interrompre."}
 
 @app.get("/api/logs")
@@ -483,8 +632,24 @@ async def suggest_replacement(req: ModelReplacementRequest, db: Session = Depend
     return {"suggestion": "Qwen/Qwen2.5-Coder-32B-Instruct", "reason": "Repli par défaut."}
 
 @app.get("/api/users/me")
-def get_me(current_user: User = Depends(get_current_user)):
-    return {"username": current_user.username, "is_admin": current_user.is_admin, "is_superadmin": current_user.is_superadmin, "avatar_path": current_user.avatar_path}
+def get_me(request: Request, current_user: User = Depends(get_current_user)):
+    token = request.cookies.get("session_token")
+    payload = verify_token(token) if token else {}
+    exp_cookie = request.cookies.get("session_expires_at")
+    exp_ts = None
+    if payload and isinstance(payload, dict) and payload.get("exp"):
+        exp_ts = int(payload["exp"])
+    elif exp_cookie and str(exp_cookie).isdigit():
+        exp_ts = int(exp_cookie)
+    else:
+        exp_ts = int(datetime.now(timezone.utc).timestamp()) + 36000
+    return {
+        "username": current_user.username,
+        "is_admin": current_user.is_admin,
+        "is_superadmin": current_user.is_superadmin,
+        "avatar_path": current_user.avatar_path,
+        "session_expires_at": exp_ts
+    }
 
 @app.put("/api/users/me/password")
 def change_password(passwords: PasswordChange, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -533,8 +698,40 @@ def update_project_config(project_id: int, cfg: ProjectConfigUpdate, db: Session
     p = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not p: raise HTTPException(status_code=404)
     p.config_json = cfg.config_json
+    try:
+        parsed = json.loads(cfg.config_json or "{}")
+        if "custom_instructions" in parsed:
+            db.execute(
+                text("UPDATE projects SET custom_instructions = :ci WHERE id = :pid"),
+                {"ci": parsed.get("custom_instructions") or "", "pid": project_id}
+            )
+    except Exception:
+        pass
     db.commit(); db.refresh(p)
     return p
+
+@app.put("/api/projects/{project_id}/instructions")
+def update_project_instructions(project_id: int, payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Sauvegarde les consignes spécifiques persistantes d'une discussion."""
+    p = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Projet introuvable.")
+    instructions = (payload.get("custom_instructions") or "").strip()
+    try:
+        cfg = json.loads(p.config_json) if p.config_json else {}
+    except Exception:
+        cfg = {}
+    cfg["custom_instructions"] = instructions
+    p.config_json = json.dumps(cfg)
+    try:
+        db.execute(
+            text("UPDATE projects SET custom_instructions = :ci WHERE id = :pid"),
+            {"ci": instructions, "pid": project_id}
+        )
+    except Exception:
+        pass
+    db.commit()
+    return {"status": "ok", "custom_instructions": instructions, "config_json": p.config_json}
 
 @app.put("/api/projects/{project_id}/rename", response_model=ProjectResponse)
 def rename_project(project_id: int, project_data: ProjectRename, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -569,14 +766,41 @@ def export_project(project_id: int, format: str = "txt", db: Session = Depends(g
 def get_messages(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
 
+async def _run_orchestrator_background(project_id: int, conf: dict, extracted_files_data: list):
+    """Exécute l'orchestrateur dans une tâche de fond indépendante du changement de page ou d'onglet."""
+    bg_db = SessionLocal()
+    try:
+        history = bg_db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
+        settings = bg_db.query(SystemSettings).first()
+        conf["custom_instructions"] = get_project_custom_instructions(bg_db, project_id, conf)
+        ai_resp = await run_orchestrator(bg_db, history, settings, conf, extracted_files_data, project_id=project_id)
+        bg_db.add(Message(role="assistant", content=ai_resp, project_id=project_id))
+        bg_db.commit()
+    except asyncio.CancelledError:
+        bg_db.add(Message(role="assistant", content="🛑 *[Requête interrompue par l'utilisateur]*", project_id=project_id))
+        bg_db.commit()
+    except Exception as e:
+        bg_db.add(Message(role="assistant", content=f"Erreur lors du traitement : {str(e)}", project_id=project_id))
+        bg_db.commit()
+    finally:
+        active_project_tasks.pop(project_id, None)
+        clear_project_live_status(project_id)
+        bg_db.close()
+
 @app.post("/api/projects/{project_id}/messages", response_model=List[MessageResponse])
 async def create_message(project_id: int, message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     p = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not p: raise HTTPException(status_code=404, detail="Projet introuvable.")
 
+    existing_ci = get_project_custom_instructions(db, project_id)
     if message.config:
-        p.config_json = json.dumps(message.config.dict())
+        cfg_dict = message.config.dict()
+        if existing_ci and not cfg_dict.get("custom_instructions"):
+            cfg_dict["custom_instructions"] = existing_ci
+        p.config_json = json.dumps(cfg_dict)
         db.commit()
+    else:
+        cfg_dict = {"workers": ["Qwen/Qwen2.5-Coder-32B-Instruct"], "custom_instructions": existing_ci}
 
     extracted_files_data, files_names = extract_attached_files(message.files)
 
@@ -595,21 +819,9 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
             p.title = new_title + ("..." if len(first_content) > 35 else "")
             db.commit()
     
-    history = db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
-    settings = db.query(SystemSettings).first()
-    conf = message.config.dict() if message.config else {"workers": ["Qwen/Qwen2.5-Coder-32B-Instruct"]} 
-    
-    task = asyncio.current_task()
-    active_project_tasks[project_id] = task
-    try:
-        ai_resp = await run_orchestrator(db, history, settings, conf, extracted_files_data)
-        db.add(Message(role="assistant", content=ai_resp, project_id=project_id))
-        db.commit()
-    except asyncio.CancelledError:
-        db.add(Message(role="assistant", content="🛑 *[Requête interrompue par l'utilisateur]*", project_id=project_id))
-        db.commit()
-    finally:
-        active_project_tasks.pop(project_id, None)
+    bg_task = asyncio.create_task(_run_orchestrator_background(project_id, cfg_dict, extracted_files_data))
+    active_project_tasks[project_id] = bg_task
+    await asyncio.shield(bg_task)
 
     return db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
 
