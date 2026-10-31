@@ -46,6 +46,24 @@ for sql_stmt in [
 
 app = FastAPI(title="AETHAS38")
 
+# --- GESTION AUTOMATIQUE DE LA VERSION DU PROJET ---
+DEFAULT_APP_VERSION = "v0.24.0"
+
+def get_current_app_version() -> str:
+    env_ver = os.getenv("APP_VERSION", "").strip()
+    if env_ver:
+        return env_ver if env_ver.startswith("v") else f"v{env_ver}"
+    version_file = os.path.join(os.getcwd(), "VERSION")
+    if os.path.exists(version_file):
+        try:
+            with open(version_file, "r", encoding="utf-8") as vf:
+                file_ver = vf.read().strip()
+                if file_ver:
+                    return file_ver if file_ver.startswith("v") else f"v{file_ver}"
+        except Exception:
+            pass
+    return DEFAULT_APP_VERSION
+
 # --- CONFIGURATION HERMES AGENT AUTO-HÉBERGÉ ---
 HERMES_API_URL = os.getenv("HERMES_API_URL", "http://192.168.1.20:8642")
 HERMES_API_KEY = os.getenv("HERMES_API_KEY", "87186fe63b1e5d8b8d01bc769f5e894d24081a86d0d800d00b6358c26fded37e")
@@ -74,6 +92,11 @@ NO_CACHE_HEADERS = {
     "Pragma": "no-cache",
     "Expires": "0"
 }
+
+@app.get("/api/version")
+async def get_version():
+    """Retourne dynamiquement la version actuelle du paquet au frontend sans mise en cache."""
+    return JSONResponse(content={"version": get_current_app_version()}, headers=NO_CACHE_HEADERS)
 
 def extract_attached_files(files_list) -> tuple[list, list]:
     """Extrait le contenu texte, PDF, Word, Excel, Macros VBA et Images des fichiers joints."""
@@ -183,6 +206,9 @@ async def scheduler_task():
 @app.on_event("startup")
 async def startup_event():
     cleanup_old_logs(30)
+    current_ver = get_current_app_version()
+    system_logger.info(f"[Système] AETHAS38 démarré en version {current_ver}")
+    log_activity(f"[Système] AETHAS38 démarré ({current_ver}).")
     db = SessionLocal()
     try:
         purge_unauthorized_models(db)

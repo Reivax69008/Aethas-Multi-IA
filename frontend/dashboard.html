@@ -964,8 +964,8 @@
             const projectVersion = ref("...");
             fetch('/api/version')
               .then(res => res.ok ? res.json() : Promise.reject())
-              .then(data => { projectVersion.value = data.version || "v0.24.0"; })
-              .catch(() => { projectVersion.value = "v0.24.0"; });
+              .then(data => { if (data && data.version) projectVersion.value = data.version; })
+              .catch(() => {});
             const activeView = ref('chat'); 
             const settingsTab = ref('user');
             const isSidebarOpen = ref(true);
