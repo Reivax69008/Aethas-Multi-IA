@@ -961,7 +961,12 @@
     createApp({
         setup() {
             const user = ref({ username: "Guest", is_admin: false, is_superadmin: false, avatar_path: null });
-            const projectVersion = ref("v0.21.0");
+            const projectVersion = ref("Chargement...");
+            // Récupération dynamique au montage du composant
+            fetch('/api/version')
+              .then(res => res.json())
+              .then(data => { projectVersion.value = data.version; })
+              .catch(() => { projectVersion.value = "v0.23.0"; });
             const activeView = ref('chat'); 
             const settingsTab = ref('user');
             const isSidebarOpen = ref(true);
