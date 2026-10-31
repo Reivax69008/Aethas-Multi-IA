@@ -17,6 +17,64 @@
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+
+        /* --- STYLE DES ICÔNES RONDES FAÇON LM STUDIO --- */
+        .lm-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 26px;
+            border-radius: 9999px;
+            border-width: 1px;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+        }
+        .lm-badge svg {
+            width: 14px;
+            height: 14px;
+            stroke-width: 2;
+        }
+        .lm-badge-vision {
+            background-color: rgba(234, 179, 8, 0.14);
+            border-color: rgba(234, 179, 8, 0.45);
+            color: #facc15;
+            box-shadow: 0 0 8px rgba(234, 179, 8, 0.15);
+        }
+        .lm-badge-tools {
+            background-color: rgba(59, 130, 246, 0.15);
+            border-color: rgba(59, 130, 246, 0.45);
+            color: #3b82f6;
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.15);
+        }
+        .lm-badge-reason {
+            background-color: rgba(34, 197, 94, 0.15);
+            border-color: rgba(34, 197, 94, 0.45);
+            color: #22c55e;
+            box-shadow: 0 0 8px rgba(34, 197, 94, 0.15);
+        }
+        .lm-badge-audio {
+            background-color: rgba(168, 85, 247, 0.15);
+            border-color: rgba(168, 85, 247, 0.45);
+            color: #c084fc;
+            box-shadow: 0 0 8px rgba(168, 85, 247, 0.15);
+        }
+        .lm-badge-cyan {
+            background-color: rgba(6, 182, 212, 0.15);
+            border-color: rgba(6, 182, 212, 0.45);
+            color: #22d3ee;
+            box-shadow: 0 0 8px rgba(6, 182, 212, 0.15);
+        }
+        .lm-badge-red {
+            background-color: rgba(239, 68, 68, 0.18);
+            border-color: rgba(239, 68, 68, 0.55);
+            color: #f87171;
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.25);
+        }
+        .lm-badge-inactive {
+            opacity: 0.28;
+            filter: grayscale(60%);
+        }
     </style>
 </head>
 <body class="h-screen w-screen flex overflow-hidden">
@@ -25,7 +83,7 @@
 
     <!-- TOAST NOTIFICATION TEMPORAIRE -->
     <div v-if="toastVisible" class="fixed bottom-6 right-6 bg-gray-800 border-l-4 border-aethas-cyan text-gray-200 p-4 rounded shadow-[0_0_15px_rgba(6,182,212,0.3)] z-[200] flex items-center gap-3 transition-opacity duration-300 max-w-md">
-        <i data-lucide="check-circle" class="w-5 h-5 text-aethas-cyan flex-shrink-0"></i>
+        <span class="lm-badge lm-badge-cyan"><i data-lucide="check-circle" class="w-4 h-4"></i></span>
         <span class="text-xs font-medium">{{ toastMessage }}</span>
     </div>
 
@@ -33,7 +91,10 @@
     <div v-if="isAssignModalOpen" class="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
         <div class="bg-aethas-panel border border-gray-600 rounded-2xl w-full max-w-md overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.7)]">
             <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800/50">
-                <h2 class="text-lg font-bold text-white flex items-center gap-2"><i data-lucide="link" class="w-5 h-5 text-aethas-cyan"></i> Assigner un modèle</h2>
+                <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                    <span class="lm-badge lm-badge-cyan"><i data-lucide="link" class="w-3.5 h-3.5"></i></span>
+                    Assigner un modèle
+                </h2>
                 <button @click="closeAssignModal" class="text-gray-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
             <div class="p-6 space-y-4">
@@ -79,18 +140,24 @@
             </div>
             
             <div class="p-3 space-y-2">
-                <button @click="createNewProject" :disabled="isLoading" class="w-full bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 rounded-lg py-2 px-3 flex items-center justify-center gap-2 shadow-md text-sm">
-                    <i data-lucide="plus" class="w-4 h-4 text-aethas-cyan"></i> Nouveau Projet Chat
+                <button @click="createNewProject" :disabled="isLoading" class="w-full bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 rounded-lg py-2 px-3 flex items-center justify-start gap-2.5 shadow-md text-sm">
+                    <span class="lm-badge lm-badge-cyan"><i data-lucide="plus" class="w-3.5 h-3.5"></i></span>
+                    <span>Nouveau Projet Chat</span>
                 </button>
                 <button @click="openHermesView" :class="['w-full border rounded-lg py-2 px-3 flex items-center justify-between transition-colors text-sm font-medium', activeView === 'hermes' ? 'bg-amber-500/20 border-amber-500 text-amber-300' : 'bg-aethas-dark hover:bg-gray-800 text-gray-300 border-gray-700']">
-                    <span class="flex items-center gap-2"><i data-lucide="bot" class="w-4 h-4 text-amber-400"></i> Instance Hermes Agent</span>
+                    <span class="flex items-center gap-2.5">
+                        <span class="lm-badge lm-badge-vision"><i data-lucide="bot" class="w-3.5 h-3.5"></i></span>
+                        <span>Instance Hermes Agent</span>
+                    </span>
                     <span :class="['w-2.5 h-2.5 rounded-full', hermesStatus === 'online' ? 'bg-green-500 animate-pulse' : 'bg-red-500']" :title="hermesStatus === 'online' ? 'Hermes en ligne' : 'Hermes hors ligne'"></span>
                 </button>
-                <button @click="activeView = 'media'" :class="['w-full border rounded-lg py-2 px-3 flex items-center justify-center gap-2 transition-colors text-sm font-medium', activeView === 'media' ? 'bg-aethas-purple/20 border-aethas-purple text-purple-300' : 'bg-aethas-dark hover:bg-gray-800 text-gray-300 border-gray-700']">
-                    <i data-lucide="film" class="w-4 h-4 text-aethas-purple"></i> Studio Image &amp; Vidéo
+                <button @click="activeView = 'media'" :class="['w-full border rounded-lg py-2 px-3 flex items-center justify-start gap-2.5 transition-colors text-sm font-medium', activeView === 'media' ? 'bg-aethas-purple/20 border-aethas-purple text-purple-300' : 'bg-aethas-dark hover:bg-gray-800 text-gray-300 border-gray-700']">
+                    <span class="lm-badge lm-badge-audio"><i data-lucide="film" class="w-3.5 h-3.5"></i></span>
+                    <span>Studio Image &amp; Vidéo</span>
                 </button>
-                <button v-if="user.is_admin" @click="activeView = 'models'" :class="['w-full border rounded-lg py-2 px-3 flex items-center justify-center gap-2 transition-colors text-sm', activeView === 'models' ? 'bg-aethas-cyan/10 border-aethas-cyan text-aethas-cyan' : 'bg-aethas-dark hover:bg-gray-800 text-gray-300 border-gray-700']">
-                    <i data-lucide="database" class="w-4 h-4"></i> Modèles &amp; Finances
+                <button v-if="user.is_admin" @click="activeView = 'models'" :class="['w-full border rounded-lg py-2 px-3 flex items-center justify-start gap-2.5 transition-colors text-sm', activeView === 'models' ? 'bg-aethas-cyan/10 border-aethas-cyan text-aethas-cyan' : 'bg-aethas-dark hover:bg-gray-800 text-gray-300 border-gray-700']">
+                    <span class="lm-badge lm-badge-tools"><i data-lucide="database" class="w-3.5 h-3.5"></i></span>
+                    <span>Modèles &amp; Finances</span>
                 </button>
             </div>
 
@@ -164,7 +231,7 @@
                         <span v-else-if="user.is_admin" class="text-[9px] text-red-300">ADMINISTRATEUR</span>
                     </div>
                 </div>
-                <i data-lucide="settings" class="w-5 h-5 text-gray-400"></i>
+                <span class="lm-badge lm-badge-tools"><i data-lucide="settings" class="w-3.5 h-3.5"></i></span>
             </div>
         </aside>
     </div>
@@ -181,6 +248,11 @@
                 </div>
             </div>
             <div class="flex items-center gap-3">
+                <div v-if="isDictating" class="flex items-center gap-2 bg-red-950/70 border border-red-500/60 text-red-200 px-3 py-1 rounded-full text-xs font-semibold animate-pulse">
+                    <span class="lm-badge lm-badge-red" style="width:20px;height:20px;"><i data-lucide="mic" class="w-3 h-3"></i></span>
+                    <span>Dictée vocale active ({{ dictationTarget }})...</span>
+                    <button @click="stopDictation" class="text-white hover:text-red-300 font-bold ml-1">✕</button>
+                </div>
                 <button v-if="isAiThinking || isHermesWorking || isGeneratingMedia" @click="abortCurrentRequest" class="text-xs bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-1 rounded flex items-center gap-1 shadow-[0_0_10px_rgba(220,38,38,0.5)] animate-pulse">
                     🛑 Interrompre la requête
                 </button>
@@ -199,7 +271,7 @@
         <div v-if="activeView === 'hermes'" class="flex-1 flex flex-col min-h-0 w-full overflow-hidden">
             <div class="px-4 md:px-8 py-3 bg-gray-900/90 border-b border-gray-700 flex flex-wrap justify-between items-center gap-3 flex-shrink-0">
                 <div class="flex items-center gap-3">
-                    <i data-lucide="bot" class="w-6 h-6 text-amber-400"></i>
+                    <span class="lm-badge lm-badge-vision" style="width:32px;height:32px;"><i data-lucide="bot" class="w-4 h-4"></i></span>
                     <div>
                         <h2 class="text-base font-bold text-white flex items-center gap-2">
                             Instance Hermes Agent Autonome
@@ -283,7 +355,10 @@
                 <div class="px-4 md:px-8 pt-3 pb-4 w-full flex-shrink-0 border-t border-gray-800 bg-aethas-dark/95">
                     <div class="relative flex items-end bg-gray-800 border border-amber-500/50 rounded-2xl p-2 shadow-lg focus-within:border-amber-400 flex-col gap-2 w-full">
                         <div class="w-full flex items-end gap-2">
-                            <textarea v-model="hermesPrompt" @keydown.enter.exact.prevent="sendHermesMessage" :disabled="isHermesWorking" rows="2" class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none disabled:opacity-50 custom-scrollbar text-sm" placeholder="Envoyer une instruction à Hermes (la discussion sera automatiquement synchronisée dans ce projet AETHAS38)..."></textarea>
+                            <button @click="toggleDictation('hermes')" type="button" :class="['p-3 transition-colors flex-shrink-0', isDictating && dictationTarget === 'hermes' ? 'lm-badge lm-badge-red animate-pulse' : 'lm-badge lm-badge-audio hover:opacity-90']" style="width:40px;height:40px;" title="Dicter le prompt vocalement à Hermes">
+                                <i data-lucide="mic" class="w-4 h-4"></i>
+                            </button>
+                            <textarea v-model="hermesPrompt" @keydown.enter.exact.prevent="sendHermesMessage" :disabled="isHermesWorking" rows="2" class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none disabled:opacity-50 custom-scrollbar text-sm" placeholder="Envoyer ou dicter 🎙️ une instruction à Hermes (la discussion sera automatiquement synchronisée dans ce projet AETHAS38)..."></textarea>
                             <button v-if="!isHermesWorking" @click="sendHermesMessage" :disabled="!hermesPrompt.trim()" class="bg-amber-500 hover:bg-amber-600 text-black font-bold px-6 py-3 rounded-xl text-sm transition-colors disabled:opacity-50 flex-shrink-0">
                                 Exécuter 🚀
                             </button>
@@ -301,10 +376,11 @@
             <div class="w-full space-y-6">
                 <div class="flex flex-wrap justify-between items-center border-b border-gray-700 pb-4 gap-4">
                     <div>
-                        <h2 class="text-2xl font-bold text-white flex items-center gap-2">
-                            <i data-lucide="film" class="w-6 h-6 text-aethas-purple"></i> Studio Génération Image &amp; Vidéo
+                        <h2 class="text-2xl font-bold text-white flex items-center gap-2.5">
+                            <span class="lm-badge lm-badge-audio" style="width:34px;height:34px;"><i data-lucide="film" class="w-4 h-4"></i></span>
+                            <span>Studio Génération Image &amp; Vidéo</span>
                         </h2>
-                        <p class="text-xs text-gray-400 mt-1">Bascule automatique sur un modèle de secours du même niveau (Gratuit/Payant) en cas de dépassement de quota.</p>
+                        <p class="text-xs text-gray-400 mt-1">Bascule automatique sur un modèle de secours du même niveau (Gratuit/Payant) en cas de dépassement de quota. Supporte l'envoi d'images de référence et la dictée vocale.</p>
                     </div>
                     <div class="flex flex-wrap items-center gap-3">
                         <div class="inline-flex items-center bg-gray-800 border border-gray-600 rounded-xl p-1 text-xs">
@@ -364,16 +440,49 @@
                     </div>
                 </div>
 
-                <!-- Zone de prompt Média -->
+                <!-- Zone de prompt Média + Upload Images de Référence (Studio Image) + Dictée Vocale -->
                 <div class="bg-gray-800 border border-gray-600 rounded-2xl p-4 shadow-lg space-y-3">
-                    <textarea v-model="mediaPrompt" rows="3" class="w-full bg-aethas-dark border border-gray-700 rounded-xl p-3 text-sm text-gray-200 focus:border-aethas-cyan outline-none resize-none" :placeholder="mediaType === 'image' ? 'Décrivez l\'image souhaitée en français...' : 'Décrivez la scène vidéo souhaitée en français...'"></textarea>
-                    <div class="flex justify-between items-center gap-3">
-                        <span class="text-xs text-gray-400">En cas de quota dépassé sur le modèle choisi, AETHAS38 bascule automatiquement sur un autre modèle {{ mediaType }} de même catégorie (Gratuit/Payant).</span>
+                    <!-- Aperçu des fichiers images joints dans le Studio Image -->
+                    <div v-if="mediaType === 'image' && mediaAttachedImages.length > 0" class="flex flex-wrap gap-3 pb-2 border-b border-gray-700">
+                        <div v-for="(img, idx) in mediaAttachedImages" :key="idx" class="relative group bg-gray-900 border border-amber-500/50 rounded-xl p-1.5 flex items-center gap-2 pr-3">
+                            <img :src="img.content" class="w-12 h-12 rounded-lg object-cover border border-gray-700">
+                            <div class="flex flex-col">
+                                <span class="text-xs text-gray-200 truncate max-w-[140px]">{{ img.name }}</span>
+                                <span class="text-[10px] text-amber-400">Image de référence</span>
+                            </div>
+                            <button @click="removeMediaImage(idx)" class="text-red-400 hover:text-red-300 font-bold ml-1" title="Retirer cette image">✕</button>
+                        </div>
+                    </div>
+
+                    <div class="flex items-start gap-2">
+                        <!-- Bouton d'ajout d'images dans le Studio (partie Image uniquement) -->
+                        <label v-if="mediaType === 'image'" class="lm-badge lm-badge-vision cursor-pointer hover:opacity-90 mt-1" style="width:40px;height:40px;" title="Joindre une ou plusieurs images de référence (max 5) dans le Studio Image">
+                            <i data-lucide="image-plus" class="w-4 h-4"></i>
+                            <input type="file" accept="image/*" multiple @change="handleMediaImageUpload" class="hidden">
+                        </label>
+
+                        <!-- Bouton Dictée Vocale Studio Média -->
+                        <button @click="toggleDictation('media')" type="button" :class="['mt-1 transition-colors', isDictating && dictationTarget === 'media' ? 'lm-badge lm-badge-red animate-pulse' : 'lm-badge lm-badge-audio hover:opacity-90']" style="width:40px;height:40px;" title="Dicter le prompt média au microphone">
+                            <i data-lucide="mic" class="w-4 h-4"></i>
+                        </button>
+
+                        <textarea v-model="mediaPrompt" @paste="handleMediaPaste" rows="3" class="flex-1 bg-aethas-dark border border-gray-700 rounded-xl p-3 text-sm text-gray-200 focus:border-aethas-cyan outline-none resize-none" :placeholder="mediaType === 'image' ? 'Décrivez ou dictez 🎙️ l\'image souhaitée en français (vous pouvez aussi joindre ou coller Ctrl+V des images de référence)...' : 'Décrivez ou dictez 🎙️ la scène vidéo souhaitée en français...'"></textarea>
+                    </div>
+
+                    <div class="flex flex-wrap justify-between items-center gap-3">
+                        <span class="text-xs text-gray-400">
+                            <template v-if="mediaType === 'image' && mediaAttachedImages.length > 0">
+                                🖼️ <strong>{{ mediaAttachedImages.length }} image(s) jointe(s) :</strong> analyse visuelle et transformation activées.
+                            </template>
+                            <template v-else>
+                                En cas de quota dépassé sur le modèle choisi, AETHAS38 bascule automatiquement sur un autre modèle {{ mediaType }} de même catégorie (Gratuit/Payant).
+                            </template>
+                        </span>
                         <div class="flex items-center gap-2">
                             <button v-if="isGeneratingMedia" @click="abortCurrentRequest" class="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2.5 rounded-xl text-sm flex items-center gap-1">
                                 🛑 Interrompre
                             </button>
-                            <button @click="generateMediaAction" :disabled="isGeneratingMedia || !mediaPrompt.trim() || !selectedMediaModel" class="bg-gradient-to-r from-aethas-cyan to-aethas-purple hover:opacity-90 text-white font-bold px-6 py-2.5 rounded-xl text-sm flex items-center gap-2 disabled:opacity-50">
+                            <button @click="generateMediaAction" :disabled="isGeneratingMedia || (!mediaPrompt.trim() && mediaAttachedImages.length === 0) || !selectedMediaModel" class="bg-gradient-to-r from-aethas-cyan to-aethas-purple hover:opacity-90 text-white font-bold px-6 py-2.5 rounded-xl text-sm flex items-center gap-2 disabled:opacity-50">
                                 <span v-if="isGeneratingMedia">Génération en cours...</span>
                                 <span v-else>✨ Générer {{ mediaType === 'image' ? 'l\'Image' : 'la Vidéo' }}</span>
                             </button>
@@ -407,7 +516,10 @@
         <!-- VUE : CONFIGURATION -->
         <div v-if="activeView === 'settings'" class="flex-1 w-full overflow-y-auto p-4 md:p-8 custom-scrollbar">
             <div class="w-full max-w-6xl mx-auto space-y-6">
-                <h2 class="text-2xl font-bold text-white flex items-center gap-2 border-b border-gray-700 pb-4"><i data-lucide="settings-2" class="w-6 h-6 text-aethas-cyan"></i> Configuration Système</h2>
+                <h2 class="text-2xl font-bold text-white flex items-center gap-2.5 border-b border-gray-700 pb-4">
+                    <span class="lm-badge lm-badge-tools" style="width:34px;height:34px;"><i data-lucide="settings-2" class="w-4 h-4"></i></span>
+                    <span>Configuration Système</span>
+                </h2>
                 
                 <div class="flex border-b border-gray-700">
                     <button @click="settingsTab = 'user'" :class="['py-2 px-4 text-sm font-semibold border-b-2 transition-colors', settingsTab === 'user' ? 'border-aethas-cyan text-aethas-cyan' : 'border-transparent text-gray-400 hover:text-white']">Mon Profil (Utilisateur)</button>
@@ -483,11 +595,14 @@
             </div>
         </div>
 
-        <!-- VUE : MODÈLES ET FINANCES -->
+        <!-- VUE : MODÈLES ET FINANCES (AVEC ICÔNES RONDES STYLE LM STUDIO) -->
         <div v-if="activeView === 'models' && user.is_admin" class="flex-1 w-full overflow-y-auto p-4 md:p-8 space-y-6 custom-scrollbar">
-            <div class="flex justify-between items-end border-b border-gray-700 pb-4">
+            <div class="flex flex-wrap justify-between items-end border-b border-gray-700 pb-4 gap-4">
                 <div>
-                    <h2 class="text-2xl font-bold text-white flex items-center gap-2"><i data-lucide="cpu" class="w-6 h-6 text-aethas-cyan"></i> Modèles &amp; Finances API</h2>
+                    <h2 class="text-2xl font-bold text-white flex items-center gap-2.5">
+                        <span class="lm-badge lm-badge-cyan" style="width:34px;height:34px;"><i data-lucide="cpu" class="w-4 h-4"></i></span>
+                        <span>Modèles &amp; Finances API</span>
+                    </h2>
                     <p class="text-sm text-gray-400 mt-1">Dernière extraction (HF, Cloudflare, OpenRouter, Gemini ciblé &amp; Argon) : <span class="text-gray-200 font-mono">{{ formatDate(modelInfo.last_sync_date) }}</span> <span class="text-xs bg-gray-800 px-2 py-0.5 rounded border border-gray-600 ml-2 uppercase">{{ modelInfo.last_sync_type || 'Aucune' }}</span></p>
                 </div>
                 <button @click="syncModels" :disabled="isSyncing" class="bg-aethas-cyan hover:bg-cyan-600 text-aethas-dark font-semibold py-2 px-4 rounded flex items-center gap-2 text-sm disabled:opacity-50"><i data-lucide="refresh-cw" :class="{'animate-spin': isSyncing}" class="w-4 h-4"></i> Forcer Extraction &amp; Purge</button>
@@ -495,7 +610,7 @@
 
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div v-for="fin in financesList" :key="fin.provider" class="bg-gray-800 border border-gray-700 rounded-xl p-4 flex flex-col justify-between">
-                    <div class="flex justify-between items-start mb-2"><span class="font-bold text-gray-200 capitalize">{{ fin.provider }}</span><i data-lucide="wallet" class="w-5 h-5 text-gray-500"></i></div>
+                    <div class="flex justify-between items-start mb-2"><span class="font-bold text-gray-200 capitalize">{{ fin.provider }}</span><span class="lm-badge lm-badge-cyan"><i data-lucide="wallet" class="w-3.5 h-3.5"></i></span></div>
                     <div>
                         <div class="text-2xl font-mono" :class="fin.balance > 0 ? 'text-green-400' : 'text-aethas-cyan'">${{ fin.balance > 0 ? fin.balance.toFixed(4) : Math.abs(fin.total_usage).toFixed(4) }}</div>
                         <div class="text-xs text-gray-400 mt-1">Conso. API : ${{ fin.total_usage.toFixed(4) }}</div>
@@ -504,8 +619,8 @@
             </div>
 
             <div class="bg-aethas-panel border border-gray-700 rounded-xl overflow-hidden flex flex-col w-full">
-                <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex flex-wrap gap-4 items-center">
-                    <input v-model="filterSearch" type="text" placeholder="Rechercher (ex: argon, flux, qwen)..." class="bg-gray-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 w-full md:w-64 focus:border-aethas-cyan focus:outline-none">
+                <div class="p-4 bg-gray-800/50 border-b border-gray-700 flex flex-wrap gap-3 items-center">
+                    <input v-model="filterSearch" type="text" placeholder="Rechercher (ex: argon, flux, qwen)..." class="bg-gray-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 w-full md:w-56 focus:border-aethas-cyan focus:outline-none">
                     <select v-model="filterProvider" class="bg-gray-900 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-200 focus:outline-none">
                         <option value="">Tous les fournisseurs actifs</option>
                         <option value="openrouter">OPENROUTER</option>
@@ -527,21 +642,40 @@
                         <option value="free">Gratuits uniquement</option>
                         <option value="paid">Payants</option>
                     </select>
+
+                    <!-- Filtres rapides par Capacité (Icônes rondes LM Studio) -->
+                    <div class="flex items-center gap-2 bg-gray-900/90 border border-gray-700 rounded-full px-3 py-1">
+                        <span class="text-[10px] text-gray-400 uppercase font-bold mr-1">Capacités :</span>
+                        <button @click="filterCapVision = !filterCapVision" :class="['lm-badge lm-badge-vision', !filterCapVision && 'lm-badge-inactive']" title="Filtrer : Accepte les Images (Vision)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                        <button @click="filterCapTools = !filterCapTools" :class="['lm-badge lm-badge-tools', !filterCapTools && 'lm-badge-inactive']" title="Filtrer : Entraîné pour utiliser des Tools (Function Calling)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg>
+                        </button>
+                        <button @click="filterCapReasoning = !filterCapReasoning" :class="['lm-badge lm-badge-reason', !filterCapReasoning && 'lm-badge-inactive']" title="Filtrer : Modèle de Raisonnement (Thinking / CoT)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M12 5v13"/></svg>
+                        </button>
+                        <button @click="filterCapAudio = !filterCapAudio" :class="['lm-badge lm-badge-audio', !filterCapAudio && 'lm-badge-inactive']" title="Filtrer : Accepte les Prompts Audio">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                        </button>
+                    </div>
+
                     <button @click="exportCSV" class="bg-aethas-panel border border-gray-600 hover:border-aethas-cyan text-gray-300 hover:text-white px-3 py-1.5 rounded flex items-center gap-2 text-sm transition-colors md:ml-auto">
                         ⬇ Export CSV
                     </button>
                 </div>
                 <div class="overflow-x-auto max-h-[550px] custom-scrollbar w-full">
                     <table class="w-full text-left text-sm text-gray-300">
-                        <thead class="text-xs uppercase bg-gray-800 text-gray-400 sticky top-0">
+                        <thead class="text-xs uppercase bg-gray-800 text-gray-400 sticky top-0 z-10">
                             <tr>
-                                <th class="px-4 py-3 text-center">Assigner Rôle</th>
+                                <th class="px-4 py-3 text-center">Assigner Worker</th>
                                 <th class="px-4 py-3">Modèle</th>
                                 <th class="px-4 py-3">Fournisseur</th>
                                 <th class="px-4 py-3">Domaine</th>
+                                <th class="px-4 py-3 text-center">Capacités (Vision / Tools / Raisonnement / Audio)</th>
                                 <th class="px-4 py-3">Coût (1M Tokens)</th>
                                 <th class="px-4 py-3">Contexte</th>
-                                <th class="px-4 py-3 w-1/3">Description</th>
+                                <th class="px-4 py-3 w-1/4">Description</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -552,9 +686,30 @@
                                 <td class="px-4 py-3 font-mono text-xs text-aethas-cyan break-all">{{ model.model_id }}</td>
                                 <td class="px-4 py-3 uppercase text-xs font-bold">{{ model.provider }}</td>
                                 <td class="px-4 py-3"><span class="bg-gray-700 text-gray-200 px-2 py-1 rounded text-xs">{{ model.domain }}</span></td>
+                                <td class="px-4 py-3">
+                                    <div class="flex items-center justify-center gap-1.5">
+                                        <!-- Œil Jaune/Ambre : Vision / Images (Style LM Studio) -->
+                                        <span v-if="hasCap(model, 'vision')" class="lm-badge lm-badge-vision" title="Vision : Accepte les images en entrée">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
+                                        </span>
+                                        <!-- Marteau Bleu : Trained for Tool Use (Style LM Studio) -->
+                                        <span v-if="hasCap(model, 'tools')" class="lm-badge lm-badge-tools" title="Tools : Entraîné pour utiliser des outils (Function Calling)">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m15 12-8.373 8.373a1 1 0 1 1-3-3L12 9"/><path d="m18 15 4-4"/><path d="m21.5 11.5-1.914-1.914A2 2 0 0 1 19 8.172V7l-2.26-2.26a6 6 0 0 0-4.202-1.756L9 2.96l.92.82A6.18 6.18 0 0 1 12 8.4V10l2 2h1.172a2 2 0 0 1 1.414.586L18.5 14.5"/></svg>
+                                        </span>
+                                        <!-- Cerveau Vert : Reasoning / Thinking (Style LM Studio) -->
+                                        <span v-if="hasCap(model, 'reasoning')" class="lm-badge lm-badge-reason" title="Raisonnement : Modèle capable de raisonnement avancé (Thinking / CoT)">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M12 5v13"/></svg>
+                                        </span>
+                                        <!-- Micro Violet : Prompt Audio -->
+                                        <span v-if="hasCap(model, 'audio')" class="lm-badge lm-badge-audio" title="Audio : Accepte les prompts et flux audio">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                                        </span>
+                                        <span v-if="!hasCap(model, 'vision') && !hasCap(model, 'tools') && !hasCap(model, 'reasoning') && !hasCap(model, 'audio')" class="text-[10px] text-gray-600 font-mono">—</span>
+                                    </div>
+                                </td>
                                 <td class="px-4 py-3 font-mono text-xs"><span v-if="model.is_free" class="text-green-400 font-bold">GRATUIT</span><span v-else>In: ${{ model.pricing_prompt.toFixed(2) }}<br>Out: ${{ model.pricing_completion.toFixed(2) }}</span></td>
                                 <td class="px-4 py-3">{{ (model.context_length / 1000).toFixed(0) }}k</td>
-                                <td class="px-4 py-3 text-xs text-gray-400 truncate max-w-[350px]" :title="model.description_fr">{{ model.description_fr }}</td>
+                                <td class="px-4 py-3 text-xs text-gray-400 truncate max-w-[320px]" :title="model.description_fr">{{ model.description_fr }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -765,7 +920,7 @@
                         </template>
                     </div>
 
-                    <!-- CHAT INPUT PLEINE LARGEUR -->
+                    <!-- CHAT INPUT PLEINE LARGEUR + BOUTON DICTÉE VOCALE -->
                     <div class="relative flex items-end bg-gray-800 border border-gray-600 rounded-2xl p-2 shadow-lg focus-within:border-aethas-cyan flex-col gap-2 w-full">
                         <div v-if="attachedFiles.length > 0" class="w-full flex flex-wrap gap-2 px-2 pt-2">
                             <div v-for="(file, index) in attachedFiles" :key="index" class="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 flex items-center gap-2">
@@ -774,16 +929,22 @@
                             </div>
                         </div>
 
-                        <div class="w-full flex items-end">
-                            <label class="p-3 text-gray-400 hover:text-aethas-cyan cursor-pointer transition-colors" title="Joindre des fichiers ou copies d'élèves (max 10)">
-                                <i data-lucide="paperclip" class="w-5 h-5"></i>
+                        <div class="w-full flex items-end gap-1.5">
+                            <label class="lm-badge lm-badge-tools cursor-pointer hover:opacity-90 mb-1 ml-1" style="width:38px;height:38px;" title="Joindre des fichiers ou copies d'élèves (max 10)">
+                                <i data-lucide="paperclip" class="w-4 h-4"></i>
                                 <input type="file" multiple @change="handleFileUpload" class="hidden">
                             </label>
 
-                            <textarea v-model="prompt" @input="autoResize" @paste="handlePaste" @keydown.enter.exact.prevent="sendMessage" ref="promptTextarea" :disabled="isAiThinking" rows="1" class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none disabled:opacity-50 custom-scrollbar" :placeholder="selectedTheme === 'ocr_ce2' ? 'Joignez les copies CE2 + le corrigé de référence, puis lancez la correction...' : (attachedFiles.length > 0 ? attachedFiles.length + ' fichier(s) attaché(s)' : 'Posez votre question ou glissez jusqu\'à 10 fichiers ici...')"></textarea>
+                            <button @click="toggleDictation('chat')" type="button" :class="['mb-1 transition-colors', isDictating && dictationTarget === 'chat' ? 'lm-badge lm-badge-red animate-pulse' : 'lm-badge lm-badge-audio hover:opacity-90']" style="width:38px;height:38px;" title="Dicter votre prompt vocalement (Microphone)">
+                                <i data-lucide="mic" class="w-4 h-4"></i>
+                            </button>
+
+                            <textarea v-model="prompt" @input="autoResize" @paste="handlePaste" @keydown.enter.exact.prevent="sendMessage" ref="promptTextarea" :disabled="isAiThinking" rows="1" class="w-full bg-transparent text-gray-200 p-3 max-h-[200px] overflow-y-auto focus:outline-none resize-none disabled:opacity-50 custom-scrollbar" :placeholder="selectedTheme === 'ocr_ce2' ? 'Joignez les copies CE2 + le corrigé de référence, puis lancez la correction...' : (attachedFiles.length > 0 ? attachedFiles.length + ' fichier(s) attaché(s)' : 'Posez ou dictez 🎙️ votre question, ou glissez jusqu\'à 10 fichiers ici...')"></textarea>
                             
-                            <button v-if="!isAiThinking" @click="sendMessage" :disabled="!prompt.trim() && attachedFiles.length === 0" class="p-3 text-aethas-cyan hover:text-white disabled:opacity-50"><i data-lucide="send" class="w-5 h-5"></i></button>
-                            <button v-else @click="abortCurrentRequest" class="px-4 py-2.5 mr-1 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs flex items-center gap-1 transition-colors flex-shrink-0 shadow-md">
+                            <button v-if="!isAiThinking" @click="sendMessage" :disabled="!prompt.trim() && attachedFiles.length === 0" class="lm-badge lm-badge-cyan hover:opacity-90 mb-1 mr-1 disabled:opacity-40" style="width:38px;height:38px;" title="Envoyer la requête">
+                                <i data-lucide="send" class="w-4 h-4"></i>
+                            </button>
+                            <button v-else @click="abortCurrentRequest" class="px-4 py-2.5 mr-1 mb-0.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs flex items-center gap-1 transition-colors flex-shrink-0 shadow-md">
                                 🛑 Interrompre
                             </button>
                         </div>
@@ -800,7 +961,7 @@
     createApp({
         setup() {
             const user = ref({ username: "Guest", is_admin: false, is_superadmin: false, avatar_path: null });
-            const projectVersion = ref("v0.20.0");
+            const projectVersion = ref("v0.21.0");
             const activeView = ref('chat'); 
             const settingsTab = ref('user');
             const isSidebarOpen = ref(true);
@@ -821,18 +982,93 @@
             const isHermesWorking = ref(false);
             let abortController = null;
 
+            // --- DICTÉE VOCALE (WEB SPEECH API) ---
+            const isDictating = ref(false);
+            const dictationTarget = ref("chat"); // 'chat', 'media', 'hermes'
+            let speechRecognition = null;
+
+            const stopDictation = () => {
+                if (speechRecognition) {
+                    try { speechRecognition.stop(); } catch (e) {}
+                }
+                isDictating.value = false;
+            };
+
+            const toggleDictation = (target = "chat") => {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRecognition) {
+                    showToast("⚠️ Votre navigateur ne supporte pas la reconnaissance vocale Web Speech.");
+                    return;
+                }
+                if (isDictating.value) {
+                    const prevTarget = dictationTarget.value;
+                    stopDictation();
+                    if (prevTarget === target) return;
+                }
+
+                dictationTarget.value = target;
+                speechRecognition = new SpeechRecognition();
+                speechRecognition.lang = "fr-FR";
+                speechRecognition.continuous = true;
+                speechRecognition.interimResults = false;
+
+                speechRecognition.onstart = () => {
+                    isDictating.value = true;
+                    showToast(`🎙️ Dictée vocale activée (${target.toUpperCase()}). Parlez maintenant...`);
+                    nextTick(() => lucide.createIcons());
+                };
+
+                speechRecognition.onresult = (event) => {
+                    let transcript = "";
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        if (event.results[i].isFinal) {
+                            transcript += event.results[i][0].transcript + " ";
+                        }
+                    }
+                    const cleanText = transcript.trim();
+                    if (!cleanText) return;
+                    if (dictationTarget.value === "media") {
+                        mediaPrompt.value = (mediaPrompt.value ? mediaPrompt.value.trim() + " " : "") + cleanText;
+                    } else if (dictationTarget.value === "hermes") {
+                        hermesPrompt.value = (hermesPrompt.value ? hermesPrompt.value.trim() + " " : "") + cleanText;
+                    } else {
+                        prompt.value = (prompt.value ? prompt.value.trim() + " " : "") + cleanText;
+                        nextTick(() => autoResize());
+                    }
+                };
+
+                speechRecognition.onerror = () => {
+                    isDictating.value = false;
+                };
+
+                speechRecognition.onend = () => {
+                    isDictating.value = false;
+                    nextTick(() => lucide.createIcons());
+                };
+
+                try {
+                    speechRecognition.start();
+                } catch (e) {
+                    isDictating.value = false;
+                }
+            };
+
             const toastVisible = ref(false);
             const toastMessage = ref("");
             const showToast = (msg) => {
                 toastMessage.value = msg;
                 toastVisible.value = true;
+                nextTick(() => lucide.createIcons());
                 setTimeout(() => { toastVisible.value = false; }, 5000);
             };
 
-            const abortCurrentRequest = () => {
+            const abortCurrentRequest = async () => {
                 if (abortController) {
                     abortController.abort();
                     abortController = null;
+                }
+                if (activeProject.value && activeProject.value.id) {
+                    fetch(`/api/projects/${activeProject.value.id}/abort`, { method: 'POST' }).catch(() => {});
                 }
                 isAiThinking.value = false;
                 isHermesWorking.value = false;
@@ -982,6 +1218,10 @@
             const filterDomain = ref("");
             const filterPricing = ref("");
             const filterProvider = ref("");
+            const filterCapVision = ref(false);
+            const filterCapTools = ref(false);
+            const filterCapReasoning = ref(false);
+            const filterCapAudio = ref(false);
             
             const colPricing = ref("");
             const colProvider = ref("");
@@ -1002,6 +1242,7 @@
             const selectedMediaModel = ref("");
             const selectedMediaPrompter = ref("gemini-3.5-flash-lite");
             const mediaPrompt = ref("");
+            const mediaAttachedImages = ref([]);
             const isGeneratingMedia = ref(false);
             const generatedMediaList = ref([]);
 
@@ -1014,6 +1255,33 @@
 
             const pinnedProjects = computed(() => projects.value.filter(p => p.is_pinned));
             const recentProjects = computed(() => projects.value.filter(p => !p.is_pinned));
+
+            // Détection de capacité (BDD + fallback intelligent côté client si ancien modèle)
+            const hasCap = (m, capType) => {
+                if (!m) return false;
+                const mid = (m.model_id || '').toLowerCase();
+                const dom = m.domain || '';
+                const desc = (m.description_fr || '').toLowerCase();
+
+                if (capType === 'vision') {
+                    if (m.supports_vision === true) return true;
+                    return dom === 'Vision & Texte' || ['vision', '-vl', 'vl-', 'pixtral', 'gpt-4o', 'claude-3', 'gemini-', 'omni', 'llava', 'nova-lite', 'nova-pro'].some(k => mid.includes(k));
+                }
+                if (capType === 'tools') {
+                    if (m.supports_tools === true) return true;
+                    if (dom === 'Génération Image' || dom === 'Génération Vidéo') return false;
+                    return ['gpt-4', 'claude-3', 'gemini-', 'qwen2.5', 'qwen-2.5', 'qwen3', 'llama-3.1', 'llama-3.3', 'mistral', 'codestral', 'deepseek-chat', 'deepseek-v3', 'command-r', 'nova-', 'hermes', 'argon'].some(k => mid.includes(k));
+                }
+                if (capType === 'reasoning') {
+                    if (m.supports_reasoning === true) return true;
+                    return ['deepseek-r1', '-r1', 'qwq', 'o1', 'o3', 'o4', 'thinking', 'reason', 'gemini-2.5', 'gemini-3', 'qwen3'].some(k => mid.includes(k)) || desc.includes('raisonnement');
+                }
+                if (capType === 'audio') {
+                    if (m.supports_audio === true) return true;
+                    return dom === 'Audio' || ['audio', 'whisper', 'omni', 'gemini-', 'voxtral', 'ultravox'].some(k => mid.includes(k));
+                }
+                return false;
+            };
 
             const isModelWorkerSelectable = (m) => {
                 if (!m) return false;
@@ -1168,6 +1436,10 @@
                     let matchPrice = true;
                     if (filterPricing.value === 'free') matchPrice = m.is_free;
                     if (filterPricing.value === 'paid') matchPrice = !m.is_free;
+                    if (filterCapVision.value && !hasCap(m, 'vision')) return false;
+                    if (filterCapTools.value && !hasCap(m, 'tools')) return false;
+                    if (filterCapReasoning.value && !hasCap(m, 'reasoning')) return false;
+                    if (filterCapAudio.value && !hasCap(m, 'audio')) return false;
                     return matchSearch && matchDomain && matchProvider && matchPrice;
                 });
             });
@@ -1264,27 +1536,75 @@
                 }
             };
 
+            // --- GESTION DES IMAGES JOINTES DANS LE STUDIO IMAGE ---
+            const processMediaImageFile = (file) => {
+                if (!file || !file.type.startsWith('image/')) {
+                    showToast("Seuls les fichiers image sont acceptés dans le Studio Image.");
+                    return;
+                }
+                if (mediaAttachedImages.value.length >= 5) {
+                    showToast("Maximum 5 images de référence dans le Studio Image.");
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    mediaAttachedImages.value.push({ name: file.name, content: e.target.result });
+                };
+                reader.readAsDataURL(file);
+            };
+
+            const handleMediaImageUpload = (event) => {
+                const files = event.target.files;
+                if (!files) return;
+                for (let i = 0; i < files.length; i++) {
+                    if (mediaAttachedImages.value.length >= 5) break;
+                    processMediaImageFile(files[i]);
+                }
+                event.target.value = null;
+            };
+
+            const handleMediaPaste = (event) => {
+                if (mediaType.value !== 'image') return;
+                const items = (event.clipboardData || event.originalEvent.clipboardData).items;
+                for (let index in items) {
+                    const item = items[index];
+                    if (item.kind === 'file') {
+                        const file = item.getAsFile();
+                        if (file && file.type.startsWith('image/')) {
+                            processMediaImageFile(file);
+                        }
+                    }
+                }
+            };
+
+            const removeMediaImage = (idx) => {
+                mediaAttachedImages.value.splice(idx, 1);
+            };
+
             const generateMediaAction = async () => {
-                if (!mediaPrompt.value.trim() || !selectedMediaModel.value) return;
+                if ((!mediaPrompt.value.trim() && mediaAttachedImages.value.length === 0) || !selectedMediaModel.value) return;
                 isGeneratingMedia.value = true;
                 const requestedModel = selectedMediaModel.value;
+                const imagesPayload = mediaType.value === 'image' ? [...mediaAttachedImages.value] : [];
                 abortController = new AbortController();
                 try {
                     const res = await fetch('/api/media/generate', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({
-                            prompt: mediaPrompt.value,
+                            prompt: mediaPrompt.value || "Sublime et reproduis fidèlement l'image de référence fournie.",
                             media_type: mediaType.value,
                             model_id: requestedModel,
                             prompter_id: selectedMediaPrompter.value,
-                            optimize_prompt: true
+                            optimize_prompt: true,
+                            images: imagesPayload
                         }),
                         signal: abortController.signal
                     });
                     if (res.ok) {
                         const data = await res.json();
                         generatedMediaList.value.unshift(data);
+                        mediaAttachedImages.value = [];
                         if (data.model_used && data.model_used !== requestedModel) {
                             selectedMediaModel.value = data.model_used;
                             showToast(`Quota dépassé sur ${requestedModel} -> Bascule auto réussie sur ${data.model_used} !`);
@@ -1472,7 +1792,7 @@
                     if(res.ok) { 
                         await fetchModelsInfo(); 
                         await fetchFinances();
-                        showToast("Synchronisation et filtrage BDD réussis !"); 
+                        showToast("Synchronisation et détection des capacités LM Studio réussies !"); 
                     }
                 } catch(e) {} 
                 isSyncing.value = false; 
@@ -1485,10 +1805,24 @@
 
             const exportCSV = () => {
                 let csvContent = "\uFEFF"; 
-                csvContent += "Fournisseur,Modèle,Nom,Domaine,Gratuit,Contexte,Prix_In,Prix_Out,Description\n";
+                csvContent += "Fournisseur,Modèle,Nom,Domaine,Gratuit,Contexte,Vision,Tools,Raisonnement,Audio,Prix_In,Prix_Out,Description\n";
                 filteredModels.value.forEach(m => {
                     const escapeCSV = (str) => `"${String(str ?? '').replace(/"/g, '""')}"`;
-                    const row = [escapeCSV(m.provider), escapeCSV(m.model_id), escapeCSV(m.name), escapeCSV(m.domain), m.is_free ? "Oui" : "Non", m.context_length, m.pricing_prompt, m.pricing_completion, escapeCSV(m.description_fr)];
+                    const row = [
+                        escapeCSV(m.provider),
+                        escapeCSV(m.model_id),
+                        escapeCSV(m.name),
+                        escapeCSV(m.domain),
+                        m.is_free ? "Oui" : "Non",
+                        m.context_length,
+                        hasCap(m, 'vision') ? "Oui" : "Non",
+                        hasCap(m, 'tools') ? "Oui" : "Non",
+                        hasCap(m, 'reasoning') ? "Oui" : "Non",
+                        hasCap(m, 'audio') ? "Oui" : "Non",
+                        m.pricing_prompt,
+                        m.pricing_completion,
+                        escapeCSV(m.description_fr)
+                    ];
                     csvContent += row.join(",") + "\n";
                 });
                 const d = new Date();
@@ -1660,6 +1994,8 @@
                     alert("Veuillez sélectionner au moins un travailleur et saisir un message.");
                     return;
                 }
+                if (isDictating.value) stopDictation();
+
                 const userText = prompt.value.trim(); 
                 prompt.value = ""; 
                 nextTick(() => { if (promptTextarea.value) promptTextarea.value.style.height = 'auto'; });
@@ -1753,14 +2089,18 @@
                 user, projectVersion, activeView, settingsTab, isSidebarOpen, toggleSidebar, prompt, autoResize, promptTextarea, 
                 projects, pinnedProjects, recentProjects, activeProject, messages, isAiThinking,
                 hermesStatus, hermesPrompt, isHermesWorking, checkHermes, openHermesView, createNewProjectAndStayInHermes, sendHermesMessage, abortCurrentRequest,
+                isDictating, dictationTarget, toggleDictation, stopDictation,
                 createNewProject, selectProject, renameProject, sendMessage, isLoading, togglePin, deleteProject,
                 openSettings, passForm, settingsMessage, isSavingSettings, changePassword, uploadAvatar,
                 adminSettings, adminSettingsMessage, isSavingAdminSettings, saveAdminSettings,
-                modelInfo, financesList, filterSearch, filterDomain, filterPricing, filterProvider, filteredModels,
+                modelInfo, financesList, filterSearch, filterDomain, filterPricing, filterProvider,
+                filterCapVision, filterCapTools, filterCapReasoning, filterCapAudio, hasCap, filteredModels,
                 prompterConcatModels, getFilteredWorkerModels, isModelWorkerSelectable, formatDate, syncModels, isSyncing,
                 orchestratorMode, selectedTheme, enableWebSearch, includeArgon, toggleArgonMode, applyThemeRecommendation, applyMediaRecommendation,
                 workers, selectedPrompter, selectedConcatenator, colPricing, colProvider, colDomain, downloadTemplate, exportCSV, handleConfigImport,
-                mediaType, mediaPricing, mediaProvider, selectedMediaModel, selectedMediaPrompter, mediaPrompt, isGeneratingMedia, generatedMediaList, filteredMediaModels, generateMediaAction,
+                mediaType, mediaPricing, mediaProvider, selectedMediaModel, selectedMediaPrompter, mediaPrompt,
+                mediaAttachedImages, handleMediaImageUpload, handleMediaPaste, removeMediaImage,
+                isGeneratingMedia, generatedMediaList, filteredMediaModels, generateMediaAction,
                 isAssignModalOpen, openAssignModal, closeAssignModal, assignForm, assignMessage, confirmAssignModel,
                 attachedFiles, handleFileUpload, handlePaste, removeFile,
                 exportProject, copyToClipboard, downloadFile, downloadMessage, downloadLogs, parseMessage, systemLogs,

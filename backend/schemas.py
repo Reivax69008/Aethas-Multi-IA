@@ -95,6 +95,7 @@ class MediaGenerateRequest(BaseModel):
     model_id: str
     prompter_id: Optional[str] = "gemini-3.5-flash-lite"
     optimize_prompt: Optional[bool] = True
+    images: Optional[List[AttachedFile]] = None  # Fichiers images joints dans le Studio Image
 
 class MediaGenerateResponse(BaseModel):
     media_url: str

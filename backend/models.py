@@ -66,6 +66,10 @@ class AIModel(Base):
     context_length = Column(Integer)
     pricing_prompt = Column(Float)
     pricing_completion = Column(Float)
+    supports_reasoning = Column(Boolean, default=False)
+    supports_tools = Column(Boolean, default=False)
+    supports_vision = Column(Boolean, default=False)
+    supports_audio = Column(Boolean, default=False)
     last_updated = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class FinancialLog(Base):

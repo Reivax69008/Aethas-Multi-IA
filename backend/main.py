@@ -26,15 +26,23 @@ from .logger import log_file, cleanup_old_logs, system_logger
 
 Base.metadata.create_all(bind=engine)
 
-try:
-    with engine.begin() as conn:
-        conn.execute(text("ALTER TABLE projects ADD COLUMN IF NOT EXISTS config_json TEXT;"))
-except Exception:
+# Migration SQL automatique sans perte de données pour projects et ai_models (Capacités LM Studio)
+for sql_stmt in [
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS config_json TEXT;",
+    "ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS supports_reasoning BOOLEAN DEFAULT FALSE;",
+    "ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS supports_tools BOOLEAN DEFAULT FALSE;",
+    "ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS supports_vision BOOLEAN DEFAULT FALSE;",
+    "ALTER TABLE ai_models ADD COLUMN IF NOT EXISTS supports_audio BOOLEAN DEFAULT FALSE;",
+]:
     try:
         with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE projects ADD COLUMN config_json TEXT;"))
+            conn.execute(text(sql_stmt))
     except Exception:
-        pass
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(sql_stmt.replace("IF NOT EXISTS ", "")))
+        except Exception:
+            pass
 
 app = FastAPI(title="AETHAS38")
 
@@ -266,7 +274,6 @@ async def _call_hermes_instance(db: Session, project: Project, history: list, ex
     }
 
     async with httpx.AsyncClient(timeout=180.0) as client:
-        # 1. Endpoint compatible OpenAI v1 (/v1/chat/completions) d'Hermes Gateway
         try:
             payload_v1 = {
                 "model": "hermes-agent",
@@ -285,7 +292,6 @@ async def _call_hermes_instance(db: Session, project: Project, history: list, ex
         except Exception as e:
             log_activity(f"[Hermes v1] Repli endpoint ({str(e)[:60]})...")
 
-        # 2. Endpoint alternatif (/api/chat) d'Hermes
         try:
             payload_alt = {
                 "prompt": hermes_messages[-1]["content"],
@@ -304,7 +310,6 @@ async def _call_hermes_instance(db: Session, project: Project, history: list, ex
         except Exception as e:
             log_activity(f"⚠️ [Hermes] Instance locale injoignable ou quota dépassé ({str(e)[:70]}). Bascule sur IA équivalente AETHAS38...")
 
-    # 3. Bascule automatique équivalente si Hermes ou son modèle sous-jacent dépasse son quota
     fallback_ans = await ask_agent_with_fallback(
         db=db,
         settings=settings,
@@ -315,6 +320,44 @@ async def _call_hermes_instance(db: Session, project: Project, history: list, ex
         target_domain="Code & Logique"
     )
     return f"*(Bascule auto AETHAS38 - Quota/Relais Hermes)*\n\n{fallback_ans}"
+
+@app.post("/api/hermes/chat")
+async def proxy_hermes_chat(payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Route directe compatible avec l'interface Hermes synchronisée aux projets AETHAS38."""
+    project_id = payload.get("project_id")
+    user_prompt = (payload.get("prompt") or "").strip()
+    if not user_prompt:
+        raise HTTPException(status_code=400, detail="Prompt vide.")
+
+    if project_id:
+        p = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
+        if p:
+            db.add(Message(role="user", content=user_prompt, project_id=project_id))
+            db.commit()
+            if p.title == "Nouvelle discussion":
+                new_title = user_prompt.split('\n')[0][:35].strip() or "Discussion Hermes"
+                p.title = new_title + ("..." if len(user_prompt) > 35 else "")
+                db.commit()
+            history = db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
+            settings = db.query(SystemSettings).first()
+            task = asyncio.current_task()
+            active_project_tasks[project_id] = task
+            try:
+                hermes_resp = await _call_hermes_instance(db, p, history, "", settings, "Qwen/Qwen2.5-Coder-32B-Instruct")
+                db.add(Message(role="assistant", content=hermes_resp, project_id=project_id))
+                db.commit()
+            except asyncio.CancelledError:
+                db.add(Message(role="assistant", content="🛑 *[Requête Hermes interrompue par l'utilisateur]*", project_id=project_id))
+                db.commit()
+            finally:
+                active_project_tasks.pop(project_id, None)
+            updated_msgs = db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
+            return {
+                "response": hermes_resp,
+                "messages": [{"id": m.id, "role": m.role, "content": m.content, "created_at": m.created_at.isoformat(), "project_id": m.project_id} for m in updated_msgs]
+            }
+
+    raise HTTPException(status_code=404, detail="Projet introuvable pour la synchronisation Hermes.")
 
 @app.post("/api/projects/{project_id}/hermes", response_model=List[MessageResponse])
 async def create_hermes_project_message(project_id: int, message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -393,6 +436,7 @@ async def api_generate_media(req: MediaGenerateRequest, db: Session = Depends(ge
     settings = db.query(SystemSettings).first()
     if not settings:
         raise HTTPException(status_code=400, detail="Paramètres système non initialisés.")
+    input_imgs = [{"name": img.name, "content": img.content} for img in (req.images or [])]
     return await generate_media(
         db=db,
         settings=settings,
@@ -400,7 +444,8 @@ async def api_generate_media(req: MediaGenerateRequest, db: Session = Depends(ge
         media_type=req.media_type,
         model_id=req.model_id,
         prompter_id=req.prompter_id or "gemini-3.5-flash-lite",
-        optimize_prompt=req.optimize_prompt if req.optimize_prompt is not None else True
+        optimize_prompt=req.optimize_prompt if req.optimize_prompt is not None else True,
+        input_images=input_imgs
     )
 
 @app.post("/api/models/suggest_replacement")
@@ -408,7 +453,7 @@ async def suggest_replacement(req: ModelReplacementRequest, db: Session = Depend
     log_activity(f"⚠️ Modèle indisponible ou hors quota: {req.missing_model}. Recherche d'un équivalent strict...")
     fallback = find_quota_fallback_model(db, req.missing_model, {req.missing_model}, is_worker=True)
     if fallback:
-        return {"suggestion": fallback, "reason": "Remplacement automatique respectant strictement les pré-requis (Gratuit/Payant, Domaine et Contexte)."}
+        return {"suggestion": fallback, "reason": "Remplacement automatique respectant strictement les pré-requis (Gratuit/Payant, Domaine, Capacités et Contexte)."}
     return {"suggestion": "Qwen/Qwen2.5-Coder-32B-Instruct", "reason": "Repli par défaut."}
 
 @app.get("/api/users/me")
@@ -569,9 +614,9 @@ def export_models(db: Session = Depends(get_db), current_user: User = Depends(ge
 
     csv_io = io.StringIO()
     writer = csv.writer(csv_io, delimiter=',')
-    writer.writerow(["Provider", "Model ID", "Name", "Domain", "Is Free", "Context Length", "Pricing Prompt", "Pricing Completion", "Description"])
+    writer.writerow(["Provider", "Model ID", "Name", "Domain", "Is Free", "Context Length", "Reasoning", "Tools", "Vision", "Audio", "Pricing Prompt", "Pricing Completion", "Description"])
     for m in models:
-        writer.writerow([m.provider, m.model_id, m.name, m.domain, m.is_free, m.context_length, m.pricing_prompt, m.pricing_completion, m.description_fr])
+        writer.writerow([m.provider, m.model_id, m.name, m.domain, m.is_free, m.context_length, m.supports_reasoning, m.supports_tools, m.supports_vision, m.supports_audio, m.pricing_prompt, m.pricing_completion, m.description_fr])
     
     md_content = f"# Extraction des Modèles IA - AETHAS38\n\n**Date d'extraction :** {datetime.now().strftime('%d/%m/%Y à %H:%M:%S')}\n\n"
     providers = sorted(list(set(m.provider for m in models)))
@@ -581,9 +626,17 @@ def export_models(db: Session = Depends(get_db), current_user: User = Depends(ge
         for m in prov_models:
             price_info = "**GRATUIT**" if m.is_free else f"In: ${m.pricing_prompt:.2f} / Out:${m.pricing_completion:.2f}"
             ctx_info = f"{int((m.context_length or 0)/1000)}k"
+            caps_str = ", ".join([
+                c for c, ok in [
+                    ("Vision", m.supports_vision),
+                    ("Tools", m.supports_tools),
+                    ("Raisonnement", m.supports_reasoning),
+                    ("Audio", m.supports_audio)
+                ] if ok
+            ]) or "Texte standard"
             desc = m.description_fr.replace('\n', ' ') if m.description_fr else ""
             md_content += f"- **{m.name or m.model_id}** (`{m.model_id}`)\n"
-            md_content += f"  - *Domaine :* {m.domain}\n"
+            md_content += f"  - *Domaine :* {m.domain} | *Capacités :* {caps_str}\n"
             md_content += f"  - *Prix (1M tokens) :* {price_info}\n"
             md_content += f"  - *Contexte :* {ctx_info}\n"
             md_content += f"  - *Description :* {desc}\n\n"
