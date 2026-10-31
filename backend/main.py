@@ -27,7 +27,6 @@ from .logger import log_file, cleanup_old_logs, system_logger
 
 Base.metadata.create_all(bind=engine)
 
-# Migration SQL automatique sans perte de données pour projects et ai_models (Capacités LM Studio + Consignes persistantes)
 for sql_stmt in [
     "ALTER TABLE projects ADD COLUMN IF NOT EXISTS config_json TEXT;",
     "ALTER TABLE projects ADD COLUMN IF NOT EXISTS custom_instructions TEXT DEFAULT '';",
@@ -48,7 +47,6 @@ for sql_stmt in [
 
 app = FastAPI(title="AETHAS38")
 
-# --- GESTION AUTOMATIQUE DE LA VERSION DU PROJET ---
 DEFAULT_APP_VERSION = "v0.26.0"
 
 def get_current_app_version() -> str:
@@ -66,15 +64,12 @@ def get_current_app_version() -> str:
             pass
     return DEFAULT_APP_VERSION
 
-# --- CONFIGURATION HERMES AGENT AUTO-HÉBERGÉ ---
 HERMES_API_URL = os.getenv("HERMES_API_URL", "http://192.168.1.20:8642")
 HERMES_API_KEY = os.getenv("HERMES_API_KEY", "87186fe63b1e5d8b8d01bc769f5e894d24081a86d0d800d00b6358c26fded37e")
 
-# --- REGISTRE DES TÂCHES ACTIVES POUR EXÉCUTION EN ARRIÈRE-PLAN & INTERRUPTION ---
 active_project_tasks: Dict[int, asyncio.Task] = {}
 
 def get_project_custom_instructions(db: Session, project_id: int, config_dict: dict = None) -> str:
-    """Récupère les consignes spécifiques persistantes d'une discussion."""
     if config_dict and isinstance(config_dict, dict):
         ci = (config_dict.get("custom_instructions") or "").strip()
         if ci:
@@ -99,10 +94,7 @@ async def global_json_exception_handler(request: Request, exc: Exception):
     tb = traceback.format_exc()
     system_logger.error(f"Exception non gérée sur {request.url.path} :\n{tb}")
     log_activity(f"[Erreur Serveur] {str(exc)[:100]}")
-    return JSONResponse(
-        status_code=500,
-        content={"detail": f"Erreur interne du serveur : {str(exc)}"}
-    )
+    return JSONResponse(status_code=500, content={"detail": f"Erreur interne du serveur : {str(exc)}"})
 
 assets_path = os.path.join(os.getcwd(), "frontend", "assets")
 avatars_path = os.path.join(assets_path, "avatars")
@@ -118,7 +110,6 @@ NO_CACHE_HEADERS = {
 
 @app.get("/api/version")
 async def get_version():
-    """Retourne dynamiquement la version actuelle du paquet au frontend sans mise en cache."""
     return JSONResponse(content={"version": get_current_app_version()}, headers=NO_CACHE_HEADERS)
 
 def extract_attached_files(files_list) -> tuple[list, list]:
@@ -284,7 +275,6 @@ def dashboard(request: Request):
     if not token or not verify_token(token): return RedirectResponse(url="/login")
     return FileResponse(os.path.join(os.getcwd(), "frontend", "dashboard.html"), headers=NO_CACHE_HEADERS)
 
-# --- TRANSCRIPTION VOCALE SERVEUR (POUR OPERA GX / NAVIGATEURS SANS WEB SPEECH) ---
 @app.post("/api/audio/transcribe")
 async def transcribe_audio(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     audio_bytes = await file.read()
@@ -363,7 +353,6 @@ async def transcribe_audio(file: UploadFile = File(...), db: Session = Depends(g
 
     raise HTTPException(status_code=400, detail=f"Échec de transcription vocale ({' | '.join(errors)}). Vérifiez vos clés API Gemini/HF/Groq.")
 
-# --- INTÉGRATION HERMES AGENT (SYNCHRONISÉE AVEC LES PROJETS AETHAS38) ---
 @app.get("/api/hermes/status")
 async def check_hermes_status(current_user: User = Depends(get_current_user)):
     headers = {"Authorization": f"Bearer {HERMES_API_KEY}"}
@@ -475,6 +464,27 @@ async def _run_hermes_background(project_id: int, extra_files_context: str, fall
         bg_db.commit()
     except Exception as e:
         bg_db.add(Message(role="assistant", content=f"Erreur Hermes : {str(e)}", project_id=project_id))
+        bg_db.commit()
+    finally:
+        active_project_tasks.pop(project_id, None)
+        clear_project_live_status(project_id)
+        bg_db.close()
+
+async def _run_orchestrator_background(project_id: int, conf: dict, extracted_files_data: list):
+    """Exécute l'orchestrateur dans une tâche de fond indépendante du changement de page ou d'onglet."""
+    bg_db = SessionLocal()
+    try:
+        history = bg_db.query(Message).filter(Message.project_id == project_id).order_by(Message.created_at.asc()).all()
+        settings = bg_db.query(SystemSettings).first()
+        conf["custom_instructions"] = get_project_custom_instructions(bg_db, project_id, conf)
+        ai_resp = await run_orchestrator(bg_db, history, settings, conf, extracted_files_data, project_id=project_id)
+        bg_db.add(Message(role="assistant", content=ai_resp, project_id=project_id))
+        bg_db.commit()
+    except asyncio.CancelledError:
+        bg_db.add(Message(role="assistant", content="🛑 *[Requête interrompue par l'utilisateur]*", project_id=project_id))
+        bg_db.commit()
+    except Exception as e:
+        bg_db.add(Message(role="assistant", content=f"Erreur lors du traitement : {str(e)}", project_id=project_id))
         bg_db.commit()
     finally:
         active_project_tasks.pop(project_id, None)
@@ -699,7 +709,6 @@ def update_project_config(project_id: int, cfg: ProjectConfigUpdate, db: Session
 
 @app.put("/api/projects/{project_id}/instructions")
 def update_project_instructions(project_id: int, payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Sauvegarde les consignes spécifiques persistantes d'une discussion."""
     p = db.query(Project).filter(Project.id == project_id, Project.user_id == current_user.id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Projet introuvable.")
@@ -785,7 +794,7 @@ async def create_message(project_id: int, message: MessageCreate, db: Session = 
             p.title = new_title + ("..." if len(first_content) > 35 else "")
             db.commit()
     
-    bg_task = asyncio.create_task(_run_hermes_background(project_id, [], "Qwen/Qwen2.5-Coder-32B-Instruct")) if False else asyncio.create_task(_run_orchestrator_background(project_id, cfg_dict, extracted_files_data))
+    bg_task = asyncio.create_task(_run_orchestrator_background(project_id, cfg_dict, extracted_files_data))
     active_project_tasks[project_id] = bg_task
     await asyncio.shield(bg_task)
 
